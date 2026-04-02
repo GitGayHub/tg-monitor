@@ -201,6 +201,7 @@ def _keywords_match_text(keywords, normalized_text):
             return kw
     return None
 
+
 def find_skins_in_text(text, skins_dict=None):
     """Находит все редкие скины в тексте. Использует skins_dict из config."""
     if skins_dict is None:
@@ -223,10 +224,10 @@ def find_skins_in_text(text, skins_dict=None):
 
 def has_pve(text, include_unconfirmed=False):
     """Проверяет, есть ли PVE в тексте. Читает слова из config."""
-    text_lower = text.lower()
+    normalized_text = normalize_match_text(text)
     keywords = config.get_all_pve() if include_unconfirmed else config.get_confirmed_pve()
     for keyword in keywords:
-        if keyword.lower() in text_lower:
+        if normalize_match_text(keyword) in normalized_text:
             return True
     return False
 
