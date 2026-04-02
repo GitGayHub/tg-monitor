@@ -2225,11 +2225,12 @@ def _get_current_check_status(context):
     running_now = 'Автомониторинг' if state['mode'] == 'standard' else state['running_label']
     bar, pct = _make_progress_bar(state['done'], state['total'])
 
+    target_line = f"🧩 Цель: {state['target_label']}\n" if state['target_label'] else ''
     text = (
         "⏳ <b>Сейчас уже идёт проверка</b>\n\n"
         f"🔍 Автомониторинг: {state['auto_mode_label']}\n"
         f"⚙️ Запущен сейчас: {running_now}\n"
-        f"{f'🧩 Цель: {state['target_label']}\n' if state['target_label'] else ''}"
+        f"{target_line}"
         f"📍 Этап: {state['stage']}\n"
         f"{bar} {pct}%\n"
         f"📦 Прогресс: {state['done']}/{state['total']}\n"
