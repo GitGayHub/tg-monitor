@@ -3885,10 +3885,11 @@ async def _launch_custom_recheck(source, context, config, pve_price=None, from_c
         )
     else:
         enabled_count = sum(1 for rc in (rc_skins or {}).values() if rc['enabled'])
+        skins_line = "" if is_confirmed_pve else f"🎮 Скинов: {enabled_count}\n"
         await reply(
             "🧪 <b>Кастомная проверка запущена!</b>\n\n"
             f"🎯 Режим: {display_label}\n"
-            f"{'' if is_confirmed_pve else f'🎮 Скинов: {enabled_count}\n'}"
+            f"{skins_line}"
             f"🛡 Подтв. PVE: {rc_pve.get('price', config.confirmed_pve_price)}₽ {'вкл' if rc_pve.get('enabled') else 'выкл'}\n"
             f"📈 Макс. цена: {max_price_override}₽\n"
             "⚠️ Может занять несколько минут...",
