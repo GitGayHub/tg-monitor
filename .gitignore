@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.log
+
+bot_runtime.out.log
+bot_runtime.err.log
+chat_id.txt
+
+*.pre_fix_backup
+*.decompiled.py
+*.decompiled2.py
+_enc_test.txt
+funpay_monitor.rar
+
+.env
+.env.*
