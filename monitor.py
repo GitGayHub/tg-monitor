@@ -861,11 +861,12 @@ def build_running_check_status(context):
     current = progress.get('current') or "Ожидание данных"
     bar, pct = make_progress_bar(done, total)
 
+    target_line = f"🧩 Цель: {target_label}\n" if target_label else ""
     text = (
         f"⏳ <b>Сейчас уже идёт проверка</b>\n\n"
         f"🔍 Автомониторинг: {auto_mode_label}\n"
         f"⚙️ Запущен сейчас: {running_now}\n"
-        f"{f'🧩 Цель: {target_label}\n' if target_label else ''}"
+        f"{target_line}"
         f"📍 Этап: {stage}\n"
         f"{bar} {pct}%\n"
         f"📦 Прогресс: {done}/{total}\n"
