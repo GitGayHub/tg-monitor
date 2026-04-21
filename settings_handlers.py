@@ -832,7 +832,21 @@ async def _show_check_menu(query, context):
     config = context.bot_data['config']
     info = _get_check_overview(config)
     running = _is_check_running(context)
-    status_text = "⚠️ Сейчас уже выполняется проверка.\n\n" if running else ""
+    progress = context.bot_data.get('current_check_progress') or {}
+    if running and progress:
+        bar, pct = _make_progress_bar(progress.get('done', 0), max(progress.get('total', 1), 1))
+        status_text = (
+            f"⚠️ Сейчас выполняется проверка:\n"
+            f"📍 Этап: {progress.get('stage', 'Подготовка')}\n"
+            f"{bar} {pct}%\n"
+            f"📦 Прогресс: {progress.get('done', 0)}/{max(progress.get('total', 1), 1)}\n"
+            f"🔎 Сейчас: {progress.get('current', '...')}\n"
+            f"✅ Отправлено: {progress.get('sent', 0)}\n\n"
+        )
+    elif running:
+        status_text = "⚠️ Сейчас уже выполняется проверка.\n\n"
+    else:
+        status_text = ""
     text = (
         "🔎 <b>Проверка</b>\n\n"
         f"{status_text}"
@@ -860,7 +874,21 @@ async def _show_check_menu_as_new_message(update, context):
     config = context.bot_data['config']
     info = _get_check_overview(config)
     running = _is_check_running(context)
-    status_text = "⚠️ Сейчас уже выполняется проверка.\n\n" if running else ""
+    progress = context.bot_data.get('current_check_progress') or {}
+    if running and progress:
+        bar, pct = _make_progress_bar(progress.get('done', 0), max(progress.get('total', 1), 1))
+        status_text = (
+            f"⚠️ Сейчас выполняется проверка:\n"
+            f"📍 Этап: {progress.get('stage', 'Подготовка')}\n"
+            f"{bar} {pct}%\n"
+            f"📦 Прогресс: {progress.get('done', 0)}/{max(progress.get('total', 1), 1)}\n"
+            f"🔎 Сейчас: {progress.get('current', '...')}\n"
+            f"✅ Отправлено: {progress.get('sent', 0)}\n\n"
+        )
+    elif running:
+        status_text = "⚠️ Сейчас уже выполняется проверка.\n\n"
+    else:
+        status_text = ""
     text = (
         "🔎 <b>Проверка</b>\n\n"
         f"{status_text}"
@@ -1808,7 +1836,7 @@ async def _send_recheck_result_message(chat_id, context, sent_count, snapshot, t
         'title': title,
         'sent_count': sent_count,
         'snapshot': snapshot,
-        'log_items': None,
+        'log_items': snapshot.get('log_items'),
     }
     context.bot_data['last_recheck_result'] = result
     await context.bot.send_message(

@@ -1657,7 +1657,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 f"{rating_emoji} <b>Рейтинг:</b> {rating_text}\n"
                 f"🔗 <a href='{href}'>Ссылка на товар</a>"
             )
-            msg = msg.replace(f"🔗 <a href='{href}'>Ссылка на товар</a>", ban_line)
+            link_line = f"🔗 <a href='{href}'>Ссылка</a>"
+            msg = msg.replace(f"🔗 <a href='{href}'>Ссылка на товар</a>", f"{ban_line}\n{link_line}")
 
             try:
                 if context:

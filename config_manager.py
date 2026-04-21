@@ -107,7 +107,7 @@ DEFAULT_RARE_SKINS = {
     },
     'floss': {
         'enabled': True,
-        'keywords': ['флосс', 'floss', 'зубная нить'],
+        'keywords': ['флосс', 'флос', 'floss', 'flos'],
         'price': 1500,
         'require_pve': False
     },
