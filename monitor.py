@@ -1066,15 +1066,26 @@ def _sync_search_min_price(keywords, require_pve=False):
                     if price_value is not None and price_value > 0:
                         normalized_kw = normalize_match_text(kw)
                         if normalized_kw and normalized_kw in item_text:
+                            # Быстрый путь: без PVE-фильтра детали не нужны — summary уже подтверждает
+                            # и ключевое слово, и отсутствие exclude-слов. Это на порядок ускоряет мин. прайс.
+                            if not require_pve:
+                                all_results[href] = {
+                                    'price': price_value,
+                                    'price_text': price_text,
+                                    'description': desc[:200],
+                                    'seller': seller,
+                                    'href': href,
+                                    'matched_kw': kw
+                                }
+                                continue
                             full_description, full_text = get_offer_texts(href)
                             combined_text = f"{item_text} {full_text}".strip()
                             if contains_exclude_keyword(combined_text, exclude_kws):
                                 continue
-                            if require_pve:
-                                pve_kws = config.get_confirmed_pve()
-                                has_pve_in_desc = any(normalize_match_text(pk) in combined_text for pk in pve_kws)
-                                if not has_pve_in_desc:
-                                    continue
+                            pve_kws = config.get_confirmed_pve()
+                            has_pve_in_desc = any(normalize_match_text(pk) in combined_text for pk in pve_kws)
+                            if not has_pve_in_desc:
+                                continue
                             all_results[href] = {
                                 'price': price_value,
                                 'price_text': price_text,

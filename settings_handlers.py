@@ -239,7 +239,7 @@ def _save_minprice_selection(context):
 
 
 async def _run_minprice_search_with_watchdog(context, label, search_coro_factory, heartbeat_callback=None,
-                                             timeout_seconds=90, heartbeat_seconds=5):
+                                             timeout_seconds=240, heartbeat_seconds=5):
     started = time.monotonic()
     task = asyncio.create_task(search_coro_factory())
     while True:
