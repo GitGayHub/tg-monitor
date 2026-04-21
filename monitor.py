@@ -1250,6 +1250,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         nonlocal progress_msg, last_progress_update
         if not progress_msg or not progress_bot:
             return
+        if context and context.bot_data.get('checkstop_pending'):
+            return
         now = time.monotonic()
         if not force and (now - last_progress_update) < 1.0:
             return

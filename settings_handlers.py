@@ -1556,6 +1556,8 @@ async def _launch_minprice_bundle_run(query, context, config):
         summary_data = []
 
         async def _update_progress(current_label):
+            if context.bot_data.get('checkstop_pending'):
+                return
             bar, pct = _make_progress_bar(step_done, max(total_steps, 1))
             bot_mode['params']['target_label'] = current_label
             try:
@@ -2338,6 +2340,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         await _show_main_menu(query, context)
 
     elif data == "set:checkstop":
+        context.bot_data['checkstop_pending'] = True
         bot_mode = context.bot_data.get('bot_mode', {}) or {}
         progress = context.bot_data.get('current_check_progress') or {}
         mode_key = bot_mode.get('mode', 'standard')
@@ -2367,6 +2370,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         )
 
     elif data == "set:checkstop:confirm":
+        context.bot_data.pop('checkstop_pending', None)
         context.bot_data['cancel_current_check'] = True
         await query.edit_message_text(
             "⏹ <b>Останавливаю текущую проверку...</b>\n"
@@ -2378,6 +2382,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         )
 
     elif data == "set:checkstop:cancel":
+        context.bot_data.pop('checkstop_pending', None)
         await _show_main_menu(query, context)
 
     elif data.startswith("set:hist:"):
@@ -3007,6 +3012,8 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         msg = query.message
 
         async def _edit_single_progress(done_steps, current_label):
+            if context.bot_data.get('checkstop_pending'):
+                return
             bar, pct = _make_progress_bar(done_steps, total_steps)
             try:
                 await msg.edit_text(
