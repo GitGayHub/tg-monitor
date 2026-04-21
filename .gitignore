@@ -17,3 +17,4 @@ funpay_monitor.rar
 .env.*
 commit.bat
 set_env.bat
+set_env.sh
