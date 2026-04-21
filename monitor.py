@@ -1747,9 +1747,34 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 async def check_funpay_job(context: ContextTypes.DEFAULT_TYPE):
     """Задача для JobQueue"""
     bot_mode_state = context.bot_data.get('bot_mode', {}) or {}
-    if bot_mode_state.get('mode', 'standard') != 'standard':
-        logger.info("⏭️ Фоновая проверка пропущена: выполняется ручной режим")
-        return
+    current_mode = bot_mode_state.get('mode', 'standard')
+    if current_mode != 'standard':
+        # Watchdog: если режим не-standard, но реально ничего не работает уже >15 мин — сбрасываем.
+        started_at = bot_mode_state.get('started_at')
+        stale = False
+        if not process_offers_lock.locked():
+            if started_at is None:
+                stale = True
+            else:
+                try:
+                    if time.time() - float(started_at) > 15 * 60:
+                        stale = True
+                except Exception:
+                    stale = True
+        if stale:
+            logger.warning(
+                f"⚠️ Watchdog: режим '{current_mode}' завис без активной задачи — сбрасываю в standard"
+            )
+            bot_mode_state['mode'] = 'standard'
+            bot_mode_state['params'] = {}
+            bot_mode_state['started_at'] = None
+            context.bot_data['bot_mode'] = bot_mode_state
+            context.bot_data.pop('current_check_progress', None)
+            context.bot_data.pop('current_check_origin', None)
+            context.bot_data['cancel_current_check'] = False
+        else:
+            logger.info("⏭️ Фоновая проверка пропущена: выполняется ручной режим")
+            return
     await process_offers(context=context, skip_seen=True)
 
 async def recheck(update: Update, context: ContextTypes.DEFAULT_TYPE):

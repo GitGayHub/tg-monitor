@@ -1498,6 +1498,9 @@ async def _show_minprice_custom(query, context):
 
 
 async def _launch_minprice_bundle_run(query, context, config):
+    if _is_check_running(context):
+        await _show_current_check_status(query, context)
+        return
     _ensure_minprice_selection(context)
     view = context.user_data.get('mp_custom_view', 'all')
     selected = context.user_data.get('mp_custom_skins', set())
@@ -2335,6 +2338,35 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         await _show_main_menu(query, context)
 
     elif data == "set:checkstop":
+        bot_mode = context.bot_data.get('bot_mode', {}) or {}
+        progress = context.bot_data.get('current_check_progress') or {}
+        mode_key = bot_mode.get('mode', 'standard')
+        mode_labels = {
+            'standard': 'Автомониторинг',
+            'pricetest': 'Мин. прайс',
+            'recheck': 'Полная перепроверка',
+            'recheck_pve': 'Перепроверка (неподтв. PVE)',
+            'recheck_custom': 'Кастомная перепроверка',
+        }
+        label = mode_labels.get(mode_key, mode_key)
+        target = (bot_mode.get('params') or {}).get('target_label') or progress.get('stage') or '—'
+        info_text = (
+            "⚠️ <b>Остановить текущую проверку?</b>\n\n"
+            f"⚙️ Запущено: <b>{label}</b>\n"
+            f"🎯 Цель: {target}\n"
+            f"📦 Прогресс: {progress.get('done', 0)}/{max(progress.get('total', 1), 1)}\n\n"
+            "Вы уверены?"
+        )
+        await query.edit_message_text(
+            info_text,
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Да, остановить", callback_data="set:checkstop:confirm")],
+                [InlineKeyboardButton("↩️ Отмена", callback_data="set:checkstop:cancel")],
+            ])
+        )
+
+    elif data == "set:checkstop:confirm":
         context.bot_data['cancel_current_check'] = True
         await query.edit_message_text(
             "⏹ <b>Останавливаю текущую проверку...</b>\n"
@@ -2344,6 +2376,9 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")]
             ])
         )
+
+    elif data == "set:checkstop:cancel":
+        await _show_main_menu(query, context)
 
     elif data.startswith("set:hist:"):
         item_type = parts[2] if len(parts) > 2 else 'skin'
@@ -2946,6 +2981,9 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             kw_list += f" +ещё {len(all_keywords) - 4}"
         origin_kind = parts[4] if len(parts) > 4 else ''
         origin_page = parts[5] if len(parts) > 5 else ''
+        if _is_check_running(context):
+            await _show_current_check_status(query, context)
+            return
         bot_mode = context.bot_data.get('bot_mode', {})
         bot_mode['mode'] = 'pricetest'
         bot_mode['params'] = {
