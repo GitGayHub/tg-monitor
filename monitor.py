@@ -194,10 +194,18 @@ def contains_exclude_keyword(text, exclude_keywords):
     return None
 
 
+def _keyword_word_match(normalized_kw, text):
+    """Word-boundary match: 'еон' matches 'еон' but not 'неоновая'."""
+    if not normalized_kw:
+        return False
+    pattern = r'(?:^|\b|\s|[^\w])' + re.escape(normalized_kw) + r'(?:$|\b|\s|[^\w])'
+    return bool(re.search(pattern, text))
+
+
 def _keywords_match_text(keywords, normalized_text):
     for kw in keywords:
         normalized_kw = normalize_match_text(kw)
-        if normalized_kw and normalized_kw in normalized_text:
+        if normalized_kw and _keyword_word_match(normalized_kw, normalized_text):
             return kw
     return None
 
@@ -1065,7 +1073,7 @@ def _sync_search_min_price(keywords, require_pve=False):
 
                     if price_value is not None and price_value > 0:
                         normalized_kw = normalize_match_text(kw)
-                        if normalized_kw and normalized_kw in item_text:
+                        if normalized_kw and _keyword_word_match(normalized_kw, item_text):
                             # Быстрый путь: без PVE-фильтра детали не нужны — summary уже подтверждает
                             # и ключевое слово, и отсутствие exclude-слов. Это на порядок ускоряет мин. прайс.
                             if not require_pve:
