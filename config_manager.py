@@ -125,7 +125,14 @@ DEFAULT_CONFIRMED_PVE = [
     'фарм v-bucks', 'фарм vbucks', 'farm vbucks', 'farm v-bucks',
     'фарм v bucks', 'farm v bucks',
     'vbucks farm', 'v-bucks farm',
+    "founder's edition", 'founders edition', 'founder edition',
+    'founder pack', 'founders pack', "founder's pack", 'founder',
+    'фаундер', 'фаундерс',
+    'издание основателя', 'набор основателя', 'набор основателей',
+    'пак основателя', 'паки основателя', 'паки основателей',
 ]
+# ВАЖНО: не добавлять голое 'основатель' — это имя скина (EN: Foundation),
+# оно даст ложные срабатывания на лотах со скином, а не с Founder Pack.
 
 DEFAULT_UNCONFIRMED_PVE = ['stw', 'pve', 'пве']
 
