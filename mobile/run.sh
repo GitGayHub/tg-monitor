@@ -2,16 +2,20 @@
 # Manual run on Linux/Termux/macOS with auto pull/push state sync.
 set -e
 
-cd "$(dirname "$0")"
+# Go to mobile/ first to load env, then to repo root for the bot.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Load env vars from set_env.sh (not in git)
-if [ -f set_env.sh ]; then
+# Load env vars from mobile/set_env.sh (not in git)
+if [ -f "$SCRIPT_DIR/set_env.sh" ]; then
     # shellcheck source=/dev/null
-    source set_env.sh
+    source "$SCRIPT_DIR/set_env.sh"
 else
-    echo "ERROR: set_env.sh not found. Copy set_env.example.sh to set_env.sh and fill in tokens."
+    echo "ERROR: mobile/set_env.sh not found. Copy mobile/set_env.example.sh to mobile/set_env.sh and fill in tokens."
     exit 1
 fi
+
+cd "$REPO_DIR"
 
 echo "=== [1/3] Pulling latest state from GitHub ==="
 git pull --rebase || { echo "git pull failed"; exit 1; }
