@@ -127,7 +127,7 @@ def get_price_summary():
             rows = conn.execute(
                 """
                 SELECT ps.item_type, ps.item_id, ps.item_name, ps.mode,
-                       pso.price_value, pso.price_text, pso.href, ps.recorded_at
+                       pso.price_value, pso.price_text, pso.href, ps.recorded_at, ps.source
                 FROM price_snapshots ps
                 JOIN price_snapshot_offers pso ON pso.snapshot_id = ps.id AND pso.rank_num = 1
                 WHERE ps.id IN (
