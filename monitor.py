@@ -1405,7 +1405,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         candidates = []
 
         # Build keyword → skin_id map for auto price tracking
-        auto_price_map = {}  # skin_id → {price, price_text, href, seller, name}
+        auto_price_map = {}  # skin_id → list of up to 3 cheapest offers
         kw_to_skin = {}
         if skip_seen:  # only for background auto-monitoring
             for sid, skin in skins_dict.items():
@@ -1494,15 +1494,16 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             price_value = parse_price(price_text)
 
-            # Auto price tracking: record min price per skin (before max_price filter)
+            # Auto price tracking: record top-3 cheapest per skin (before max_price filter)
             if price_value is not None and matched_keyword.lower() in kw_to_skin:
                 sid, sname = kw_to_skin[matched_keyword.lower()]
-                prev = auto_price_map.get(sid)
-                if prev is None or price_value < prev['price']:
-                    auto_price_map[sid] = {
-                        'price': price_value, 'price_text': price_text,
-                        'href': href, 'seller': user, 'name': sname,
-                    }
+                entry = {'price': price_value, 'price_text': price_text,
+                         'href': href, 'seller': user, 'name': sname}
+                lst = auto_price_map.setdefault(sid, [])
+                lst.append(entry)
+                lst.sort(key=lambda x: x['price'])
+                if len(lst) > 3:
+                    lst.pop()
 
             if log_state and price_value is not None:
                 for position_id in log_keyword_map.get(matched_keyword.lower(), ()):
@@ -1528,11 +1529,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
         # Save auto-monitoring prices to history
         if skip_seen and auto_price_map:
-            for sid, data in auto_price_map.items():
+            for sid, offers in auto_price_map.items():
+                name = offers[0]['name'] if offers else sid
                 record_price_snapshot(
-                    'skin', sid, data['name'], 'any',
-                    [{'price': data['price'], 'price_text': data['price_text'],
-                      'href': data['href'], 'seller': data['seller']}],
+                    'skin', sid, name, 'any',
+                    [{'price': o['price'], 'price_text': o['price_text'],
+                      'href': o['href'], 'seller': o['seller']} for o in offers],
                     source='auto'
                 )
             logger.info(f"📈 Авто-цены записаны: {len(auto_price_map)} скинов")

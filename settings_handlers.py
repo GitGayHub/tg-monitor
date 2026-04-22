@@ -13,7 +13,7 @@ from telegram.ext import (
     CommandHandler, CallbackQueryHandler, MessageHandler,
     ConversationHandler, ContextTypes, filters
 )
-from price_history import get_price_history, record_price_snapshot, get_price_summary, get_item_offers_unique, clear_all_price_history, get_red_flags, clear_red_flags
+from price_history import get_price_history, record_price_snapshot, get_price_summary, get_item_offers_unique, clear_all_price_history, get_red_flags, clear_red_flags, get_latest_top3
 
 logger = logging.getLogger(__name__)
 
@@ -846,7 +846,10 @@ async def _show_stats(query, context):
         else:
             src = (a or p or {}).get('source', 'minprice')
             se = '🔍' if src == 'minprice' else '📡'
-        if a and p:
+        same = a and p and a.get('href') and a['href'] == p['href']
+        if same:
+            text += f"{se}<b>{name}</b>: 🔒 нету / 🧟 {_price_link(p['price_text'], p['href'])}\n"
+        elif a and p:
             text += f"{se}<b>{name}</b>: 🔒 {_price_link(a['price_text'], a['href'])} / 🧟 {_price_link(p['price_text'], p['href'])}\n"
         elif a:
             text += f"{se}<b>{name}</b>: 🔒 {_price_link(a['price_text'], a['href'])}\n"
@@ -856,9 +859,9 @@ async def _show_stats(query, context):
     keyboard = []
     for item in items.values():
         keyboard.append([
+            InlineKeyboardButton("⭐", callback_data=f"set:stats:top3:{item['it']}:{item['ii']}"),
             InlineKeyboardButton(f"📜 {item['name']}", callback_data=f"set:stats:hist:{item['it']}:{item['ii']}"),
         ])
-    keyboard.append([InlineKeyboardButton("🚩 Красные флаги", callback_data="set:stats:redflags")])
     keyboard.append([InlineKeyboardButton("🗑 Сброс статистики", callback_data="set:stats:reset")])
     keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
@@ -2427,6 +2430,23 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
     elif data == "set:stats":
         await _show_stats(query, context)
+
+    elif data.startswith("set:stats:top3:"):
+        parts = data.split(":")
+        if len(parts) >= 5:
+            it, ii = parts[3], ":".join(parts[4:])
+            top3 = get_latest_top3(it, ii, mode='any')
+            name = ii.replace('_', ' ').title()
+            if not top3:
+                alert = f"{name}\nНет данных"
+            else:
+                lines = []
+                for i, o in enumerate(top3, 1):
+                    p = o.get('price_text') or '—'
+                    s = o.get('seller') or '?'
+                    lines.append(f"{i}. {p} — {s}")
+                alert = f"⭐ {name} (топ-3):\n" + "\n".join(lines)
+            await query.answer(alert, show_alert=True)
 
     elif data.startswith("set:stats:info:"):
         parts = data.split(":")

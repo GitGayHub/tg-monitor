@@ -228,6 +228,24 @@ def get_item_offers_unique(item_type, item_id, limit=80):
     return unique
 
 
+def get_latest_top3(item_type, item_id, mode='any'):
+    """Get top-3 offers from the latest snapshot for an item+mode."""
+    init_price_history_db()
+    with _DB_LOCK:
+        with _connect() as conn:
+            snap = conn.execute(
+                "SELECT id, recorded_at, source FROM price_snapshots WHERE item_type=? AND item_id=? AND mode=? ORDER BY id DESC LIMIT 1",
+                (item_type, item_id, mode),
+            ).fetchone()
+            if not snap:
+                return []
+            rows = conn.execute(
+                "SELECT rank_num, price_value, price_text, seller, href FROM price_snapshot_offers WHERE snapshot_id=? ORDER BY rank_num",
+                (snap['id'],),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_price_history(item_type, item_id, mode=None, limit=12):
     init_price_history_db()
     params = [item_type, item_id]
