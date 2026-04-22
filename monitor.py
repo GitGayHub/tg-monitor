@@ -1186,6 +1186,29 @@ def _sync_search_min_price(keywords, require_pve=False):
                 logger.error(f"Ошибка fallback-скана мин. цены для '{list_url}': {e}")
 
     results = sorted(all_results.values(), key=lambda x: x['price'])
+
+    # Для без-PVE пути описания не открывались (быстрый путь).
+    # Проверяем exclude keywords по полному описанию только для топ кандидатов.
+    if not require_pve and results:
+        exclude_kws = config.get_exclude_keywords()
+        validated = []
+        for candidate in results[:8]:
+            href = candidate['href']
+            if href not in details_cache:
+                try:
+                    get_offer_texts(href)
+                    time.sleep(random.uniform(0.25, 0.5))
+                except Exception as e:
+                    logger.warning(f"Мін. прайс: не удалось открыть описание {href}: {e}")
+            _, full_text = details_cache.get(href, ("", ""))
+            if full_text and contains_exclude_keyword(full_text, exclude_kws):
+                logger.info(f"Мін. прайс: отфильтровано по описанию — {href}")
+                continue
+            validated.append(candidate)
+            if len(validated) >= 3:
+                break
+        return validated
+
     return results[:3]
 
 
