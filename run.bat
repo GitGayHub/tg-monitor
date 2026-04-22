@@ -10,3 +10,4 @@ if exist set_env.bat (
 )
 
 python run_launcher.py
+pause

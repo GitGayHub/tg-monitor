@@ -36,7 +36,6 @@ signal.signal(signal.SIGINT, signal.SIG_IGN)
 try:
     subprocess.run([sys.executable, "monitor.py"], cwd=REPO)
 finally:
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
     print("\n=== [3/3] Pushing state updates to GitHub ===")
     git("add", *STATE)
     if git_has_staged():
@@ -45,4 +44,3 @@ finally:
         print("Done.")
     else:
         print("No state changes to push.")
-    input("\nPress Enter to exit...")
