@@ -2325,7 +2325,9 @@ def main():
     job_queue = application.job_queue
     job_queue.run_repeating(check_funpay_job, interval=config.check_interval, first=10)
 
-    application.run_polling(drop_pending_updates=True)
+    import signal as _signal
+    _signal.signal(_signal.SIGINT, lambda s, f: sys.exit(0))
+    application.run_polling(drop_pending_updates=True, stop_signals=(_signal.SIGTERM, _signal.SIGABRT))
 
 if __name__ == "__main__":
     main()
