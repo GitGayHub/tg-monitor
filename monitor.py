@@ -14,7 +14,7 @@ import json
 import base64
 
 from config_manager import ConfigManager
-from price_history import init_price_history_db, record_price_snapshot
+from price_history import init_price_history_db, record_price_snapshot, record_red_flag
 from settings_handlers import register_settings_handlers
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -1613,6 +1613,16 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             matched_exclude = contains_exclude_keyword(combined_text, exclude_keywords)
             if matched_exclude:
                 logger.info(f"🚫 Исключено ('{matched_exclude}'): {candidate['short_description'][:40]}...")
+                try:
+                    record_red_flag(
+                        item_name=candidate.get('short_description', '')[:80],
+                        price_text=candidate.get('price_text', ''),
+                        href=candidate.get('href', ''),
+                        seller=candidate.get('user', ''),
+                        reason=str(matched_exclude),
+                    )
+                except Exception:
+                    pass
                 continue
 
             if premium_only:

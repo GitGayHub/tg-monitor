@@ -13,7 +13,7 @@ from telegram.ext import (
     CommandHandler, CallbackQueryHandler, MessageHandler,
     ConversationHandler, ContextTypes, filters
 )
-from price_history import get_price_history, record_price_snapshot, get_price_summary, get_item_offers_unique, clear_all_price_history
+from price_history import get_price_history, record_price_snapshot, get_price_summary, get_item_offers_unique, clear_all_price_history, get_red_flags, clear_red_flags
 
 logger = logging.getLogger(__name__)
 
@@ -858,6 +858,7 @@ async def _show_stats(query, context):
         keyboard.append([
             InlineKeyboardButton(f"📜 {item['name']}", callback_data=f"set:stats:hist:{item['it']}:{item['ii']}"),
         ])
+    keyboard.append([InlineKeyboardButton("🚩 Красные флаги", callback_data="set:stats:redflags")])
     keyboard.append([InlineKeyboardButton("🗑 Сброс статистики", callback_data="set:stats:reset")])
     keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
@@ -932,6 +933,28 @@ async def _show_stats_item_history(query, context, item_type, item_id):
     keyboard = [
         [InlineKeyboardButton("🔙 Назад", callback_data="set:stats")],
         [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
+    ]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
+
+
+async def _show_red_flags(query, context):
+    flags = get_red_flags(limit=30)
+    if not flags:
+        text = "🚩 <b>Красные флаги</b>\n\nПока ничего не поймано."
+    else:
+        text = f"🚩 <b>Красные флаги</b> (последние {len(flags)}):\n\n"
+        for f in flags:
+            price_display = _price_link(f.get('price_text') or '—', f.get('href'))
+            seller = html.escape(f.get('seller') or '?')
+            reason = html.escape(f.get('reason') or '?')
+            date = f.get('recorded_at', '')
+            name = html.escape(f.get('item_name') or '?')
+            text += f"❌ {price_display} — {seller} <i>({date})</i>\n"
+            text += f"   <code>{name[:60]}</code>\n"
+            text += f"   причина: <i>{reason}</i>\n\n"
+    keyboard = [
+        [InlineKeyboardButton("🗑 Очистить флаги", callback_data="set:stats:redflags:clear")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:stats")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
@@ -2409,6 +2432,14 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         parts = data.split(":")
         if len(parts) >= 5:
             await _show_stats_info(query, context, parts[3], ":".join(parts[4:]))
+
+    elif data == "set:stats:redflags":
+        await _show_red_flags(query, context)
+
+    elif data == "set:stats:redflags:clear":
+        clear_red_flags()
+        await query.answer("✅ Флаги очищены")
+        await _show_red_flags(query, context)
 
     elif data == "set:stats:reset":
         keyboard = [

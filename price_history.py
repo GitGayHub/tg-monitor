@@ -52,6 +52,22 @@ def init_price_history_db():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_price_offers_snapshot ON price_snapshot_offers(snapshot_id, rank_num)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS red_flags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recorded_at TEXT NOT NULL,
+                    item_name TEXT,
+                    price_text TEXT,
+                    href TEXT,
+                    seller TEXT,
+                    reason TEXT
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_red_flags_date ON red_flags(recorded_at DESC)"
+            )
 
 
 def record_price_snapshot(item_type, item_id, item_name, mode, results, source="minprice"):
@@ -114,6 +130,35 @@ def record_price_snapshot(item_type, item_id, item_name, mode, results, source="
                     ),
                 )
     return snapshot_id
+
+
+def record_red_flag(item_name, price_text, href, seller, reason):
+    init_price_history_db()
+    recorded_at = datetime.now().strftime("%d.%m.%Y %H:%M")
+    with _DB_LOCK:
+        with _connect() as conn:
+            conn.execute(
+                "INSERT INTO red_flags(recorded_at, item_name, price_text, href, seller, reason) VALUES (?,?,?,?,?,?)",
+                (recorded_at, item_name, price_text, href, seller, reason),
+            )
+
+
+def get_red_flags(limit=50):
+    init_price_history_db()
+    with _DB_LOCK:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT recorded_at, item_name, price_text, href, seller, reason FROM red_flags ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def clear_red_flags():
+    init_price_history_db()
+    with _DB_LOCK:
+        with _connect() as conn:
+            conn.execute("DELETE FROM red_flags")
 
 
 def clear_all_price_history():
