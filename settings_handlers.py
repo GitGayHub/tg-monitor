@@ -2363,7 +2363,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
         if action == 'menu':
             await _show_recheck_menu(query, context)
-        elif action in ('custom', 'custompve', 'cm', 'cmpve', 'cmunconfirmed', 'cmtoggle',
+        elif action in ('custom', 'cm', 'cmpve', 'cmunconfirmed', 'cmtoggle',
                         'cmpvetoggle', 'cmpveprice', 'cmpvesave', 'cmpverun', 'cmprice',
                         'cmsave', 'cmgo', 'edtoggle', 'edprice', 'edsave', 'edgo'):
             await _show_check_menu(query, context)
