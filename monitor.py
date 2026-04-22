@@ -2327,7 +2327,7 @@ def main():
 
     import signal as _signal
     _signal.signal(_signal.SIGINT, lambda s, f: sys.exit(0))
-    application.run_polling(drop_pending_updates=True, stop_signals=(_signal.SIGTERM, _signal.SIGABRT))
+    application.run_polling(drop_pending_updates=True, stop_signals=None)
 
 if __name__ == "__main__":
     main()
