@@ -847,14 +847,9 @@ async def _show_stats(query, context):
             src = (a or p or {}).get('source', 'minprice')
             se = '🔍' if src == 'minprice' else '📡'
         same = a and p and a.get('href') and a['href'] == p['href']
-        if same:
-            text += f"{se}<b>{name}</b>: 🔒 нету / 🧟 {_price_link(p['price_text'], p['href'])}\n"
-        elif a and p:
-            text += f"{se}<b>{name}</b>: 🔒 {_price_link(a['price_text'], a['href'])} / 🧟 {_price_link(p['price_text'], p['href'])}\n"
-        elif a:
-            text += f"{se}<b>{name}</b>: 🔒 {_price_link(a['price_text'], a['href'])}\n"
-        elif p:
-            text += f"{se}<b>{name}</b>: 🧟 {_price_link(p['price_text'], p['href'])}\n"
+        a_display = '—' if (not a or same) else _price_link(a['price_text'], a['href'])
+        p_display = _price_link(p['price_text'], p['href']) if p else '—'
+        text += f"{se}<b>{name}</b>: 🔒 {a_display} / 🧟 {p_display}\n"
 
     keyboard = []
     for item in items.values():
@@ -2332,6 +2327,27 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         await query.answer("❌ Не авторизованы", show_alert=True)
         return
 
+    if query.data and query.data.startswith("set:stats:top3:"):
+        if _check_auth(update, context):
+            parts = query.data.split(":")
+            if len(parts) >= 5:
+                it, ii = parts[3], ":".join(parts[4:])
+                top3 = get_latest_top3(it, ii, mode='any')
+                name = ii.replace('_', ' ').title()
+                if not top3:
+                    alert = f"{name}\nНет данных"
+                else:
+                    lines = []
+                    for i, o in enumerate(top3, 1):
+                        p = o.get('price_text') or '—'
+                        s = o.get('seller') or '?'
+                        lines.append(f"{i}. {p} — {s}")
+                    alert = f"⭐ {name} (топ-3):\n" + "\n".join(lines)
+                await query.answer(alert, show_alert=True)
+                return
+        await query.answer("❌ Не авторизованы", show_alert=True)
+        return
+
     await query.answer()
 
     if not _check_auth(update, context):
@@ -2430,23 +2446,6 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
     elif data == "set:stats":
         await _show_stats(query, context)
-
-    elif data.startswith("set:stats:top3:"):
-        parts = data.split(":")
-        if len(parts) >= 5:
-            it, ii = parts[3], ":".join(parts[4:])
-            top3 = get_latest_top3(it, ii, mode='any')
-            name = ii.replace('_', ' ').title()
-            if not top3:
-                alert = f"{name}\nНет данных"
-            else:
-                lines = []
-                for i, o in enumerate(top3, 1):
-                    p = o.get('price_text') or '—'
-                    s = o.get('seller') or '?'
-                    lines.append(f"{i}. {p} — {s}")
-                alert = f"⭐ {name} (топ-3):\n" + "\n".join(lines)
-            await query.answer(alert, show_alert=True)
 
     elif data.startswith("set:stats:info:"):
         parts = data.split(":")
