@@ -818,7 +818,7 @@ async def _show_stats(query, context):
             }
         mode = (row.get('mode') or '').lower()
         raw_src = row.get('source', 'minprice')
-        src = 'auto' if raw_src in ('recheck_log', 'auto') else 'minprice'
+        src = 'auto' if raw_src == 'auto' else 'minprice'
         sources.add(src)
         entry = {
             'price_text': row.get('price_text') or '—',
@@ -896,7 +896,7 @@ async def _show_stats_item_history(query, context, item_type, item_id):
         if row.get('item_type') == item_type and row.get('item_id') == item_id:
             mode = (row.get('mode') or '').lower()
             raw_src = row.get('source', 'minprice')
-            src = 'auto' if raw_src in ('recheck_log', 'auto') else 'minprice'
+            src = 'auto' if raw_src == 'auto' else 'minprice'
             src_label = 'мин.прайс' if src == 'minprice' else 'авто'
             date = row.get('recorded_at', '?')
             mode_icon = '🧟' if 'pve' in mode else '🔒'
