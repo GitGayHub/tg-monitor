@@ -846,18 +846,25 @@ async def _show_stats(query, context):
         else:
             src = (a or p or {}).get('source', 'minprice')
             se = '🔍' if src == 'minprice' else '📡'
-        same = a and p and a.get('href') and a['href'] == p['href']
-        a_display = '—' if (not a or same) else _price_link(a['price_text'], a['href'])
-        p_display = _price_link(p['price_text'], p['href']) if p else '—'
-        text += f"{se}<b>{name}</b>: 🔒 {a_display} / 🧟 {p_display}\n"
+        is_skin = item['it'] == 'skin'
+        if is_skin:
+            same = a and p and a.get('href') and a['href'] == p['href']
+            a_display = '—' if (not a or same) else _price_link(a['price_text'], a['href'])
+            p_display = _price_link(p['price_text'], p['href']) if p else '—'
+            text += f"{se}<b>{name}</b>: 🔒 {a_display} / 🧟 {p_display}\n"
+        else:
+            best = a or p
+            price = _price_link(best['price_text'], best['href']) if best else '—'
+            text += f"{se}<b>{name}</b>: {price}\n"
 
-    keyboard = []
-    for item in items.values():
-        keyboard.append([
-            InlineKeyboardButton(f"⭐📜 {item['name']}", callback_data=f"set:stats:hist:{item['it']}:{item['ii']}"),
-        ])
-    keyboard.append([InlineKeyboardButton("🗑 Сброс статистики", callback_data="set:stats:reset")])
-    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
+    keyboard = [
+        [
+            InlineKeyboardButton("⭐ Топ-3 цены", callback_data="set:stats:items"),
+            InlineKeyboardButton("📜 История цен", callback_data="set:stats:histmenu"),
+        ],
+        [InlineKeyboardButton("🗑 Сброс статистики", callback_data="set:stats:reset")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
+    ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
 
@@ -877,6 +884,52 @@ async def _show_stats_info(query, context, item_type, item_id):
             lines.append(f"{mode_label}: {src_label} — {date}")
     alert = f"{name}\n" + "\n".join(lines) if lines else "Нет данных"
     await query.answer(alert, show_alert=True)
+
+
+async def _show_stats_top3_all(query, context):
+    """Страница с топ-3 ценами для всех скинов."""
+    summary = get_price_summary()
+    prices = summary.get('latest_prices', [])
+    seen_items = set()
+    text = "⭐ <b>Топ-3 цены:</b>\n\n"
+    for row in prices:
+        it, ii = row.get('item_type', 'skin'), row.get('item_id', '')
+        key = f"{it}:{ii}"
+        if key in seen_items:
+            continue
+        seen_items.add(key)
+        name = html.escape(row.get('item_name') or ii)
+        top3 = get_latest_top3(it, ii, mode=(row.get('mode') or 'any'))
+        if not top3:
+            text += f"<b>{name}</b>: нет данных\n"
+        else:
+            offers_str = ", ".join(
+                f"{_price_link(o.get('price_text') or '—', o.get('href'))} ({html.escape(o.get('seller') or '?')})"
+                for o in top3
+            )
+            text += f"<b>{name}</b>: {offers_str}\n"
+    keyboard = [
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:stats")],
+    ]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
+
+
+async def _show_stats_hist_menu(query, context):
+    """Меню выбора скина для просмотра истории."""
+    summary = get_price_summary()
+    prices = summary.get('latest_prices', [])
+    seen = set()
+    keyboard = []
+    for row in prices:
+        it, ii = row.get('item_type', 'skin'), row.get('item_id', '')
+        key = f"{it}:{ii}"
+        if key in seen:
+            continue
+        seen.add(key)
+        name = row.get('item_name') or ii
+        keyboard.append([InlineKeyboardButton(f"📜 {name}", callback_data=f"set:stats:hist:{it}:{ii}")])
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="set:stats")])
+    await query.edit_message_text("📜 <b>Выберите позицию:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_stats_item_history(query, context, item_type, item_id):
@@ -2452,6 +2505,12 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
     elif data == "set:stats":
         await _show_stats(query, context)
+
+    elif data == "set:stats:items":
+        await _show_stats_top3_all(query, context)
+
+    elif data == "set:stats:histmenu":
+        await _show_stats_hist_menu(query, context)
 
     elif data.startswith("set:stats:info:"):
         parts = data.split(":")
