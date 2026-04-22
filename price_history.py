@@ -116,6 +116,35 @@ def record_price_snapshot(item_type, item_id, item_name, mode, results, source="
     return snapshot_id
 
 
+def get_price_summary():
+    """Return aggregate stats: total snapshots, latest min price per item, date range."""
+    init_price_history_db()
+    with _DB_LOCK:
+        with _connect() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM price_snapshots").fetchone()[0]
+            first = conn.execute("SELECT MIN(recorded_at) FROM price_snapshots").fetchone()[0]
+            last = conn.execute("SELECT MAX(recorded_at) FROM price_snapshots").fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT ps.item_type, ps.item_id, ps.item_name, ps.mode,
+                       pso.price_value, pso.price_text, ps.recorded_at
+                FROM price_snapshots ps
+                JOIN price_snapshot_offers pso ON pso.snapshot_id = ps.id AND pso.rank_num = 1
+                WHERE ps.id IN (
+                    SELECT MAX(id) FROM price_snapshots
+                    GROUP BY item_type, item_id, mode
+                )
+                ORDER BY ps.item_name
+                """
+            ).fetchall()
+    return {
+        'total_snapshots': total,
+        'first_date': first,
+        'last_date': last,
+        'latest_prices': [dict(r) for r in rows],
+    }
+
+
 def get_price_history(item_type, item_id, mode=None, limit=12):
     init_price_history_db()
     params = [item_type, item_id]

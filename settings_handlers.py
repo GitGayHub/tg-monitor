@@ -13,7 +13,7 @@ from telegram.ext import (
     CommandHandler, CallbackQueryHandler, MessageHandler,
     ConversationHandler, ContextTypes, filters
 )
-from price_history import get_price_history, record_price_snapshot
+from price_history import get_price_history, record_price_snapshot, get_price_summary
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,8 @@ def _build_settings_main_markup(context):
          InlineKeyboardButton("🚫 Фильтры", callback_data="set:filters:menu")],
         [InlineKeyboardButton("🏷️ Цены и таймеры", callback_data="set:prices:menu"),
          InlineKeyboardButton("🔎 Проверка", callback_data="set:check:menu")],
-        [InlineKeyboardButton("📊 Статус", callback_data="set:status")],
+        [InlineKeyboardButton("📊 Статус", callback_data="set:status"),
+         InlineKeyboardButton("📈 Статистика", callback_data="set:stats")],
     ]
     if _is_check_running(context):
         keyboard.append([InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
@@ -785,6 +786,37 @@ async def _show_status(query, context):
         f"👁 Просмотрено: {seen_count} товаров\n"
         f"🚷 В бан-листе: {banned_count} лотов\n"
     )
+
+    keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")]]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+
+async def _show_stats(query, context):
+    """Показывает статистику: кол-во просмотренных, отправленных, цены из БД."""
+    config = context.bot_data['config']
+    seen_count = len(context.bot_data.get('seen_ids', set()))
+    sent_count = len(context.bot_data.get('sent_offers', {}))
+    banned_count = len(context.bot_data.get('banned_ids', set()))
+
+    summary = get_price_summary()
+    text = "📈 <b>Статистика</b>\n\n"
+    text += f"👁 Просмотрено: <b>{seen_count}</b> товаров\n"
+    text += f"📩 Отправлено: <b>{sent_count}</b> предложений\n"
+    text += f"🚷 В бан-листе: <b>{banned_count}</b>\n"
+    text += f"📸 Снимков цен: <b>{summary['total_snapshots']}</b>\n"
+
+    if summary['first_date'] and summary['last_date']:
+        text += f"📅 Период: {summary['first_date']} — {summary['last_date']}\n"
+
+    prices = summary.get('latest_prices', [])
+    if prices:
+        text += "\n💰 <b>Последние мин. цены:</b>\n"
+        for row in prices:
+            name = html.escape(row.get('item_name') or row.get('item_id', '?'))
+            mode = row.get('mode', '')
+            price_txt = row.get('price_text') or '—'
+            mode_icon = '🔒' if 'pve' in mode.lower() else '🪄' if 'any' in mode.lower() else '📦'
+            text += f"  {mode_icon} {name} ({mode}): <b>{html.escape(price_txt)}</b>\n"
 
     keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -2245,6 +2277,9 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
     elif data == "set:status":
         await _show_status(query, context)
+
+    elif data == "set:stats":
+        await _show_stats(query, context)
 
     elif data == "set:sync":
         sync_fn = context.bot_data.get('sync_fn')

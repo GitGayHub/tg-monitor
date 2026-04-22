@@ -79,13 +79,24 @@ def save_chat_id(new_id):
         f.write(str(new_id))
     chat_id = str(new_id)
 
+SEEN_IDS_MAX = 15000
+
 def load_seen_ids():
     global seen_ids
     try:
         with open(SEEN_IDS_FILE, 'r') as f:
-            seen_ids = set(line.strip() for line in f if line.strip())
+            all_ids = [line.strip() for line in f if line.strip()]
     except FileNotFoundError:
         seen_ids = set()
+        return
+    if len(all_ids) > SEEN_IDS_MAX:
+        trimmed = all_ids[-SEEN_IDS_MAX:]
+        logger.info(f"🧹 Очистка seen_ids: {len(all_ids)} → {len(trimmed)}")
+        with open(SEEN_IDS_FILE, 'w') as f:
+            f.write('\n'.join(trimmed) + '\n')
+        seen_ids = set(trimmed)
+    else:
+        seen_ids = set(all_ids)
 
 def save_seen_id(offer_id):
     with open(SEEN_IDS_FILE, 'a') as f:
