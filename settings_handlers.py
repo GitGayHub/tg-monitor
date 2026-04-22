@@ -2267,6 +2267,8 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         action = parts[2] if len(parts) > 2 else 'menu'
         if action == 'menu':
             await _show_check_menu(query, context)
+        elif action in ('custom', 'customskins', 'custompve'):
+            await _show_check_menu(query, context)
         elif action == 'full':
             await _start_full_recheck(query, context, config)
         elif action == 'minprice':
@@ -2361,6 +2363,10 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
         if action == 'menu':
             await _show_recheck_menu(query, context)
+        elif action in ('custom', 'custompve', 'cm', 'cmpve', 'cmunconfirmed', 'cmtoggle',
+                        'cmpvetoggle', 'cmpveprice', 'cmpvesave', 'cmpverun', 'cmprice',
+                        'cmsave', 'cmgo', 'edtoggle', 'edprice', 'edsave', 'edgo'):
+            await _show_check_menu(query, context)
         elif action == 'showlog':
             run_id = parts[3] if len(parts) > 3 else ''
             page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
