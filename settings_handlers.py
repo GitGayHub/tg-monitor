@@ -166,7 +166,7 @@ def _build_settings_main_text(config):
     return (
         "⚙️ <b>Панель настроек</b>\n\n"
         f"🎮 Скинов: {enabled}/{len(skins)} | 🏆 Изданий: {len(editions)}\n"
-        f"🔒 С PVE: {pve_req}/{len(skins)}\n"
+        f"🧟 С PVE: {pve_req}/{len(skins)}\n"
         f"🚫 Фильтров: {len(config.get_exclude_keywords())}\n\n"
         "Выберите раздел:"
     )
@@ -318,7 +318,7 @@ async def _show_skins_menu(query, context):
     )
     keyboard = [
         [InlineKeyboardButton("🎮 Скины", callback_data="set:skins:list:0")],
-        [InlineKeyboardButton("🔒 PVE", callback_data="set:skins:pvelist:0")],
+        [InlineKeyboardButton("🧟 PVE", callback_data="set:skins:pvelist:0")],
         [InlineKeyboardButton("🔙 Главное меню", callback_data="set:main")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -436,7 +436,7 @@ async def _show_skins_list(query, context, page=0):
             sid = item_id
             skin = config.get_skin(sid)
             icon = "✅" if skin.get('enabled', True) else "⛔"
-            pve_icon = "🔒 PVE" if skin.get('require_pve', False) else "🪄 Без"
+            pve_icon = "🧟 PVE" if skin.get('require_pve', False) else "🔒 Без"
             name = sid.replace('_', ' ').title()
             price = skin.get('price', 0)
             keyboard.append([
@@ -453,7 +453,7 @@ async def _show_skins_list(query, context, page=0):
     all_enabled = bool(all_skins) and all(s.get('enabled', True) for s in all_skins.values())
     all_pve = bool(all_skins) and all(s.get('require_pve', False) for s in all_skins.values())
     skins_all_btn = "⛔ Все выкл" if all_enabled else "✅ Все вкл"
-    pve_all_btn = "🪄 PVE выкл" if all_pve else "🔒 PVE всем"
+    pve_all_btn = "🔒 PVE выкл" if all_pve else "🧟 PVE всем"
     keyboard.append([
         InlineKeyboardButton(skins_all_btn, callback_data=f"set:skins:alltoggle:{page}"),
         InlineKeyboardButton(pve_all_btn, callback_data=f"set:skins:pveall:{page}")
@@ -492,7 +492,7 @@ async def _show_pve_positions_list(query, context, page=0):
     def _short_name(name, limit=28):
         return name if len(name) <= limit else name[:limit - 1] + "…"
 
-    text = f"🔒 <b>PVE</b> ({page + 1}/{total_pages})\n\n"
+    text = f"🧟 <b>PVE</b> ({page + 1}/{total_pages})\n\n"
     text += "Здесь только PVE-позиции списка.\n"
 
     keyboard = []
@@ -830,25 +830,19 @@ async def _show_stats(query, context):
         else:
             items[key]['any'] = entry
 
-    if not sources or sources == {'minprice'}:
-        src_line = "🔍 мин.прайс"
-    elif sources == {'auto'}:
-        src_line = "📡 автомониторинг"
-    else:
-        src_line = "🔍 мин.прайс + 📡 авто"
-
-    text = "💰 <b>Последние цены:</b>\n"
-    text += f"Источник: {src_line}\n\n"
+    text = "💰 <b>Последние цены:</b>\n\n"
 
     for item in items.values():
         name = html.escape(item['name'])
         a, p = item.get('any'), item.get('pve')
+        src = (a or p or {}).get('source', 'minprice')
+        se = '🔍' if src == 'minprice' else '📡'
         if a and p:
-            text += f"🪄 {name}: <b>{_price_link(a['price_text'], a['href'])}</b> / 🔒 <b>{_price_link(p['price_text'], p['href'])}</b>\n"
+            text += f"{se}<b>{name}</b>: 🔒 {_price_link(a['price_text'], a['href'])} / 🧟 {_price_link(p['price_text'], p['href'])}\n"
         elif a:
-            text += f"🪄 {name}: <b>{_price_link(a['price_text'], a['href'])}</b>\n"
+            text += f"{se}<b>{name}</b>: 🔒 {_price_link(a['price_text'], a['href'])}\n"
         elif p:
-            text += f"🔒 {name}: <b>{_price_link(p['price_text'], p['href'])}</b>\n"
+            text += f"{se}<b>{name}</b>: 🧟 {_price_link(p['price_text'], p['href'])}\n"
 
     keyboard = []
     for item in items.values():
@@ -889,7 +883,7 @@ async def _show_stats_item_history(query, context, item_type, item_id):
     text = f"📜 <b>{html.escape(item_name)}</b> — история\n"
 
     if any_offers:
-        text += "\n🪄 <b>Без PVE:</b>\n"
+        text += "\n🔒 <b>Без PVE:</b>\n"
         for i, o in enumerate(any_offers[:15], 1):
             price_display = _price_link(o.get('price_text') or '—', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
@@ -899,7 +893,7 @@ async def _show_stats_item_history(query, context, item_type, item_id):
             text += f"  <i>...ещё {len(any_offers) - 15}</i>\n"
 
     if pve_offers:
-        text += "\n🔒 <b>С PVE:</b>\n"
+        text += "\n🧟 <b>С PVE:</b>\n"
         for i, o in enumerate(pve_offers[:15], 1):
             price_display = _price_link(o.get('price_text') or '—', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
@@ -979,7 +973,7 @@ async def _show_check_menu(query, context):
         "🔎 <b>Проверка</b>\n\n"
         f"{status_text}"
         f"🎮 Скинов по списку: {info['skins_enabled']}/{info['skins_total']}\n"
-        f"🔒 С обяз. PVE: {info['pve_required']}\n"
+        f"🧟 С обяз. PVE: {info['pve_required']}\n"
         f"🏆 Изданий активно: {info['editions_enabled']}\n\n"
         "Выберите действие:"
     )
@@ -1020,7 +1014,7 @@ async def _show_check_menu_as_new_message(update, context):
         "🔎 <b>Проверка</b>\n\n"
         f"{status_text}"
         f"🎮 Скинов по списку: {info['skins_enabled']}/{info['skins_total']}\n"
-        f"🔒 С обяз. PVE: {info['pve_required']}\n"
+        f"🧟 С обяз. PVE: {info['pve_required']}\n"
         f"🏆 Изданий активно: {info['editions_enabled']}\n\n"
         "Выберите действие:"
     )
@@ -1042,7 +1036,7 @@ async def _show_standard_check_menu(query, context):
     )
     keyboard = [
         [InlineKeyboardButton("🎮 Скины", callback_data="set:check:stdskins")],
-        [InlineKeyboardButton("🔒 PVE", callback_data="set:check:stdpve")],
+        [InlineKeyboardButton("🧟 PVE", callback_data="set:check:stdpve")],
         [InlineKeyboardButton("🔙 Назад", callback_data="set:check:menu")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -1064,7 +1058,7 @@ async def _show_standard_check_skins_menu(query, context):
 
 async def _show_standard_check_pve_menu(query, context):
     text = (
-        "🔒 <b>Стандартная проверка: PVE</b>\n\n"
+        "🧟 <b>Стандартная проверка: PVE</b>\n\n"
         "Выберите отдельную PVE-позицию:"
     )
     keyboard = [
@@ -1151,7 +1145,7 @@ async def _show_minprice_section_menu(query, context, section='all', back_cb='se
         all_selected = bool(all_skin_ids) and all(sid in selected for sid in all_skin_ids)
         keyboard.append([
             InlineKeyboardButton("⛔ Убрать все" if all_selected else "✅ Добавить все", callback_data="set:minprice:cskinsall"),
-            InlineKeyboardButton("🔒 К PVE", callback_data="set:check:minprice:pve"),
+            InlineKeyboardButton("🧟 К PVE", callback_data="set:check:minprice:pve"),
         ])
         total_selected = (
             len(context.user_data.get('mp_custom_skins', set())) +
@@ -1349,8 +1343,8 @@ async def _show_minprice_skin_mode(query, context, skin_id):
         "Выберите режим поиска:"
     )
     keyboard = [
-        [InlineKeyboardButton("🔒 Только с PVE", callback_data=f"set:minprice:skin:{skin_id}:pve")],
-        [InlineKeyboardButton("🪄 Без фильтра PVE", callback_data=f"set:minprice:skin:{skin_id}:any")],
+        [InlineKeyboardButton("🧟 Только с PVE", callback_data=f"set:minprice:skin:{skin_id}:pve")],
+        [InlineKeyboardButton("🔒 Без фильтра PVE", callback_data=f"set:minprice:skin:{skin_id}:any")],
         [InlineKeyboardButton("🔙 Назад", callback_data="set:recheck:minprice"), InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -1420,7 +1414,7 @@ async def _show_minprice_custom(query, context):
             if len(name) > 10:
                 name = name[:9] + '.'
             sel_icon = "✅" if sid in selected else "⬜"
-            pve_icon = "🔒 PVE" if pve_map.get(sid, False) else "🪄 Без"
+            pve_icon = "🧟 PVE" if pve_map.get(sid, False) else "🔒 Без"
             keyboard.append([
                 InlineKeyboardButton(f"{sel_icon} {_skin_emoji(sid)} {name}", callback_data=f"set:minprice:csel:{sid}"),
                 InlineKeyboardButton(pve_icon, callback_data=f"set:minprice:cpve:{sid}"),
@@ -1453,8 +1447,8 @@ async def _show_minprice_custom(query, context):
             InlineKeyboardButton("🧹 Очистить всё", callback_data="set:minprice:csnone"),
         ])
         keyboard.append([
-            InlineKeyboardButton("🔒 Все PVE", callback_data="set:minprice:cpveall"),
-            InlineKeyboardButton("🪄 Без PVE", callback_data="set:minprice:cpvenone"),
+            InlineKeyboardButton("🧟 Все PVE", callback_data="set:minprice:cpveall"),
+            InlineKeyboardButton("🔒 Без PVE", callback_data="set:minprice:cpvenone"),
         ])
     else:
         keyboard.append([
@@ -1680,8 +1674,8 @@ async def _launch_minprice_bundle_run(query, context, config):
             if item_kind == 'skin':
                 summary += (
                     f"{label}\n"
-                    f"🪄 Без PVE: <b>{first_markup}</b>\n"
-                    f"🔒 С PVE: <b>{second_markup}</b>\n\n"
+                    f"🔒 Без PVE: <b>{first_markup}</b>\n"
+                    f"🧟 С PVE: <b>{second_markup}</b>\n\n"
                 )
             else:
                 summary += f"{label} — <b>{first_markup}</b>\n"
@@ -1882,14 +1876,14 @@ def _build_skin_minprice_text(name, any_results, pve_results, done=None, total=N
     lines = [f"💰 <b>{name}</b>"]
     if expanded:
         lines.append("")
-        lines.append("🪄 <b>Без PVE:</b>")
+        lines.append("🔒 <b>Без PVE:</b>")
         if no_any:
             lines.append("—")
         else:
             for idx, offer in enumerate(any_results[:3], start=1):
                 lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
         lines.append("")
-        lines.append("🔒 <b>С PVE:</b>")
+        lines.append("🧟 <b>С PVE:</b>")
         if pve_results:
             for idx, offer in enumerate(pve_results[:3], start=1):
                 lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
@@ -1898,8 +1892,8 @@ def _build_skin_minprice_text(name, any_results, pve_results, done=None, total=N
     else:
         any_display = "—" if no_any else _format_log_offer_v2(any_best)
         pve_display = _format_log_offer_v2(pve_best)
-        lines.append(f"🪄 Без PVE: <b>{any_display}</b>")
-        lines.append(f"🔒 С PVE: <b>{pve_display}</b>")
+        lines.append(f"🔒 Без PVE: <b>{any_display}</b>")
+        lines.append(f"🧟 С PVE: <b>{pve_display}</b>")
 
     if done is not None and total is not None:
         lines.append(f"📦 Готово: {done}/{total}")
@@ -1995,15 +1989,15 @@ def _build_recheck_log_page_v2(result, page=0):
         text += "❌ Лог пуст."
     else:
         for item in page_items:
-            title_icon = "🏆" if item['type'] == 'edition' else ("🔒" if item['type'] == 'pve' else _skin_emoji(item['id']))
-            any_label = "📉 Найдено" if item['type'] == 'edition' else "🪄 Без PVE"
+            title_icon = "🏆" if item['type'] == 'edition' else ("🧟" if item['type'] == 'pve' else _skin_emoji(item['id']))
+            any_label = "📉 Найдено" if item['type'] == 'edition' else "🔒 Без PVE"
             text += (
                 f"{title_icon} <b>{html.escape(item['name'])}</b>\n"
                 f"💰 <b>Цена моя:</b> {item.get('my_price_text', item.get('limit_text', '—'))}\n"
                 f"{any_label}: {_format_log_offer_v2(item.get('any_offer'))}\n"
             )
             if item['type'] != 'edition':
-                text += f"🔒 С PVE: {_format_log_offer_v2(item.get('pve_offer'))}\n"
+                text += f"🧟 С PVE: {_format_log_offer_v2(item.get('pve_offer'))}\n"
             text += (
                 f"📌 <b>Причина:</b> {html.escape(item.get('reason_text', item.get('status', '—')))}\n"
                 "━━━━━━━━━━━━━━\n\n"
@@ -2278,6 +2272,16 @@ async def _show_recheck_menu_as_new_message(update, context):
 async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Роутер для всех callback_data, начинающихся с 'set:'."""
     query = update.callback_query
+
+    if query.data and query.data.startswith("set:stats:info:"):
+        if _check_auth(update, context):
+            parts = query.data.split(":")
+            if len(parts) >= 5:
+                await _show_stats_info(query, context, parts[3], ":".join(parts[4:]))
+                return
+        await query.answer("❌ Не авторизованы", show_alert=True)
+        return
+
     await query.answer()
 
     if not _check_auth(update, context):
@@ -2434,7 +2438,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 )
                 keyboard = [
                     [InlineKeyboardButton("🎮 Скины", callback_data="set:check:minprice:skins")],
-                    [InlineKeyboardButton("🔒 PVE", callback_data="set:check:minprice:pve")],
+                    [InlineKeyboardButton("🧟 PVE", callback_data="set:check:minprice:pve")],
                     [InlineKeyboardButton("🌐 All", callback_data="set:check:minprice:all")],
                     [InlineKeyboardButton("🔙 Назад", callback_data="set:check:menu")],
                 ]
@@ -2862,8 +2866,8 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             pve_markup = _format_log_offer_v2(pve_best)
             text = (
                 f"💰 <b>Мін. прайс: {name}</b>\n\n"
-                f"🪄 Без PVE: <b>{any_markup}</b>\n"
-                f"🔒 С PVE: <b>{pve_markup}</b>"
+                f"🔒 Без PVE: <b>{any_markup}</b>\n"
+                f"🧟 С PVE: <b>{pve_markup}</b>"
             )
             history_button = InlineKeyboardButton("📈 История цен", callback_data=f"set:hist:skin:{item_id}:all:0:ms")
             show3_button = InlineKeyboardButton("📋 Показать ещё", callback_data=f"set:minprice:show3:skin:{item_id}")
@@ -2951,7 +2955,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                     context,
                     f"set:skins:pvdetail:{detail_page}",
                     f"🔙 Назад к {_confirmed_pve_title()}",
-                    extra_buttons=[("🔒 К PVE", f"set:skins:pvelist:{detail_page}")]
+                    extra_buttons=[("🧟 К PVE", f"set:skins:pvelist:{detail_page}")]
                 )
             else:
                 ret_page = int(ret_marker) if ret_marker.isdigit() else 0
@@ -2985,7 +2989,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             new_state = config.toggle_skin_pve(skin_id)
             if new_state is not None:
                 name = skin_id.replace('_', ' ').title()
-                await query.answer(f"{'🔒' if new_state else '🪄'} {name}: {'только PVE' if new_state else 'без фильтра PVE'}")
+                await query.answer(f"{'🧟' if new_state else '🔒'} {name}: {'только PVE' if new_state else 'без фильтра PVE'}")
             if ret_marker == 'd':
                 await _show_skin_detail(query, context, skin_id, context.user_data.get('skins_last_page', 0))
             else:
@@ -2998,7 +3002,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             for sid in all_skins:
                 all_skins[sid]['require_pve'] = new_val
             config.save()
-            await query.answer("✅ Для всех включён PVE" if new_val else "🪄 Для всех отключён PVE")
+            await query.answer("✅ Для всех включён PVE" if new_val else "🔒 Для всех отключён PVE")
             await _show_skins_list(query, context, ret_page)
 
         elif action == 'alltoggle':

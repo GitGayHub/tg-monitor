@@ -1604,7 +1604,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     for skin in found_skins:
                         skin_cfg = all_skins_data.get(skin['id'], {})
                         if skin_cfg.get('require_pve', False):
-                            logger.info(f"🔒 Скин {skin['id']} требует PVE, но PVE не найден — пропускаю скин")
+                            logger.info(f"🧟 Скин {skin['id']} требует PVE, но PVE не найден — пропускаю скин")
                         else:
                             filtered_skins.append(skin)
                     found_skins = filtered_skins
@@ -1681,7 +1681,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 f"🔔 <b>Найдено предложение!</b>\n\n"
                 f"⭐ <b>Главное:</b> {main_feature}\n"
                 f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n"
-                f"🔒 <b>PVE:</b> {pve_text}\n"
+                f"🧟 <b>PVE:</b> {pve_text}\n"
                 f"📊 <b>Оценка:</b> {price_breakdown}\n"
                 f"📌 <b>Название:</b> {candidate['short_description']}\n"
                 f"🎮 <b>Скины:</b> {skins_list}\n"
