@@ -800,74 +800,82 @@ def _price_link(price_txt, href):
 
 
 async def _show_stats(query, context):
-    """Показывает статистику: кол-во просмотренных, отправленных, цены из БД."""
-    seen_count = len(context.bot_data.get('seen_ids', set()))
-    sent_count = len(context.bot_data.get('sent_offers', {}))
-    banned_count = len(context.bot_data.get('banned_ids', set()))
-
+    """Минималистичная страница цен: группировка по скину, 2 кнопки на каждый."""
+    from collections import OrderedDict
     summary = get_price_summary()
-    text = "📈 <b>Статистика</b>\n\n"
-    text += f"👁 Просмотрено: <b>{seen_count}</b> товаров\n"
-    text += f"📩 Отправлено: <b>{sent_count}</b> предложений\n"
-    text += f"🚷 В бан-листе: <b>{banned_count}</b>\n"
-    text += f"📸 Снимков цен: <b>{summary['total_snapshots']}</b>\n"
-
-    if summary['first_date'] and summary['last_date']:
-        text += f"📅 Период: {summary['first_date']} — {summary['last_date']}\n"
-
     prices = summary.get('latest_prices', [])
-    if prices:
-        text += "\n💰 <b>Последние мин. цены:</b>\n"
-        for row in prices:
-            name = html.escape(row.get('item_name') or row.get('item_id', '?'))
-            mode = row.get('mode', '')
-            price_txt = row.get('price_text') or '—'
-            href = row.get('href')
-            date = row.get('recorded_at', '')
-            mode_icon = '🔒' if 'pve' in mode.lower() else '🪄' if 'any' in mode.lower() else '📦'
-            price_display = _price_link(price_txt, href)
-            src = row.get('source', 'minprice')
-            src_label = '🔍мин.прайс' if src == 'minprice' else '📡авто'
-            text += f"  {mode_icon} {name} ({mode}): <b>{price_display}</b> <i>({src_label} {date})</i>\n"
 
-    keyboard = [
-        [InlineKeyboardButton("📜 История цен", callback_data="set:stats:items")],
-        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
-    ]
+    items = OrderedDict()
+    sources = set()
+    for row in prices:
+        key = f"{row.get('item_type', 'skin')}:{row.get('item_id', '')}"
+        if key not in items:
+            items[key] = {
+                'name': row.get('item_name') or row.get('item_id', '?'),
+                'it': row.get('item_type', 'skin'),
+                'ii': row.get('item_id', ''),
+                'any': None, 'pve': None,
+            }
+        mode = (row.get('mode') or '').lower()
+        src = row.get('source', 'minprice')
+        sources.add(src)
+        entry = {
+            'price_text': row.get('price_text') or '—',
+            'href': row.get('href'),
+            'recorded_at': row.get('recorded_at', ''),
+            'source': src,
+        }
+        if 'pve' in mode:
+            items[key]['pve'] = entry
+        else:
+            items[key]['any'] = entry
+
+    if not sources or sources == {'minprice'}:
+        src_line = "🔍 мин.прайс"
+    elif sources == {'auto'}:
+        src_line = "📡 автомониторинг"
+    else:
+        src_line = "🔍 мин.прайс + 📡 авто"
+
+    text = "💰 <b>Последние цены:</b>\n"
+    text += f"Источник: {src_line}\n\n"
+
+    for item in items.values():
+        name = html.escape(item['name'])
+        a, p = item.get('any'), item.get('pve')
+        if a and p:
+            text += f"🪄 {name}: <b>{_price_link(a['price_text'], a['href'])}</b> / 🔒 <b>{_price_link(p['price_text'], p['href'])}</b>\n"
+        elif a:
+            text += f"🪄 {name}: <b>{_price_link(a['price_text'], a['href'])}</b>\n"
+        elif p:
+            text += f"🔒 {name}: <b>{_price_link(p['price_text'], p['href'])}</b>\n"
+
+    keyboard = []
+    for item in items.values():
+        keyboard.append([
+            InlineKeyboardButton("🕐", callback_data=f"set:stats:info:{item['it']}:{item['ii']}"),
+            InlineKeyboardButton(f"📜 {item['name']}", callback_data=f"set:stats:hist:{item['it']}:{item['ii']}"),
+        ])
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
 
-async def _show_stats_items(query, context):
-    """Показывает кнопки по каждому скину/PVE для истории цен."""
+async def _show_stats_info(query, context, item_type, item_id):
+    """Popup с датой и источником цен для конкретного скина."""
     summary = get_price_summary()
-    prices = summary.get('latest_prices', [])
-
-    item_buttons = {}
-    for row in prices:
-        key = f"{row.get('item_type', 'skin')}:{row.get('item_id', '')}"
-        if key not in item_buttons:
-            item_buttons[key] = row.get('item_name') or row.get('item_id', '?')
-
-    text = "📜 <b>История цен</b>\n\nВыберите скин или PVE для просмотра уникальных предложений за последнее время:"
-
-    keyboard = []
-    row_buf = []
-    for key, name in item_buttons.items():
-        item_type, item_id = key.split(':', 1)
-        cb = f"set:stats:hist:{item_type}:{item_id}"
-        row_buf.append(InlineKeyboardButton(f"📜 {name}", callback_data=cb))
-        if len(row_buf) == 2:
-            keyboard.append(row_buf)
-            row_buf = []
-    if row_buf:
-        keyboard.append(row_buf)
-
-    if not item_buttons:
-        text += "\n\nНет данных. Сначала запустите мин. прайс тест."
-
-    keyboard.append([InlineKeyboardButton("🔙 Статистика", callback_data="set:stats")])
-    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    lines = []
+    name = item_id.replace('_', ' ').title()
+    for row in summary.get('latest_prices', []):
+        if row.get('item_type') == item_type and row.get('item_id') == item_id:
+            name = row.get('item_name') or name
+            mode = (row.get('mode') or '').lower()
+            src = row.get('source', 'minprice')
+            src_label = 'мин.прайс' if src == 'minprice' else 'автомониторинг'
+            date = row.get('recorded_at', '?')
+            mode_label = 'Без PVE' if 'pve' not in mode else 'С PVE'
+            lines.append(f"{mode_label}: {src_label} — {date}")
+    alert = f"{name}\n" + "\n".join(lines) if lines else "Нет данных"
+    await query.answer(alert, show_alert=True)
 
 
 async def _show_stats_item_history(query, context, item_type, item_id):
@@ -904,7 +912,7 @@ async def _show_stats_item_history(query, context, item_type, item_id):
         text += "\nНет данных за последние проверки."
 
     keyboard = [
-        [InlineKeyboardButton("🔙 К списку", callback_data="set:stats:items")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:stats")],
         [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
@@ -2369,8 +2377,10 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
     elif data == "set:stats":
         await _show_stats(query, context)
 
-    elif data == "set:stats:items":
-        await _show_stats_items(query, context)
+    elif data.startswith("set:stats:info:"):
+        parts = data.split(":")
+        if len(parts) >= 5:
+            await _show_stats_info(query, context, parts[3], ":".join(parts[4:]))
 
     elif data.startswith("set:stats:hist:"):
         parts = data.split(":")
