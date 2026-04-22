@@ -886,30 +886,56 @@ async def _show_stats_info(query, context, item_type, item_id):
     await query.answer(alert, show_alert=True)
 
 
-async def _show_stats_top3_all(query, context):
-    """Страница с топ-3 ценами для всех скинов."""
+async def _show_stats_top3_menu(query, context):
+    """Меню выбора скина для топ-3."""
     summary = get_price_summary()
     prices = summary.get('latest_prices', [])
-    seen_items = set()
-    text = "⭐ <b>Топ-3 цены:</b>\n\n"
+    seen = set()
+    keyboard = []
     for row in prices:
         it, ii = row.get('item_type', 'skin'), row.get('item_id', '')
         key = f"{it}:{ii}"
-        if key in seen_items:
+        if key in seen:
             continue
-        seen_items.add(key)
-        name = html.escape(row.get('item_name') or ii)
-        top3 = get_latest_top3(it, ii, mode=(row.get('mode') or 'any'))
+        seen.add(key)
+        name = row.get('item_name') or ii
+        keyboard.append([InlineKeyboardButton(f"⭐ {name}", callback_data=f"set:stats:top3:{it}:{ii}")])
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="set:stats")])
+    await query.edit_message_text("⭐ <b>Выберите позицию:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+
+async def _show_stats_top3_item(query, context, item_type, item_id):
+    """Топ-3 цены для одного скина."""
+    summary = get_price_summary()
+    item_name = item_id
+    modes_found = []
+    for row in summary.get('latest_prices', []):
+        if row.get('item_type') == item_type and row.get('item_id') == item_id:
+            item_name = row.get('item_name') or item_id
+            modes_found.append(row.get('mode') or 'any')
+
+    text = f"⭐ <b>{html.escape(item_name)}</b> — топ-3\n\n"
+    for mode in (modes_found or ['any']):
+        top3 = get_latest_top3(item_type, item_id, mode=mode)
         if not top3:
-            text += f"<b>{name}</b>: нет данных\n"
-        else:
-            offers_str = ", ".join(
-                f"{_price_link(o.get('price_text') or '—', o.get('href'))} ({html.escape(o.get('seller') or '?')})"
-                for o in top3
-            )
-            text += f"<b>{name}</b>: {offers_str}\n"
+            continue
+        mode_label = '🧟 С PVE' if 'pve' in mode.lower() else '🔒 Без PVE'
+        if item_type != 'skin':
+            mode_label = ''
+        if mode_label:
+            text += f"<b>{mode_label}:</b>\n"
+        for i, o in enumerate(top3, 1):
+            p_link = _price_link(o.get('price_text') or '—', o.get('href'))
+            seller = html.escape(o.get('seller') or '?')
+            text += f"  {i}. {p_link} — {seller}\n"
+        text += "\n"
+
+    if not any(get_latest_top3(item_type, item_id, m) for m in (modes_found or ['any'])):
+        text += "Нет данных.\n"
+
     keyboard = [
-        [InlineKeyboardButton("🔙 Назад", callback_data="set:stats")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:stats:items")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
@@ -2386,27 +2412,6 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         await query.answer("❌ Не авторизованы", show_alert=True)
         return
 
-    if query.data and query.data.startswith("set:stats:top3:"):
-        if _check_auth(update, context):
-            parts = query.data.split(":")
-            if len(parts) >= 5:
-                it, ii = parts[3], ":".join(parts[4:])
-                top3 = get_latest_top3(it, ii, mode='any')
-                name = ii.replace('_', ' ').title()
-                if not top3:
-                    alert = f"{name}\nНет данных"
-                else:
-                    lines = []
-                    for i, o in enumerate(top3, 1):
-                        p = o.get('price_text') or '—'
-                        s = o.get('seller') or '?'
-                        lines.append(f"{i}. {p} — {s}")
-                    alert = f"⭐ {name} (топ-3):\n" + "\n".join(lines)
-                await query.answer(alert, show_alert=True)
-                return
-        await query.answer("❌ Не авторизованы", show_alert=True)
-        return
-
     await query.answer()
 
     if not _check_auth(update, context):
@@ -2507,10 +2512,15 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         await _show_stats(query, context)
 
     elif data == "set:stats:items":
-        await _show_stats_top3_all(query, context)
+        await _show_stats_top3_menu(query, context)
 
     elif data == "set:stats:histmenu":
         await _show_stats_hist_menu(query, context)
+
+    elif data.startswith("set:stats:top3:"):
+        parts = data.split(":")
+        if len(parts) >= 5:
+            await _show_stats_top3_item(query, context, parts[3], ":".join(parts[4:]))
 
     elif data.startswith("set:stats:info:"):
         parts = data.split(":")
