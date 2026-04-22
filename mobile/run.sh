@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Manual run on Linux/Termux/macOS with auto pull/push state sync.
-set -e
 
 # Go to mobile/ first to load env, then to repo root for the bot.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -26,9 +25,11 @@ fi
 git pull --rebase || { echo "git pull failed"; exit 1; }
 
 echo
-echo "=== [2/3] Starting bot (use /stop in Telegram or Ctrl+C to exit) ==="
+echo "=== [2/3] Starting bot (Ctrl+C to exit) ==="
 echo
+trap '' INT
 python monitor.py || true
+trap - INT
 
 echo
 echo "=== [3/3] Pushing state updates to GitHub ==="
