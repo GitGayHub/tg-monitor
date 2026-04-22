@@ -858,7 +858,6 @@ async def _show_check_menu(query, context):
     keyboard = [
         [InlineKeyboardButton("📋 Полная перепроверка", callback_data="set:check:full")],
         [InlineKeyboardButton("💰 Мин. цена", callback_data="set:check:minprice")],
-        [InlineKeyboardButton("🧪 Кастомная проверка", callback_data="set:check:custom")],
     ]
     if running:
         keyboard.append([InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
