@@ -13,7 +13,7 @@ from telegram.ext import (
     CommandHandler, CallbackQueryHandler, MessageHandler,
     ConversationHandler, ContextTypes, filters
 )
-from price_history import get_price_history, record_price_snapshot, get_price_summary, get_item_offers_unique
+from price_history import get_price_history, record_price_snapshot, get_price_summary, get_item_offers_unique, clear_all_price_history
 
 logger = logging.getLogger(__name__)
 
@@ -858,6 +858,7 @@ async def _show_stats(query, context):
         keyboard.append([
             InlineKeyboardButton(f"📜 {item['name']}", callback_data=f"set:stats:hist:{item['it']}:{item['ii']}"),
         ])
+    keyboard.append([InlineKeyboardButton("🗑 Сброс статистики", callback_data="set:stats:reset")])
     keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
@@ -2408,6 +2409,21 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         parts = data.split(":")
         if len(parts) >= 5:
             await _show_stats_info(query, context, parts[3], ":".join(parts[4:]))
+
+    elif data == "set:stats:reset":
+        keyboard = [
+            [InlineKeyboardButton("✅ Да, удалить всё", callback_data="set:stats:reset:confirm")],
+            [InlineKeyboardButton("🔙 Отмена", callback_data="set:stats")],
+        ]
+        await query.edit_message_text(
+            "🗑 <b>Сброс статистики</b>\n\nВся история цен будет удалена. Продолжить?",
+            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML'
+        )
+
+    elif data == "set:stats:reset:confirm":
+        clear_all_price_history()
+        await query.answer("✅ Статистика очищена")
+        await _show_stats(query, context)
 
     elif data.startswith("set:stats:hist:"):
         parts = data.split(":")

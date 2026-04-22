@@ -116,6 +116,15 @@ def record_price_snapshot(item_type, item_id, item_name, mode, results, source="
     return snapshot_id
 
 
+def clear_all_price_history():
+    """Delete all data from price_history tables."""
+    init_price_history_db()
+    with _DB_LOCK:
+        with _connect() as conn:
+            conn.execute("DELETE FROM price_snapshot_offers")
+            conn.execute("DELETE FROM price_snapshots")
+
+
 def get_price_summary():
     """Return aggregate stats: total snapshots, latest min price per item, date range."""
     init_price_history_db()
