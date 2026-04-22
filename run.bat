@@ -5,9 +5,7 @@ if exist set_env.bat (
     call set_env.bat
 ) else (
     echo ERROR: set_env.bat not found. Copy set_env.example.bat to set_env.bat and fill in tokens.
-    pause
     exit /b 1
 )
 
 python run_launcher.py
-pause
