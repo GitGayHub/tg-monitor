@@ -11,6 +11,11 @@ if exist set_env.bat (
 )
 
 echo === [1/3] Pulling latest state from GitHub ===
+git add seen_ids.txt sent_offers.json banned_ids.txt config.json price_history.db 2>nul
+git diff --cached --quiet
+if errorlevel 1 (
+    git commit -m "Sync state before pull"
+)
 git pull --rebase
 if errorlevel 1 (
     echo.
