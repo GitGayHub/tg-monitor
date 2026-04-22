@@ -1404,6 +1404,14 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         banned_count = 0
         candidates = []
 
+        # Build keyword → skin_id map for auto price tracking
+        auto_price_map = {}  # skin_id → {price, price_text, href, seller, name}
+        kw_to_skin = {}
+        if skip_seen:  # only for background auto-monitoring
+            for sid, skin in skins_dict.items():
+                for kw in skin.get('keywords', []):
+                    kw_to_skin[kw.lower()] = (sid, sid.replace('_', ' ').title())
+
         for idx, item in enumerate(listings, start=1):
             if cancelled():
                 logger.info("⏹️ Проверка остановлена пользователем во время отбора кандидатов")
@@ -1485,6 +1493,17 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 continue
 
             price_value = parse_price(price_text)
+
+            # Auto price tracking: record min price per skin (before max_price filter)
+            if price_value is not None and matched_keyword.lower() in kw_to_skin:
+                sid, sname = kw_to_skin[matched_keyword.lower()]
+                prev = auto_price_map.get(sid)
+                if prev is None or price_value < prev['price']:
+                    auto_price_map[sid] = {
+                        'price': price_value, 'price_text': price_text,
+                        'href': href, 'seller': user, 'name': sname,
+                    }
+
             if log_state and price_value is not None:
                 for position_id in log_keyword_map.get(matched_keyword.lower(), ()):
                     log_entry = log_state.get(position_id)
@@ -1506,6 +1525,17 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 'matched_keyword': matched_keyword,
                 'source_lot': source_lot,
             })
+
+        # Save auto-monitoring prices to history
+        if skip_seen and auto_price_map:
+            for sid, data in auto_price_map.items():
+                record_price_snapshot(
+                    'skin', sid, data['name'], 'any',
+                    [{'price': data['price'], 'price_text': data['price_text'],
+                      'href': data['href'], 'seller': data['seller']}],
+                    source='auto'
+                )
+            logger.info(f"📈 Авто-цены записаны: {len(auto_price_map)} скинов")
 
         new_candidates = len(candidates)
         logger.info(
