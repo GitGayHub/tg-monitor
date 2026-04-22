@@ -830,13 +830,21 @@ async def _show_stats(query, context):
         else:
             items[key]['any'] = entry
 
-    text = "💰 <b>Последние цены:</b>\n\n"
+    text = "💰 <b>Последние цены:</b>\n"
+    single_source = len(sources) == 1
+    if single_source:
+        src_name = 'Автомониторинг' if 'auto' in sources else 'Мин. прайс'
+        text += f"Источник: {src_name}\n"
+    text += "\n"
 
     for item in items.values():
         name = html.escape(item['name'])
         a, p = item.get('any'), item.get('pve')
-        src = (a or p or {}).get('source', 'minprice')
-        se = '🔍' if src == 'minprice' else '📡'
+        if single_source:
+            se = ''
+        else:
+            src = (a or p or {}).get('source', 'minprice')
+            se = '🔍' if src == 'minprice' else '📡'
         if a and p:
             text += f"{se}<b>{name}</b>: 🔒 {_price_link(a['price_text'], a['href'])} / 🧟 {_price_link(p['price_text'], p['href'])}\n"
         elif a:
@@ -847,7 +855,6 @@ async def _show_stats(query, context):
     keyboard = []
     for item in items.values():
         keyboard.append([
-            InlineKeyboardButton("🕐", callback_data=f"set:stats:info:{item['it']}:{item['ii']}"),
             InlineKeyboardButton(f"📜 {item['name']}", callback_data=f"set:stats:hist:{item['it']}:{item['ii']}"),
         ])
     keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
@@ -880,7 +887,21 @@ async def _show_stats_item_history(query, context, item_type, item_id):
     any_offers = [o for o in offers if 'pve' not in (o.get('mode') or '').lower()]
     pve_offers = [o for o in offers if 'pve' in (o.get('mode') or '').lower()]
 
+    # Info header: source + date per mode
+    summary = get_price_summary()
+    info_lines = []
+    for row in summary.get('latest_prices', []):
+        if row.get('item_type') == item_type and row.get('item_id') == item_id:
+            mode = (row.get('mode') or '').lower()
+            src = row.get('source', 'minprice')
+            src_label = 'мин.прайс' if src == 'minprice' else 'авто'
+            date = row.get('recorded_at', '?')
+            mode_icon = '🧟' if 'pve' in mode else '🔒'
+            info_lines.append(f"{mode_icon} {src_label} — {date}")
+
     text = f"📜 <b>{html.escape(item_name)}</b> — история\n"
+    if info_lines:
+        text += "\n".join(info_lines) + "\n"
 
     if any_offers:
         text += "\n🔒 <b>Без PVE:</b>\n"
