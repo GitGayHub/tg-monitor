@@ -127,7 +127,7 @@ def get_price_summary():
             rows = conn.execute(
                 """
                 SELECT ps.item_type, ps.item_id, ps.item_name, ps.mode,
-                       pso.price_value, pso.price_text, ps.recorded_at
+                       pso.price_value, pso.price_text, pso.href, ps.recorded_at
                 FROM price_snapshots ps
                 JOIN price_snapshot_offers pso ON pso.snapshot_id = ps.id AND pso.rank_num = 1
                 WHERE ps.id IN (
@@ -143,6 +143,35 @@ def get_price_summary():
         'last_date': last,
         'latest_prices': [dict(r) for r in rows],
     }
+
+
+def get_item_offers_unique(item_type, item_id, limit=80):
+    """Get recent unique offers (by href) for an item, newest first."""
+    init_price_history_db()
+    with _DB_LOCK:
+        with _connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT pso.price_value, pso.price_text, pso.href, pso.seller,
+                       ps.recorded_at, ps.mode, ps.item_name
+                FROM price_snapshots ps
+                JOIN price_snapshot_offers pso ON pso.snapshot_id = ps.id AND pso.rank_num = 1
+                WHERE ps.item_type = ? AND ps.item_id = ?
+                ORDER BY ps.id DESC
+                LIMIT ?
+                """,
+                (item_type, item_id, limit),
+            ).fetchall()
+    seen = set()
+    unique = []
+    for r in rows:
+        d = dict(r)
+        href = d.get('href') or ''
+        key = (href, d.get('mode', '')) if href else (str(d.get('price_value')), d.get('mode', ''))
+        if key not in seen:
+            seen.add(key)
+            unique.append(d)
+    return unique
 
 
 def get_price_history(item_type, item_id, mode=None, limit=12):

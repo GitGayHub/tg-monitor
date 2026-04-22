@@ -13,7 +13,7 @@ from telegram.ext import (
     CommandHandler, CallbackQueryHandler, MessageHandler,
     ConversationHandler, ContextTypes, filters
 )
-from price_history import get_price_history, record_price_snapshot, get_price_summary
+from price_history import get_price_history, record_price_snapshot, get_price_summary, get_item_offers_unique
 
 logger = logging.getLogger(__name__)
 
@@ -791,35 +791,101 @@ async def _show_status(query, context):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
+def _price_link(price_txt, href):
+    """Format price as hyperlink if href available."""
+    safe = html.escape(price_txt or '—')
+    if href:
+        return f"<a href='{html.escape(href, quote=True)}'>{safe}</a>"
+    return safe
+
+
 async def _show_stats(query, context):
     """Показывает статистику: кол-во просмотренных, отправленных, цены из БД."""
-    config = context.bot_data['config']
     seen_count = len(context.bot_data.get('seen_ids', set()))
     sent_count = len(context.bot_data.get('sent_offers', {}))
     banned_count = len(context.bot_data.get('banned_ids', set()))
 
     summary = get_price_summary()
     text = "📈 <b>Статистика</b>\n\n"
-    text += f"👁 Просмотрено: <b>{seen_count}</b> товаров\n"
-    text += f"📩 Отправлено: <b>{sent_count}</b> предложений\n"
-    text += f"🚷 В бан-листе: <b>{banned_count}</b>\n"
+    text += f"👁 Просмотрено: <b>{seen_count}</b>\n"
+    text += f"📩 Отправлено: <b>{sent_count}</b>\n"
+    text += f"🚷 Бан-лист: <b>{banned_count}</b>\n"
     text += f"📸 Снимков цен: <b>{summary['total_snapshots']}</b>\n"
 
     if summary['first_date'] and summary['last_date']:
-        text += f"📅 Период: {summary['first_date']} — {summary['last_date']}\n"
+        text += f"📅 {summary['first_date']} — {summary['last_date']}\n"
 
     prices = summary.get('latest_prices', [])
+    item_buttons = {}
     if prices:
         text += "\n💰 <b>Последние мин. цены:</b>\n"
         for row in prices:
             name = html.escape(row.get('item_name') or row.get('item_id', '?'))
             mode = row.get('mode', '')
             price_txt = row.get('price_text') or '—'
+            href = row.get('href')
             mode_icon = '🔒' if 'pve' in mode.lower() else '🪄' if 'any' in mode.lower() else '📦'
-            text += f"  {mode_icon} {name} ({mode}): <b>{html.escape(price_txt)}</b>\n"
+            price_display = _price_link(price_txt, href)
+            text += f"  {mode_icon} {name} ({mode}): <b>{price_display}</b>\n"
+            key = f"{row.get('item_type', 'skin')}:{row.get('item_id', '')}"
+            if key not in item_buttons:
+                item_buttons[key] = row.get('item_name') or row.get('item_id', '?')
 
-    keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")]]
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    text += "\n📜 Нажмите на скин для истории за 2 недели:"
+
+    keyboard = []
+    row_buf = []
+    for key, name in item_buttons.items():
+        item_type, item_id = key.split(':', 1)
+        cb = f"set:stats:hist:{item_type}:{item_id}"
+        row_buf.append(InlineKeyboardButton(f"📜 {name}", callback_data=cb))
+        if len(row_buf) == 2:
+            keyboard.append(row_buf)
+            row_buf = []
+    if row_buf:
+        keyboard.append(row_buf)
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
+
+
+async def _show_stats_item_history(query, context, item_type, item_id):
+    """Показывает уникальные предложения за последние 2 недели для конкретного скина/PVE."""
+    offers = get_item_offers_unique(item_type, item_id, limit=80)
+    item_name = offers[0].get('item_name', item_id) if offers else item_id
+
+    any_offers = [o for o in offers if 'pve' not in (o.get('mode') or '').lower()]
+    pve_offers = [o for o in offers if 'pve' in (o.get('mode') or '').lower()]
+
+    text = f"📜 <b>{html.escape(item_name)}</b> — история\n"
+
+    if any_offers:
+        text += "\n🪄 <b>Без PVE:</b>\n"
+        for i, o in enumerate(any_offers[:15], 1):
+            price_display = _price_link(o.get('price_text') or '—', o.get('href'))
+            seller = html.escape(o.get('seller') or '?')
+            date = o.get('recorded_at', '')
+            text += f"  {i}. {price_display} — {seller} <i>({date})</i>\n"
+        if len(any_offers) > 15:
+            text += f"  <i>...ещё {len(any_offers) - 15}</i>\n"
+
+    if pve_offers:
+        text += "\n🔒 <b>С PVE:</b>\n"
+        for i, o in enumerate(pve_offers[:15], 1):
+            price_display = _price_link(o.get('price_text') or '—', o.get('href'))
+            seller = html.escape(o.get('seller') or '?')
+            date = o.get('recorded_at', '')
+            text += f"  {i}. {price_display} — {seller} <i>({date})</i>\n"
+        if len(pve_offers) > 15:
+            text += f"  <i>...ещё {len(pve_offers) - 15}</i>\n"
+
+    if not any_offers and not pve_offers:
+        text += "\nНет данных за последние проверки."
+
+    keyboard = [
+        [InlineKeyboardButton("🔙 Статистика", callback_data="set:stats")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
+    ]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
 
 async def _show_confirmed_pve_detail(query, context, page=0):
@@ -2280,6 +2346,13 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
     elif data == "set:stats":
         await _show_stats(query, context)
+
+    elif data.startswith("set:stats:hist:"):
+        parts = data.split(":")
+        if len(parts) >= 5:
+            s_item_type = parts[3]
+            s_item_id = ":".join(parts[4:])
+            await _show_stats_item_history(query, context, s_item_type, s_item_id)
 
     elif data == "set:sync":
         sync_fn = context.bot_data.get('sync_fn')
