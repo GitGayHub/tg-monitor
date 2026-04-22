@@ -1431,26 +1431,23 @@ async def _launch_minprice_bundle_run(query, context, config):
                 heartbeat_callback=lambda elapsed: _update_progress(f"{label} ({elapsed}с)")
             )
 
-        async def _send_skin_partial_result(label, any_markup, pve_markup):
-            text = (
-                f"💰 <b>{label}</b>\n"
-                f"🪄 Без PVE: <b>{any_markup}</b>\n"
-                f"🔒 С PVE: <b>{pve_markup}</b>\n"
-                f"📦 Готово: {done}/{total_items}"
-            )
+        async def _send_skin_partial_result(label, any_results, pve_results, item_id):
+            text = _build_skin_minprice_text(label, any_results, pve_results, done=done, total=total_items, expanded=False)
+            markup = InlineKeyboardMarkup([[
+                InlineKeyboardButton("📋 Показать ещё", callback_data=f"set:minprice:show3:skin:{item_id}")
+            ]])
             try:
-                await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
+                await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
             except Exception:
                 pass
 
-        async def _send_simple_partial_result(label, price_markup):
-            text = (
-                f"💰 <b>{label}</b>\n"
-                f"📉 Мин. цена: <b>{price_markup}</b>\n"
-                f"📦 Готово: {done}/{total_items}"
-            )
+        async def _send_simple_partial_result(label, results, cache_type, cache_id):
+            text = _build_simple_minprice_text(label, results, done=done, total=total_items, expanded=False)
+            markup = InlineKeyboardMarkup([[
+                InlineKeyboardButton("📋 Показать ещё", callback_data=f"set:minprice:show3:{cache_type}:{cache_id}")
+            ]])
             try:
-                await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
+                await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
             except Exception:
                 pass
 
@@ -1488,12 +1485,14 @@ async def _launch_minprice_bundle_run(query, context, config):
             await _update_progress(f"🎮 {name}")
             any_best = any_results[0] if any_results else None
             pve_best = pve_results[0] if pve_results else None
-            any_markup = _format_log_offer_v2(any_best)
+            no_any = _same_min_offer(any_best, pve_best) or not any_results
+            any_markup = "—" if no_any else _format_log_offer_v2(any_best)
             pve_markup = _format_log_offer_v2(pve_best)
             record_price_snapshot('skin', sid, name, 'any', any_results, source='custom_minprice')
             record_price_snapshot('skin', sid, name, 'pve', pve_results, source='custom_minprice')
+            _cache_minprice_top3(context, 'skin', sid, f"🎮 {name}", any_results=any_results, pve_results=pve_results)
             summary_data.append(('skin', f"🎮 {name}", any_markup, pve_markup))
-            await _send_skin_partial_result(f"🎮 {name}", any_markup, pve_markup)
+            await _send_skin_partial_result(f"🎮 {name}", any_results, pve_results, sid)
 
         if selected_confirmed_pve:
             if context.bot_data.get('cancel_current_check'):
@@ -1507,8 +1506,9 @@ async def _launch_minprice_bundle_run(query, context, config):
             best_offer = results[0] if results else None
             price_markup = _format_log_offer_v2(best_offer)
             record_price_snapshot('pve', 'confirmed', _confirmed_pve_title(), 'confirmed', results, source='custom_minprice')
+            _cache_minprice_top3(context, 'pveconfirmed', 'confirmed', _confirmed_pve_title(), any_results=results)
             summary_data.append(('simple', _confirmed_pve_title(), price_markup, ''))
-            await _send_simple_partial_result(_confirmed_pve_title(), price_markup)
+            await _send_simple_partial_result(_confirmed_pve_title(), results, 'pveconfirmed', 'confirmed')
 
         if selected_unconfirmed_pve:
             if context.bot_data.get('cancel_current_check'):
@@ -1522,8 +1522,9 @@ async def _launch_minprice_bundle_run(query, context, config):
             best_offer = results[0] if results else None
             price_markup = _format_log_offer_v2(best_offer)
             record_price_snapshot('pve', 'unconfirmed', "Неподтв. PVE", 'unconfirmed', results, source='custom_minprice')
+            _cache_minprice_top3(context, 'pveunconfirmed', 'unconfirmed', "🔓 Неподтв. PVE", any_results=results)
             summary_data.append(('simple', "🔓 Неподтв. PVE", price_markup, ''))
-            await _send_simple_partial_result("🔓 Неподтв. PVE", price_markup)
+            await _send_simple_partial_result("🔓 Неподтв. PVE", results, 'pveunconfirmed', 'unconfirmed')
 
         for eid in ['super_deluxe', 'limited', 'ultimate']:
             if context.bot_data.get('cancel_current_check'):
@@ -1543,8 +1544,9 @@ async def _launch_minprice_bundle_run(query, context, config):
             best_offer = results[0] if results else None
             price_markup = _format_log_offer_v2(best_offer)
             record_price_snapshot('edition', eid, name, 'all', results, source='custom_minprice')
+            _cache_minprice_top3(context, 'ed', eid, f"🏆 {name}", any_results=results)
             summary_data.append(('simple', f"🏆 {name}", price_markup, ''))
-            await _send_simple_partial_result(f"🏆 {name}", price_markup)
+            await _send_simple_partial_result(f"🏆 {name}", results, 'ed', eid)
 
         summary = "📊 <b>Сводка мін. цен:</b>\n\n"
         for item_kind, label, first_markup, second_markup in summary_data:
@@ -1731,6 +1733,71 @@ def _format_log_offer_v2(offer):
     return price_text
 
 
+def _same_min_offer(a, b):
+    """True if two offers are effectively the same (same price → no separate 'без PVE' offer)."""
+    if not a or not b:
+        return False
+    ap, bp = a.get('price'), b.get('price')
+    if ap is not None and bp is not None:
+        try:
+            return float(ap) == float(bp)
+        except (TypeError, ValueError):
+            pass
+    return (a.get('price_text') or '') == (b.get('price_text') or '')
+
+
+def _build_skin_minprice_text(name, any_results, pve_results, done=None, total=None, expanded=False):
+    """Build skin minprice message. If any_best == pve_best → dash for 'без PVE'."""
+    any_best = any_results[0] if any_results else None
+    pve_best = pve_results[0] if pve_results else None
+    no_any = _same_min_offer(any_best, pve_best) or not any_results
+
+    lines = [f"💰 <b>{name}</b>"]
+    if expanded:
+        lines.append("")
+        lines.append("🪄 <b>Без PVE:</b>")
+        if no_any:
+            lines.append("—")
+        else:
+            for idx, offer in enumerate(any_results[:3], start=1):
+                lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
+        lines.append("")
+        lines.append("🔒 <b>С PVE:</b>")
+        if pve_results:
+            for idx, offer in enumerate(pve_results[:3], start=1):
+                lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
+        else:
+            lines.append("—")
+    else:
+        any_display = "—" if no_any else _format_log_offer_v2(any_best)
+        pve_display = _format_log_offer_v2(pve_best)
+        lines.append(f"🪄 Без PVE: <b>{any_display}</b>")
+        lines.append(f"🔒 С PVE: <b>{pve_display}</b>")
+
+    if done is not None and total is not None:
+        lines.append(f"📦 Готово: {done}/{total}")
+    return "\n".join(lines)
+
+
+def _build_simple_minprice_text(label, results, done=None, total=None, expanded=False):
+    """Build simple (non-skin) minprice message."""
+    lines = [f"💰 <b>{label}</b>"]
+    if expanded:
+        lines.append("")
+        lines.append("📉 <b>Варианты:</b>")
+        if results:
+            for idx, offer in enumerate(results[:3], start=1):
+                lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
+        else:
+            lines.append("—")
+    else:
+        price_markup = _format_log_offer_v2(results[0] if results else None)
+        lines.append(f"📉 Мин. цена: <b>{price_markup}</b>")
+    if done is not None and total is not None:
+        lines.append(f"📦 Готово: {done}/{total}")
+    return "\n".join(lines)
+
+
 def _cache_minprice_top3(context, item_type, item_id, name, any_results=None, pve_results=None):
     cache = context.user_data.setdefault('minprice_top3_cache', {})
     cache[f"{item_type}:{item_id}"] = {
@@ -1761,35 +1828,27 @@ async def _send_minprice_top3(query, context, item_type, item_id):
     cache = context.user_data.get('minprice_top3_cache', {})
     payload = cache.get(f"{item_type}:{item_id}")
     if not payload:
-        await query.answer("Сначала запустите мин. цену для этой позиции", show_alert=True)
+        await query.answer("Сначала запустите мін. цену для этой позиции", show_alert=True)
         return
 
-    name = html.escape(payload.get('name') or item_id)
+    name = payload.get('name') or item_id
     any_results = payload.get('any_results') or []
     pve_results = payload.get('pve_results') or []
 
     if item_type == 'skin':
-        text = (
-            f"💰 <b>{name} — 3 лучших</b>\n\n"
-            f"{_render_top3_block('🪄 Без PVE', any_results)}\n\n"
-            f"{_render_top3_block('🔒 С PVE', pve_results)}"
-        )
+        text = _build_skin_minprice_text(name, any_results, pve_results, expanded=True)
     else:
-        text = (
-            f"💰 <b>{name} — 3 лучших</b>\n\n"
-            f"{_render_top3_block('📉 Варианты', any_results)}"
-        )
+        text = _build_simple_minprice_text(name, any_results, expanded=True)
 
-    await context.bot.send_message(
-        chat_id=query.message.chat_id,
-        text=text,
-        parse_mode='HTML',
-        disable_web_page_preview=True,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")]
-        ])
-    )
-    await query.answer("Отправил 3 лучших варианта")
+    try:
+        await query.edit_message_text(
+            text=text,
+            parse_mode='HTML',
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        pass
+    await query.answer()
 
 
 def _build_recheck_log_page_v2(result, page=0):
@@ -2648,15 +2707,18 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             record_price_snapshot('skin', item_id, name, 'any', any_results, source='single_minprice')
             record_price_snapshot('skin', item_id, name, 'pve', pve_results, source='single_minprice')
             _cache_minprice_top3(context, 'skin', item_id, name, any_results=any_results, pve_results=pve_results)
-            any_markup = _format_log_offer_v2(any_results[0] if any_results else None)
-            pve_markup = _format_log_offer_v2(pve_results[0] if pve_results else None)
+            any_best = any_results[0] if any_results else None
+            pve_best = pve_results[0] if pve_results else None
+            no_any = _same_min_offer(any_best, pve_best) or not any_results
+            any_markup = "—" if no_any else _format_log_offer_v2(any_best)
+            pve_markup = _format_log_offer_v2(pve_best)
             text = (
                 f"💰 <b>Мін. прайс: {name}</b>\n\n"
                 f"🪄 Без PVE: <b>{any_markup}</b>\n"
                 f"🔒 С PVE: <b>{pve_markup}</b>"
             )
             history_button = InlineKeyboardButton("📈 История цен", callback_data=f"set:hist:skin:{item_id}:all:0:ms")
-            show3_button = InlineKeyboardButton("📋 Показать 6", callback_data=f"set:minprice:show3:skin:{item_id}")
+            show3_button = InlineKeyboardButton("📋 Показать ещё", callback_data=f"set:minprice:show3:skin:{item_id}")
         else:
             record_price_snapshot(history_item_type, item_id, name, history_mode, any_results, source='single_minprice')
             _cache_minprice_top3(context, item_type, item_id, name, any_results=any_results, pve_results=[])
@@ -2666,7 +2728,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 f"📉 Мин. цена: <b>{price_markup}</b>"
             )
             history_button = InlineKeyboardButton("📈 История цен", callback_data=f"set:hist:{history_item_type}:{item_id}:{history_mode}:0:mp")
-            show3_button = InlineKeyboardButton("📋 Показать 3", callback_data=f"set:minprice:show3:{item_type}:{item_id}")
+            show3_button = InlineKeyboardButton("📋 Показать ещё", callback_data=f"set:minprice:show3:{item_type}:{item_id}")
 
         repeat_cb = (
             "set:minprice:pveconfirmed" if item_type == 'pveconfirmed' else
