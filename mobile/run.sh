@@ -18,6 +18,11 @@ fi
 cd "$REPO_DIR"
 
 echo "=== [1/3] Pulling latest state from GitHub ==="
+# Commit any local changes first (e.g. config.json written by bot) to avoid rebase conflicts
+git add seen_ids.txt sent_offers.json banned_ids.txt config.json price_history.db 2>/dev/null || true
+if ! git diff --cached --quiet; then
+    git commit -m "Sync state before pull"
+fi
 git pull --rebase || { echo "git pull failed"; exit 1; }
 
 echo
