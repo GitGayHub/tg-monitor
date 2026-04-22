@@ -854,8 +854,7 @@ async def _show_stats(query, context):
     keyboard = []
     for item in items.values():
         keyboard.append([
-            InlineKeyboardButton("⭐", callback_data=f"set:stats:top3:{item['it']}:{item['ii']}"),
-            InlineKeyboardButton(f"📜 {item['name']}", callback_data=f"set:stats:hist:{item['it']}:{item['ii']}"),
+            InlineKeyboardButton(f"⭐📜 {item['name']}", callback_data=f"set:stats:hist:{item['it']}:{item['ii']}"),
         ])
     keyboard.append([InlineKeyboardButton("🗑 Сброс статистики", callback_data="set:stats:reset")])
     keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
@@ -888,7 +887,8 @@ async def _show_stats_item_history(query, context, item_type, item_id):
     any_offers = [o for o in offers if 'pve' not in (o.get('mode') or '').lower()]
     pve_offers = [o for o in offers if 'pve' in (o.get('mode') or '').lower()]
 
-    # Info header: source + date per mode
+    # Top-3 current offers with hyperlinks
+    top3 = get_latest_top3(item_type, item_id, mode='any')
     summary = get_price_summary()
     info_lines = []
     for row in summary.get('latest_prices', []):
@@ -901,9 +901,15 @@ async def _show_stats_item_history(query, context, item_type, item_id):
             mode_icon = '🧟' if 'pve' in mode else '🔒'
             info_lines.append(f"{mode_icon} {src_label} — {date}")
 
-    text = f"📜 <b>{html.escape(item_name)}</b> — история\n"
+    text = f"⭐ <b>{html.escape(item_name)}</b>\n"
     if info_lines:
         text += "\n".join(info_lines) + "\n"
+    if top3:
+        text += "\n🏆 <b>Топ-3 сейчас:</b>\n"
+        for i, o in enumerate(top3, 1):
+            p_link = _price_link(o.get('price_text') or '—', o.get('href'))
+            seller = html.escape(o.get('seller') or '?')
+            text += f"  {i}. {p_link} — {seller}\n"
 
     if any_offers:
         text += "\n🔒 <b>Без PVE:</b>\n"
