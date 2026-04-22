@@ -900,7 +900,6 @@ async def _show_check_menu_as_new_message(update, context):
     keyboard = [
         [InlineKeyboardButton("📋 Полная перепроверка", callback_data="set:check:full")],
         [InlineKeyboardButton("💰 Мин. цена", callback_data="set:check:minprice")],
-        [InlineKeyboardButton("🧪 Кастомная проверка", callback_data="set:check:custom")],
     ]
     if running:
         keyboard.append([InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
@@ -966,67 +965,6 @@ async def _show_standard_check_item_menu(query, context, item_key):
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="set:check:stdpve")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
-
-async def _show_custom_check_menu(query, context):
-    text = (
-        "🧪 <b>Кастомная проверка</b>\n\n"
-        "Здесь вы временно задаёте свой набор позиций, цены и PVE.\n\n"
-        "Выберите раздел:"
-    )
-    keyboard = [
-        [InlineKeyboardButton("🎮 Скины", callback_data="set:check:customskins")],
-        [InlineKeyboardButton("🔒 PVE", callback_data="set:check:custompve")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="set:check:menu")],
-    ]
-    if _is_check_running(context):
-        keyboard.insert(2, [InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-
-
-async def _show_custom_check_skins_menu(query, context):
-    text = (
-        "🎮 <b>Кастомная проверка: скины</b>\n\n"
-        "Выберите, что хотите настраивать:"
-    )
-    keyboard = [
-        [InlineKeyboardButton("✅ Подходящие", callback_data="set:check:customskins:recheck")],
-        [InlineKeyboardButton("💰 Минималки", callback_data="set:check:customskins:minprice")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="set:check:custom")],
-    ]
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-
-
-async def _show_custom_check_pve_menu(query, context):
-    text = (
-        "🔒 <b>Кастомная проверка: PVE</b>\n\n"
-        "Выберите PVE-позицию:"
-    )
-    keyboard = [
-        [InlineKeyboardButton(_confirmed_pve_title(), callback_data="set:check:custompve:confirmed")],
-        [InlineKeyboardButton("🏆 Издания", callback_data="set:check:custompve:editions")],
-        [InlineKeyboardButton("🔓 Неподтв. PVE", callback_data="set:check:custompve:unconfirmed")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="set:check:custom")],
-    ]
-    if _is_check_running(context):
-        keyboard.insert(3, [InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-
-
-async def _show_custom_check_item_menu(query, context, item_key):
-    title = {
-        'confirmed': _confirmed_pve_title(),
-        'editions': "🏆 Издания",
-        'unconfirmed': "🔓 Неподтв. PVE",
-    }.get(item_key, "🔎 Проверка")
-    text = f"{title}\n\nВыберите действие:"
-    keyboard = []
-    if item_key != 'unconfirmed':
-        keyboard.append([InlineKeyboardButton("✅ Подходящие", callback_data=f"set:check:custompve:{item_key}:recheck")])
-        keyboard.append([InlineKeyboardButton("💰 Минималки", callback_data=f"set:check:custompve:{item_key}:minprice")])
-    else:
-        keyboard.append([InlineKeyboardButton("✅ Подходящие", callback_data="set:check:custompve:unconfirmed:recheck")])
-    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="set:check:custompve")])
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_minprice_section_menu(query, context, section='all', back_cb='set:check:menu'):
@@ -1188,98 +1126,6 @@ async def _start_full_recheck(query, context, config):
 async def _show_recheck_menu(query, context):
     await _show_check_menu(query, context)
 
-
-async def _show_custom_recheck_skins(query, context, custom_mode):
-    """Показывает скины для кастомной перепроверки."""
-    config = context.bot_data['config']
-    # Инициализируем локальную копию если нету
-    if 'recheck_skins' not in context.user_data:
-        skins = config.get_all_skins()
-        context.user_data['recheck_skins'] = {
-            sid: {'enabled': s.get('enabled', True), 'price': s.get('price', 0)}
-            for sid, s in skins.items()
-        }
-    rc_skins = context.user_data['recheck_skins']
-    enabled = sum(1 for s in rc_skins.values() if s['enabled'])
-    total = len(rc_skins)
-
-    text = (
-        f"🧪 <b>Кастомная проверка</b>\n\n"
-        f"🎮 <b>Скины</b> ({enabled}/{total})\n"
-        "Название включает и выключает позицию. Цена меняется отдельно."
-    )
-
-    keyboard = []
-    for sid in sorted(rc_skins.keys()):
-        s = rc_skins[sid]
-        icon = "✅" if s['enabled'] else "❌"
-        name = sid.replace('_', ' ').title()
-        price = s['price']
-        keyboard.append([
-            InlineKeyboardButton(
-                f"{_skin_emoji(sid)} {name}",
-                callback_data=f"set:recheck:cmtoggle:{sid}"
-            ),
-        ])
-        keyboard.append([
-            InlineKeyboardButton(f"💰 {price}₽", callback_data=f"set:recheck:cmprice:{sid}"),
-            InlineKeyboardButton(icon, callback_data=f"set:recheck:cmtoggle:{sid}")
-        ])
-
-    keyboard.append([InlineKeyboardButton("▶️ Продолжить →", callback_data="set:recheck:cmgo")])
-    keyboard.append([
-        InlineKeyboardButton("💾 Сохранить цены", callback_data="set:recheck:cmsave"),
-        InlineKeyboardButton("🔙 Назад", callback_data="set:recheck:custom")
-    ])
-
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-
-
-async def _show_custom_recheck_editions(query, context):
-    """Показывает издания для кастомной перепроверки."""
-    config = context.bot_data['config']
-
-    if 'recheck_editions' not in context.user_data:
-        editions = config.get_all_editions()
-        context.user_data['recheck_editions'] = {
-            eid: {'enabled': e.get('enabled', True), 'price': e.get('price', 0)}
-            for eid, e in editions.items()
-        }
-
-    rc_eds = context.user_data['recheck_editions']
-    enabled = sum(1 for e in rc_eds.values() if e['enabled'])
-    total = len(rc_eds)
-
-    text = (
-        f"🧪 <b>Кастомная проверка</b>\n\n"
-        f"🏆 <b>Издания</b> ({enabled}/{total})\n"
-        "Название включает и выключает позицию. Цена меняется отдельно."
-    )
-
-    EDITION_ORDER = ['super_deluxe', 'limited', 'ultimate']
-    keyboard = []
-    for eid in EDITION_ORDER:
-        if eid not in rc_eds:
-            continue
-        e = rc_eds[eid]
-        icon = "✅" if e['enabled'] else "❌"
-        name = eid.replace('_', ' ').title()
-        price = e['price']
-        keyboard.append([
-            InlineKeyboardButton(f"🏆 {name}", callback_data=f"set:recheck:edtoggle:{eid}"),
-        ])
-        keyboard.append([
-            InlineKeyboardButton(f"💰 {price}₽", callback_data=f"set:recheck:edprice:{eid}"),
-            InlineKeyboardButton(icon, callback_data=f"set:recheck:edtoggle:{eid}")
-        ])
-
-    keyboard.append([InlineKeyboardButton("▶️ Продолжить →", callback_data="set:recheck:edgo")])
-    keyboard.append([
-        InlineKeyboardButton("💾 Сохранить цены", callback_data="set:recheck:edsave"),
-        InlineKeyboardButton("🔙 Назад", callback_data="set:recheck:custompve")
-    ])
-
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_minprice_menu(query, context):
@@ -1728,62 +1574,6 @@ async def _launch_minprice_bundle_run(query, context, config):
 
     asyncio.create_task(_run_custom_search())
 
-
-async def _show_custom_recheck_menu(query, context):
-    text = (
-        "🧪 <b>Кастомная перепроверка</b>\n\n"
-        "Выберите раздел:"
-    )
-    keyboard = [
-        [InlineKeyboardButton("🎮 Скины", callback_data="set:recheck:cm:list")],
-        [InlineKeyboardButton("🔒 PVE", callback_data="set:recheck:custompve")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="set:recheck:menu")],
-    ]
-    if _is_check_running(context):
-        keyboard.insert(2, [InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-
-
-async def _show_custom_recheck_pve_menu(query, context):
-    text = (
-        "🔒 <b>PVE</b>\n\n"
-        "Выберите, что хотите проверить:"
-    )
-    keyboard = [
-        [InlineKeyboardButton(_confirmed_pve_title(), callback_data="set:recheck:cmpve")],
-        [InlineKeyboardButton("🏆 Издания", callback_data="set:recheck:cm:premium")],
-        [InlineKeyboardButton("🔓 Неподтв. PVE", callback_data="set:recheck:cmunconfirmed")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="set:recheck:custom")],
-    ]
-    if _is_check_running(context):
-        keyboard.insert(3, [InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-
-
-async def _show_custom_recheck_confirmed_pve(query, context):
-    config = context.bot_data['config']
-    if 'recheck_confirmed_pve' not in context.user_data:
-        context.user_data['recheck_confirmed_pve'] = {
-            'enabled': config.confirmed_pve_enabled,
-            'price': config.confirmed_pve_price,
-        }
-
-    rc_pve = context.user_data['recheck_confirmed_pve']
-    status_icon = "✅" if rc_pve.get('enabled', True) else "⛔"
-    text = (
-        f"🧪 <b>Кастомная проверка</b>\n\n"
-        f"{_confirmed_pve_title()}\n"
-        "Отдельная PVE-позиция для поиска подтверждённого PVE."
-    )
-    keyboard = [
-        [InlineKeyboardButton(_confirmed_pve_title(), callback_data="set:recheck:cmpvetoggle")],
-        [InlineKeyboardButton(f"💰 {rc_pve.get('price', config.confirmed_pve_price)}₽", callback_data="set:recheck:cmpveprice"),
-         InlineKeyboardButton(status_icon, callback_data="set:recheck:cmpvetoggle")],
-        [InlineKeyboardButton("💾 Сохранить цену", callback_data="set:recheck:cmpvesave")],
-        [InlineKeyboardButton("▶️ Запустить", callback_data="set:recheck:cmpverun")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="set:recheck:custompve")],
-    ]
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 def _clone_skin_restore_state(config):
@@ -2349,7 +2139,6 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             'pricetest': 'Мин. прайс',
             'recheck': 'Полная перепроверка',
             'recheck_pve': 'Перепроверка (неподтв. PVE)',
-            'recheck_custom': 'Кастомная перепроверка',
         }
         label = mode_labels.get(mode_key, mode_key)
         target = (bot_mode.get('params') or {}).get('target_label') or progress.get('stage') or '—'
@@ -2502,46 +2291,6 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 await _show_standard_check_item_menu(query, context, item)
             else:
                 await _show_standard_check_pve_menu(query, context)
-        elif action == 'custom':
-            await _show_custom_check_menu(query, context)
-        elif action == 'customskins':
-            subaction = parts[3] if len(parts) > 3 else ''
-            if subaction == 'recheck':
-                context.user_data['custom_recheck_mode'] = 'list'
-                await _show_custom_recheck_skins(query, context, 'list')
-            elif subaction == 'minprice':
-                await _show_minprice_section_menu(query, context, section='skins', back_cb='set:check:customskins')
-            else:
-                await _show_custom_check_skins_menu(query, context)
-        elif action == 'custompve':
-            item = parts[3] if len(parts) > 3 else ''
-            subaction = parts[4] if len(parts) > 4 else ''
-            if item == 'confirmed' and subaction == 'recheck':
-                context.user_data['custom_recheck_mode'] = 'confirmed_pve'
-                await _show_custom_recheck_confirmed_pve(query, context)
-            elif item == 'editions' and subaction == 'recheck':
-                context.user_data['custom_recheck_mode'] = 'premium'
-                await _show_custom_recheck_editions(query, context)
-            elif item in ('confirmed', 'editions') and subaction == 'minprice':
-                await _show_minprice_section_menu(query, context, section='pve', back_cb='set:check:custompve')
-            elif item == 'unconfirmed' and subaction == 'recheck':
-                if _is_check_running(context):
-                    await _show_current_check_status(query, context)
-                    return
-                context.user_data['input_state'] = INPUT_RECHECK_PVE
-                context.user_data['recheck_direct_unconfirmed_pve'] = True
-                _set_input_return(context, 'set:check:custompve', '🔙 Назад')
-                await query.edit_message_text(
-                    "🔓 <b>Неподтв. PVE</b>\n\n"
-                    "Будет искать любые упоминания PVE (пве/stw/pve) без привязки к скинам.\n\n"
-                    "Введите <b>макс. цену</b> (₽) или нажмите кнопку ниже:",
-                    parse_mode='HTML',
-                    reply_markup=_get_input_return_markup(context, 'set:check:custompve', '🔙 Назад')
-                )
-            elif item in ('confirmed', 'editions', 'unconfirmed'):
-                await _show_custom_check_item_menu(query, context, item)
-            else:
-                await _show_custom_check_pve_menu(query, context)
 
     # === Recheck ===
     elif parts[1] == 'recheck':
@@ -2553,11 +2302,6 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
         if action == 'menu':
             await _show_recheck_menu(query, context)
-        elif action == 'custom':
-            await _show_custom_check_menu(query, context)
-        elif action == 'custompve':
-            await _show_custom_check_pve_menu(query, context)
-
         elif action == 'showlog':
             run_id = parts[3] if len(parts) > 3 else ''
             page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
@@ -2590,172 +2334,6 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
         elif action == 'standard':
             await _start_full_recheck(query, context, config)
-
-        elif action == 'cm':
-            custom_mode = parts[3] if len(parts) > 3 else 'list'
-            context.user_data['custom_recheck_mode'] = custom_mode
-
-            if custom_mode == 'premium':
-                # Показываем издания с вкл/выкл и ценами
-                await _show_custom_recheck_editions(query, context)
-            elif custom_mode == 'confirmed_pve':
-                await _show_custom_recheck_confirmed_pve(query, context)
-            else:
-                await _show_custom_recheck_skins(query, context, custom_mode)
-
-        elif action == 'cmpve':
-            context.user_data['custom_recheck_mode'] = 'confirmed_pve'
-            await _show_custom_recheck_confirmed_pve(query, context)
-
-        elif action == 'cmunconfirmed':
-            if _is_check_running(context):
-                await _show_current_check_status(query, context)
-                return
-            context.user_data['input_state'] = INPUT_RECHECK_PVE
-            context.user_data['recheck_direct_unconfirmed_pve'] = True
-            _set_input_return(context, 'set:recheck:custompve', '🔙 Назад')
-            await query.edit_message_text(
-                "🔓 <b>Неподтв. PVE</b>\n\n"
-                "Будет искать любые упоминания PVE (пве/stw/pve) без привязки к скинам.\n\n"
-                "Введите <b>макс. цену</b> (₽) или нажмите кнопку ниже:",
-                parse_mode='HTML',
-                reply_markup=_get_input_return_markup(context, 'set:recheck:custompve', '🔙 Назад')
-            )
-
-        elif action == 'cmtoggle':
-            # Переключить скин в ЛОКАЛЬНОЙ копии (не в config!)
-            skin_id = parts[3] if len(parts) > 3 else ''
-            rc_skins = context.user_data.get('recheck_skins', {})
-            if skin_id and skin_id in rc_skins:
-                rc_skins[skin_id]['enabled'] = not rc_skins[skin_id]['enabled']
-            custom_mode = context.user_data.get('custom_recheck_mode', 'list')
-            await _show_custom_recheck_skins(query, context, custom_mode)
-
-        elif action == 'cmpvetoggle':
-            rc_pve = context.user_data.get('recheck_confirmed_pve', {
-                'enabled': config.confirmed_pve_enabled,
-                'price': config.confirmed_pve_price,
-            })
-            rc_pve['enabled'] = not rc_pve.get('enabled', True)
-            context.user_data['recheck_confirmed_pve'] = rc_pve
-            context.user_data['custom_recheck_mode'] = 'confirmed_pve'
-            await _show_custom_recheck_confirmed_pve(query, context)
-
-        elif action == 'cmpveprice':
-            context.user_data['input_state'] = INPUT_CONFIRMED_PVE_PRICE
-            context.user_data['editing_confirmed_pve_custom'] = True
-            _set_input_return(context, "set:recheck:cmpve", "🔙 Назад")
-            await query.edit_message_text(
-                f"✏️ <b>Цена для {_confirmed_pve_title()}</b>\n\n"
-                f"Текущая: {context.user_data.get('recheck_confirmed_pve', {}).get('price', config.confirmed_pve_price)}₽\n"
-                f"Введите новую цену или /cancel:",
-                parse_mode='HTML'
-            )
-
-        elif action == 'cmpvesave':
-            rc_pve = context.user_data.get('recheck_confirmed_pve', {})
-            config.confirmed_pve_enabled = rc_pve.get('enabled', config.confirmed_pve_enabled)
-            config.confirmed_pve_price = rc_pve.get('price', config.confirmed_pve_price)
-            config.save()
-            await query.answer("💾 Цена PVE сохранена!", show_alert=True)
-            context.user_data['custom_recheck_mode'] = 'confirmed_pve'
-            await _show_custom_recheck_confirmed_pve(query, context)
-
-        elif action == 'cmpverun':
-            context.user_data['custom_recheck_mode'] = 'confirmed_pve'
-            context.user_data.pop('input_state', None)
-            await _launch_custom_recheck(query, context, config, pve_price=None, from_callback=True)
-
-        elif action == 'cmprice':
-            # Редактировать цену конкретного скина
-            skin_id = parts[3] if len(parts) > 3 else ''
-            rc_skins = context.user_data.get('recheck_skins', {})
-            if skin_id and skin_id in rc_skins:
-                context.user_data['input_state'] = INPUT_RECHECK_SKIN_PRICE
-                context.user_data['editing_recheck_skin'] = skin_id
-                name = skin_id.replace('_', ' ').title()
-                cur_price = rc_skins[skin_id]['price']
-                await query.edit_message_text(
-                    f"✏️ <b>Цена для {name}</b>\n\n"
-                    f"Текущая: {cur_price}₽\n"
-                    f"Введите новую цену или /cancel:",
-                    parse_mode='HTML'
-                )
-
-        elif action == 'cmsave':
-            # Сохранить цены скинов в config
-            rc_skins = context.user_data.get('recheck_skins', {})
-            all_skins = config.get_all_skins()
-            for sid, s in rc_skins.items():
-                if sid in all_skins:
-                    all_skins[sid]['price'] = s['price']
-                    all_skins[sid]['enabled'] = s['enabled']
-            config.save()
-            await query.answer("💾 Цены скинов сохранены!", show_alert=True)
-            custom_mode = context.user_data.get('custom_recheck_mode', 'list')
-            await _show_custom_recheck_skins(query, context, custom_mode)
-
-        elif action == 'cmgo':
-            # Продолжить к вводу макс. цены
-            context.user_data['input_state'] = INPUT_RECHECK_RARE
-            rc_skins = context.user_data.get('recheck_skins', {})
-            enabled = sum(1 for s in rc_skins.values() if s['enabled'])
-            await query.edit_message_text(
-                f"🧪 <b>Кастомная проверка</b>\n"
-                f"🎮 Скины\n"
-                f"🎮 Скинов включено: {enabled}\n"
-                f"Шаг 2/3: Введите <b>общую цену для всех скинов</b> (₽)\n"
-                f"Эта цена применится ко всем включённым скинам\n"
-                f"Или введите <b>0</b> чтобы оставить индивидуальные цены\n\n"
-                f"/cancel для отмены",
-                parse_mode='HTML'
-            )
-
-        elif action == 'edtoggle':
-            # Переключить издание в ЛОКАЛЬНОЙ копии
-            eid = parts[3] if len(parts) > 3 else ''
-            rc_eds = context.user_data.get('recheck_editions', {})
-            if eid and eid in rc_eds:
-                rc_eds[eid]['enabled'] = not rc_eds[eid]['enabled']
-            await _show_custom_recheck_editions(query, context)
-
-        elif action == 'edprice':
-            # Редактировать цену конкретного издания
-            eid = parts[3] if len(parts) > 3 else ''
-            rc_eds = context.user_data.get('recheck_editions', {})
-            if eid and eid in rc_eds:
-                context.user_data['input_state'] = INPUT_RECHECK_ED_PRICE
-                context.user_data['editing_recheck_edition'] = eid
-                name = eid.replace('_', ' ').title()
-                cur_price = rc_eds[eid]['price']
-                await query.edit_message_text(
-                    f"✏️ <b>Цена для {name}</b>\n\n"
-                    f"Текущая: {cur_price}₽\n"
-                    f"Введите новую цену или /cancel:",
-                    parse_mode='HTML'
-                )
-
-        elif action == 'edsave':
-            # Сохранить цены изданий в config
-            rc_eds = context.user_data.get('recheck_editions', {})
-            for eid, ed in rc_eds.items():
-                config_ed = config.get_edition(eid)
-                if config_ed:
-                    config_ed['price'] = ed['price']
-                    config_ed['enabled'] = ed['enabled']
-            config.save()
-            await query.answer("💾 Цены изданий сохранены!", show_alert=True)
-            await _show_custom_recheck_editions(query, context)
-
-        elif action == 'edgo':
-            # Продолжить → сразу запуск premium recheck
-            rc_eds = context.user_data.get('recheck_editions', {})
-            enabled = sum(1 for e in rc_eds.values() if e['enabled'])
-            if enabled == 0:
-                await query.answer("❌ Включите хотя бы одно издание!", show_alert=True)
-                return
-            context.user_data.pop('input_state', None)
-            await _launch_custom_recheck(query, context, config, pve_price=None, from_callback=True)
 
         elif action == 'minprice':
             await _show_minprice_menu(query, context)
@@ -3827,160 +3405,8 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             asyncio.create_task(_run_recheck_task(chat_id, context, process_fn, skip_seen=False, candidate_limit=None, include_unconfirmed_pve=True, max_price_override=val))
         else:
-            pve_price = val if val > 0 else None
-            await _launch_custom_recheck(update, context, config, pve_price=pve_price)
+            await _show_check_menu_as_new_message(update, context)
 
-async def _launch_custom_recheck(source, context, config, pve_price=None, from_callback=False):
-    custom_mode = context.user_data.get('custom_recheck_mode', 'list')
-    rc_skins = context.user_data.get('recheck_skins', {})
-    rc_eds = context.user_data.get('recheck_editions', {})
-    rc_pve = context.user_data.get('recheck_confirmed_pve', {
-        'enabled': config.confirmed_pve_enabled,
-        'price': config.confirmed_pve_price,
-    })
-    is_premium = custom_mode == 'premium'
-    is_confirmed_pve = custom_mode == 'confirmed_pve'
-    display_label = 'Издания (Super Deluxe+)' if is_premium else (_confirmed_pve_title() if is_confirmed_pve else 'Скины')
-
-    # Очищаем user_data
-    context.user_data.pop('recheck_rare_price', None)
-    context.user_data.pop('custom_recheck_mode', None)
-    context.user_data.pop('recheck_skins', None)
-    context.user_data.pop('recheck_editions', None)
-    context.user_data.pop('recheck_confirmed_pve', None)
-    context.user_data.pop('original_skin_states', None)
-
-    bot_mode = context.bot_data.get('bot_mode', {})
-    if _is_check_running(context):
-        text, keyboard = _get_current_check_status(context)
-        if from_callback:
-            await source.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
-        else:
-            await source.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
-        return
-
-    # reply helper
-    async def reply(text, reply_markup=None):
-        if from_callback:
-            await source.edit_message_text(text, parse_mode='HTML', reply_markup=reply_markup)
-        else:
-            await source.message.reply_text(text, parse_mode='HTML', reply_markup=reply_markup)
-
-    # Сохраняем оригиналы
-    old_mode = config.search_mode
-    original_skins_full = {}
-    skins = config.get_all_skins()
-    for sid, s in skins.items():
-        original_skins_full[sid] = {'enabled': s.get('enabled', True), 'price': s.get('price', 0)}
-
-    original_editions = {}
-    editions = config.get_all_editions()
-    for eid, e in editions.items():
-        original_editions[eid] = {'enabled': e.get('enabled', True), 'price': e.get('price', 0)}
-
-    original_confirmed_pve = {
-        'enabled': config.confirmed_pve_enabled,
-        'price': config.confirmed_pve_price,
-    }
-
-    # Применяем кастомные настройки
-    if rc_skins:
-        for sid, rc in rc_skins.items():
-            skin = config.get_skin(sid)
-            if skin:
-                skin['enabled'] = False if is_confirmed_pve else rc['enabled']
-                skin['price'] = rc['price']
-
-    if rc_eds:
-        for eid, rc in rc_eds.items():
-            ed = config.get_edition(eid)
-            if ed:
-                ed['enabled'] = rc['enabled']
-                ed['price'] = rc['price']
-    if not is_premium:
-        config.confirmed_pve_enabled = rc_pve.get('enabled', config.confirmed_pve_enabled)
-        config.confirmed_pve_price = rc_pve.get('price', config.confirmed_pve_price)
-
-    # Считаем max_price
-    if is_premium:
-        enabled_prices = [rc['price'] for rc in rc_eds.values() if rc['enabled']]
-        max_price_override = max(enabled_prices) if enabled_prices else 3000
-    else:
-        enabled_prices = [rc['price'] for rc in (rc_skins or {}).values() if rc['enabled'] and not is_confirmed_pve]
-        max_from_skins = max(enabled_prices) if enabled_prices else 5000
-        if rc_pve.get('enabled'):
-            max_from_skins = max(max_from_skins, rc_pve.get('price', config.confirmed_pve_price))
-        max_price_override = max(max_from_skins, pve_price) if pve_price else max_from_skins
-
-    build_snapshot_fn = context.bot_data.get('build_recheck_snapshot')
-    run_snapshot = build_snapshot_fn(
-        config,
-        display_mode=display_label,
-        bot_mode_key='recheck',
-        search_mode='skins_pve',
-        include_unconfirmed_pve=False,
-        premium_only=is_premium,
-        max_price_override=max_price_override,
-        pve_override=pve_price,
-        confirmed_pve_enabled_override=(False if is_premium else rc_pve.get('enabled', config.confirmed_pve_enabled)),
-        confirmed_pve_price_override=(None if is_premium else rc_pve.get('price', config.confirmed_pve_price)),
-        chat_id_value=_get_chat_id_from_context(context),
-        log_view='premium' if is_premium else 'skins',
-    )
-
-    bot_mode['mode'] = 'recheck'
-    bot_mode['params'] = {
-        'max_price': max_price_override,
-        'restore_mode': old_mode,
-        'restore_skins': original_skins_full,
-        'restore_editions': original_editions,
-        'restore_confirmed_pve': original_confirmed_pve,
-        'display_mode': f"Перепроверка: {display_label}",
-        'target_label': (
-            f"издания: {sum(1 for e in rc_eds.values() if e['enabled'])}"
-            if is_premium else
-            (_confirmed_pve_title() if is_confirmed_pve else f"скины: {sum(1 for rc in (rc_skins or {}).values() if rc['enabled'])}")
-        ),
-        'run_snapshot': run_snapshot,
-    }
-    bot_mode['started_at'] = time.time()
-    use_unconfirmed = False
-
-    if is_premium:
-        enabled_count = sum(1 for e in rc_eds.values() if e['enabled'])
-        await reply(
-            "🧪 <b>Кастомная проверка запущена!</b>\n\n"
-            f"🏆 Режим: {display_label}\n"
-            f"📦 Изданий: {enabled_count}\n"
-            f"📈 Макс. цена: {max_price_override}₽\n"
-            "⚠️ Может занять несколько минут...",
-            reply_markup=_check_control_markup()
-        )
-    else:
-        enabled_count = sum(1 for rc in (rc_skins or {}).values() if rc['enabled'])
-        skins_line = "" if is_confirmed_pve else f"🎮 Скинов: {enabled_count}\n"
-        await reply(
-            "🧪 <b>Кастомная проверка запущена!</b>\n\n"
-            f"🎯 Режим: {display_label}\n"
-            f"{skins_line}"
-            f"🛡 Подтв. PVE: {rc_pve.get('price', config.confirmed_pve_price)}₽ {'вкл' if rc_pve.get('enabled') else 'выкл'}\n"
-            f"📈 Макс. цена: {max_price_override}₽\n"
-            "⚠️ Может занять несколько минут...",
-            reply_markup=_check_control_markup()
-        )
-
-    process_fn = context.bot_data.get('process_offers')
-    chat_id = _get_chat_id_from_context(context)
-    asyncio.create_task(_run_recheck_task(
-        chat_id, context, process_fn,
-        skip_seen=False, candidate_limit=None,
-        max_price_override=max_price_override,
-        pve_override=pve_price,
-        include_unconfirmed_pve=use_unconfirmed,
-        premium_only=is_premium,
-        confirmed_pve_enabled_override=(False if is_premium else rc_pve.get('enabled', config.confirmed_pve_enabled)),
-        confirmed_pve_price_override=(None if is_premium else rc_pve.get('price', config.confirmed_pve_price)),
-    ))
 
 
 # ==============================
