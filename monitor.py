@@ -31,7 +31,6 @@ FUNPAY_ACCOUNTS_URL = 'https://funpay.com/lots/248/?offer_type=sell'
 FUNPAY_OTHER_URL = 'https://funpay.com/lots/1098/?offer_type=sell'
 FUNPAY_URLS = [
     FUNPAY_ACCOUNTS_URL,  # Аккаунты для Fortnite (все платформы)
-    FUNPAY_OTHER_URL,     # Fortnite прочее (ключи PVE и т.д.)
 ]
 
 # GitHub API (для /sync — синхронизация config.json с репозиторием)
