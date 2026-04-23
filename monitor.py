@@ -14,7 +14,7 @@ import json
 import base64
 
 from config_manager import ConfigManager
-from price_history import init_price_history_db, record_price_snapshot, record_red_flag
+from price_history import init_price_history_db, record_price_snapshot, record_red_flag, get_latest_top3
 from settings_handlers import register_settings_handlers
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -1401,6 +1401,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         already_seen_count = 0
         banned_count = 0
         candidates = []
+        all_listing_hrefs = set()  # all hrefs on current page (for staleness check)
 
         # Build keyword maps for auto price tracking
         auto_price_map = {}   # skin_id → [offers] (mode=any)
@@ -1446,6 +1447,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 continue
             if href.startswith('/'):
                 href = f"https://funpay.com{href}"
+            all_listing_hrefs.add(href)
 
             offer_id_match = re.search(r'id=(\d+)', href)
             if not offer_id_match:
@@ -1662,32 +1664,52 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             parts = []
 
-            # Save only skins/editions with actual offers (don't erase old data with empty snapshots)
+            def _old_offer_gone(item_type, item_id, mode):
+                """Check if previously saved offer is no longer on the listing page."""
+                try:
+                    top = get_latest_top3(item_type, item_id, mode)
+                    if top:
+                        old_href = top[0].get('href')
+                        if old_href and old_href not in all_listing_hrefs:
+                            return True  # offer was sold/removed
+                except Exception:
+                    pass
+                return False
+
+            # Save skins: write if offers found, or clear if old offer is gone
             all_skin_ids = set()
             for kw, (sid, sname) in kw_to_skin.items():
                 all_skin_ids.add(sid)
             for sid in all_skin_ids:
                 if auto_price_map.get(sid):
                     _save_auto('skin', sid, _auto_name(sid), 'any', auto_price_map[sid])
+                elif _old_offer_gone('skin', sid, 'any'):
+                    _save_auto('skin', sid, _auto_name(sid), 'any', [])
                 if auto_pve_map.get(sid):
                     _save_auto('skin', sid, _auto_name(sid), 'pve', auto_pve_map[sid])
+                elif _old_offer_gone('skin', sid, 'pve'):
+                    _save_auto('skin', sid, _auto_name(sid), 'pve', [])
             n_any = sum(1 for sid in all_skin_ids if auto_price_map.get(sid))
             n_pve = sum(1 for sid in all_skin_ids if auto_pve_map.get(sid))
             parts.append(f"скины: {n_any}/{len(all_skin_ids)} без PVE, {n_pve}/{len(all_skin_ids)} с PVE")
 
-            # Save only editions with actual offers
+            # Save editions: write if offers found, or clear if old offer is gone
             all_edition_ids = set()
             for kw, (eid, ename) in kw_to_edition.items():
                 all_edition_ids.add(eid)
             for eid in all_edition_ids:
                 if auto_edition_map.get(eid):
                     _save_auto('edition', eid, _auto_name(eid), 'any', auto_edition_map[eid])
+                elif _old_offer_gone('edition', eid, 'any'):
+                    _save_auto('edition', eid, _auto_name(eid), 'any', [])
             n_ed = sum(1 for eid in all_edition_ids if auto_edition_map.get(eid))
             parts.append(f"издания: {n_ed}/{len(all_edition_ids)}")
 
-            # Save STW only if offers found
+            # Save STW: write if offers found, or clear if old offer is gone
             if auto_pve_confirmed:
                 _save_auto('pve', 'confirmed', 'STW', 'confirmed', auto_pve_confirmed)
+            elif _old_offer_gone('pve', 'confirmed', 'confirmed'):
+                _save_auto('pve', 'confirmed', 'STW', 'confirmed', [])
             parts.append(f"STW: {'да' if auto_pve_confirmed else '—'}")
 
             logger.info(f"📈 Авто-мониторинг: {', '.join(parts)}")
