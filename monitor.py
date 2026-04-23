@@ -1405,7 +1405,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         candidates = []
 
         # Build keyword → skin_id map for auto price tracking
-        auto_price_map = {}  # skin_id → list of up to 3 cheapest offers
+        auto_price_map = {}  # skin_id → list of up to 3 cheapest offers (mode=any)
+        auto_pve_map = {}    # skin_id → list of up to 3 cheapest PVE offers
         kw_to_skin = {}
         if skip_seen:  # only for background auto-monitoring
             for sid, skin in skins_dict.items():
@@ -1502,7 +1503,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 sid, sname = kw_to_skin[matched_keyword.lower()]
                 entry = {'price': price_value, 'price_text': price_text,
                          'href': href, 'seller': user, 'name': sname}
-                lst = auto_price_map.setdefault(sid, [])
+                # Split by PVE presence in short description
+                if has_pve(short_desc_lower, include_unconfirmed=False):
+                    target = auto_pve_map
+                else:
+                    target = auto_price_map
+                lst = target.setdefault(sid, [])
                 lst.append(entry)
                 lst.sort(key=lambda x: x['price'])
                 if len(lst) > 3:
@@ -1535,7 +1541,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             })
 
         # Save auto-monitoring prices to history
-        if skip_seen and auto_price_map:
+        if skip_seen and (auto_price_map or auto_pve_map):
             for sid, offers in auto_price_map.items():
                 name = offers[0]['name'] if offers else sid
                 record_price_snapshot(
@@ -1544,7 +1550,15 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                       'href': o['href'], 'seller': o['seller']} for o in offers],
                     source='auto'
                 )
-            logger.info(f"📈 Авто-цены записаны: {len(auto_price_map)} скинов")
+            for sid, offers in auto_pve_map.items():
+                name = offers[0]['name'] if offers else sid
+                record_price_snapshot(
+                    'skin', sid, name, 'pve',
+                    [{'price': o['price'], 'price_text': o['price_text'],
+                      'href': o['href'], 'seller': o['seller']} for o in offers],
+                    source='auto'
+                )
+            logger.info(f"📈 Авто-цены записаны: {len(auto_price_map)} без PVE, {len(auto_pve_map)} с PVE")
 
         new_candidates = len(candidates)
         logger.info(
@@ -2176,12 +2190,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+    # Compute effective max price (same logic as auto-monitoring)
+    skins = config.get_all_skins()
+    enabled = {sid: s for sid, s in skins.items() if s.get('enabled', True)}
+    max_skin_price = max((s.get('price', 0) for s in enabled.values()), default=config.max_price)
+    effective_max = max_skin_price + config.pve_bonus
+    if config.confirmed_pve_enabled:
+        effective_max = max(effective_max, config.confirmed_pve_price + config.pve_bonus)
+
     await update.message.reply_text(
         f"✅ Бот активирован! Ваш ID: {user_chat_id}.\n\n"
         f"🔍 Ищу аккаунты Fortnite с подтверждённым STW/PVE и редкими скинами.\n"
         f"🚫 Исключаю {len(config.get_exclude_keywords())} фраз про отсутствие почты.\n"
         f"📦 Только продажа, без аренды.\n"
-        f"💰 Максимальная цена: {config.max_price}₽.\n"
+        f"💰 Максимальная цена: {effective_max}₽ (макс. скин {max_skin_price}₽ + PVE бонус {config.pve_bonus}₽).\n"
         f"⏱ Проверка каждые {config.check_interval} секунд.\n\n"
         f"👇 Используйте кнопки ниже для управления.",
         parse_mode='HTML',

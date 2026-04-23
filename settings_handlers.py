@@ -881,7 +881,7 @@ async def _show_stats(query, context):
             text += f"{se}<b>{name}</b>: {price}\n"
 
     keyboard = [
-        [InlineKeyboardButton("📊 Подробнее (топ-3 + история)", callback_data="set:stats:histmenu")],
+        [InlineKeyboardButton("📊 Статистика по скину", callback_data="set:stats:histmenu")],
         [InlineKeyboardButton("🗑 Сброс статистики", callback_data="set:stats:reset")],
         [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
