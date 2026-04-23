@@ -859,6 +859,9 @@ async def _show_stats(query, context):
             e = item.get(slot_name)
             if e:
                 sources.add(e.get('source', 'minprice'))
+    # If auto-monitoring has run, it covers everything — treat stale minprice as auto
+    if 'auto' in sources:
+        sources = {'auto'}
 
     # Sort items: skins alphabetically → STW → Super Deluxe → Limited → Ultimate
     _edition_order = {'super_deluxe': 1, 'limited': 2, 'ultimate': 3}
