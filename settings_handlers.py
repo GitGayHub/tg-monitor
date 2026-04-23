@@ -821,6 +821,9 @@ async def _show_stats(query, context):
         raw_ii = row.get('item_id', '')
         mode = (row.get('mode') or '').lower()
         ii = _normalize_pve_id(it, raw_ii, mode)
+        # Skip unconfirmed PVE from main display (not tracked by auto-monitoring)
+        if it == 'pve' and ii == 'unconfirmed':
+            continue
         key = f"{it}:{ii}"
         if key not in items:
             if it == 'pve':
@@ -878,10 +881,7 @@ async def _show_stats(query, context):
             text += f"{se}<b>{name}</b>: {price}\n"
 
     keyboard = [
-        [
-            InlineKeyboardButton("⭐ Топ-3 цены", callback_data="set:stats:items"),
-            InlineKeyboardButton("📜 История цен", callback_data="set:stats:histmenu"),
-        ],
+        [InlineKeyboardButton("📊 Подробнее (топ-3 + история)", callback_data="set:stats:histmenu")],
         [InlineKeyboardButton("🗑 Сброс статистики", callback_data="set:stats:reset")],
         [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
@@ -907,7 +907,7 @@ async def _show_stats_info(query, context, item_type, item_id):
 
 
 def _normalize_stats_items(prices):
-    """Dedupe legacy PVE item_ids; returns list of {it, ii, name}."""
+    """Dedupe legacy PVE item_ids; skip unconfirmed PVE. Returns list of {it, ii, name}."""
     seen = set()
     result = []
     for row in prices:
@@ -916,7 +916,9 @@ def _normalize_stats_items(prices):
         mode = (row.get('mode') or '').lower()
         if it == 'pve':
             ii = 'unconfirmed' if 'unconfirmed' in mode or raw_ii == 'unconfirmed' else 'confirmed'
-            name = 'Подтв. PVE' if ii == 'confirmed' else 'Неподтв. PVE'
+            if ii == 'unconfirmed':
+                continue
+            name = 'Подтв. PVE'
         else:
             ii = raw_ii
             name = row.get('item_name') or raw_ii or '?'
@@ -1016,23 +1018,23 @@ async def _show_stats_item_history(query, context, item_type, item_id):
 
     if any_offers:
         text += "\n🔒 <b>Без PVE:</b>\n"
-        for i, o in enumerate(any_offers[:15], 1):
+        for i, o in enumerate(any_offers[:7], 1):
             price_display = _price_link(o.get('price_text') or '—', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
             date = o.get('recorded_at', '')
             text += f"  {i}. {price_display} — {seller} <i>({date})</i>\n"
-        if len(any_offers) > 15:
-            text += f"  <i>...ещё {len(any_offers) - 15}</i>\n"
+        if len(any_offers) > 7:
+            text += f"  <i>...ещё {len(any_offers) - 7}</i>\n"
 
     if pve_offers:
         text += "\n🧟 <b>С PVE:</b>\n"
-        for i, o in enumerate(pve_offers[:15], 1):
+        for i, o in enumerate(pve_offers[:7], 1):
             price_display = _price_link(o.get('price_text') or '—', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
             date = o.get('recorded_at', '')
             text += f"  {i}. {price_display} — {seller} <i>({date})</i>\n"
-        if len(pve_offers) > 15:
-            text += f"  <i>...ещё {len(pve_offers) - 15}</i>\n"
+        if len(pve_offers) > 7:
+            text += f"  <i>...ещё {len(pve_offers) - 7}</i>\n"
 
     if not any_offers and not pve_offers:
         text += "\nНет данных за последние проверки."
