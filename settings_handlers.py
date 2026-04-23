@@ -844,15 +844,21 @@ async def _show_stats(query, context):
             'recorded_at': row.get('recorded_at', ''),
             'source': src,
         }
-        # Only assign to slot if not already filled (newest wins)
+        # Normalize 'all' → 'any' (legacy minprice used 'all' for editions)
         slot = 'pve' if 'pve' in mode else 'any'
-        if items[key][slot] is not None:
-            continue
-        sources.add(src)
-        if slot == 'pve':
-            items[key]['pve'] = entry
-        else:
-            items[key]['any'] = entry
+        existing = items[key][slot]
+        if existing is not None:
+            # Prefer auto source over minprice even if minprice is newer
+            if existing.get('source') == 'auto' or src != 'auto':
+                continue
+        items[key][slot] = entry
+
+    # Rebuild sources from final slot assignments
+    for item in items.values():
+        for slot_name in ('any', 'pve'):
+            e = item.get(slot_name)
+            if e:
+                sources.add(e.get('source', 'minprice'))
 
     # Sort items: skins alphabetically → STW → Super Deluxe → Limited → Ultimate
     _edition_order = {'super_deluxe': 1, 'limited': 2, 'ultimate': 3}
@@ -1833,7 +1839,7 @@ async def _launch_minprice_bundle_run(query, context, config):
             await _update_progress(f"🏆 {name}")
             best_offer = results[0] if results else None
             price_markup = _format_log_offer_v2(best_offer)
-            record_price_snapshot('edition', eid, name, 'all', results, source='custom_minprice')
+            record_price_snapshot('edition', eid, name, 'any', results, source='custom_minprice')
             _cache_minprice_top3(context, 'ed', eid, f"🏆 {name}", any_results=results)
             summary_data.append(('simple', f"🏆 {name}", price_markup, ''))
             await _send_simple_partial_result(f"🏆 {name}", results, 'ed', eid)

@@ -548,7 +548,7 @@ async def build_recheck_log(snapshot, progress_callback=None):
 
         if position['type'] == 'edition':
             any_result = _pick_min_result(await search_min_price(position['keywords'], require_pve=False))
-            record_price_snapshot('edition', position['id'], position['name'], 'all', [any_result] if any_result else [], source='recheck_log')
+            record_price_snapshot('edition', position['id'], position['name'], 'any', [any_result] if any_result else [], source='recheck_log')
             limit_price = position['limit_price']
             if position['id'] in sent_position_ids:
                 status = "✅ Отправлено"
@@ -1537,6 +1537,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     best_eid = max(matched_eds.keys(), key=lambda e: tier.get(e, 0))
                     best_ename = matched_eds[best_eid]
                     auto_edition_map.setdefault(best_eid, [])
+                    if not already_seen:
+                        logger.debug(f"📡 Издание {best_eid}: {price_text}, excl={is_excluded}, desc={short_description[:50]}")
                     if not is_excluded:
                         entry = {'price': price_value, 'price_text': price_text,
                                  'href': href, 'seller': user, 'name': best_ename}
