@@ -1499,28 +1499,35 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             price_value = parse_price(price_text)
 
             # Auto price tracking: record top-3 cheapest per skin (before max_price filter)
-            # Check ALL skin keywords against description, not just matched_keyword,
-            # because matched_keyword may be a PVE keyword that matched first.
+            # Check ALL skin keywords against description. If multiple skins match,
+            # attribute price to the MOST EXPENSIVE one (it's the value driver).
             if price_value is not None and kw_to_skin:
-                matched_skins = set()
+                matched_skins = {}  # sid → sname
                 for kw, (sid, sname) in kw_to_skin.items():
                     if sid in matched_skins:
                         continue
                     pattern_kw = r'\b' + re.escape(kw) + r'\b'
                     if re.search(pattern_kw, short_desc_lower):
-                        matched_skins.add(sid)
-                        entry = {'price': price_value, 'price_text': price_text,
-                                 'href': href, 'seller': user, 'name': sname}
-                        # Split by PVE presence in short description
-                        if has_pve(short_desc_lower, include_unconfirmed=False):
-                            target = auto_pve_map
-                        else:
-                            target = auto_price_map
-                        lst = target.setdefault(sid, [])
-                        lst.append(entry)
-                        lst.sort(key=lambda x: x['price'])
-                        if len(lst) > 3:
-                            lst.pop()
+                        matched_skins[sid] = sname
+                if matched_skins:
+                    # Pick the most expensive skin (by configured price)
+                    best_sid = max(
+                        matched_skins.keys(),
+                        key=lambda s: skins_dict.get(s, {}).get('price', 0)
+                    )
+                    best_sname = matched_skins[best_sid]
+                    entry = {'price': price_value, 'price_text': price_text,
+                             'href': href, 'seller': user, 'name': best_sname}
+                    # Split by PVE presence in short description
+                    if has_pve(short_desc_lower, include_unconfirmed=False):
+                        target = auto_pve_map
+                    else:
+                        target = auto_price_map
+                    lst = target.setdefault(best_sid, [])
+                    lst.append(entry)
+                    lst.sort(key=lambda x: x['price'])
+                    if len(lst) > 3:
+                        lst.pop()
 
             if log_state and price_value is not None:
                 for position_id in log_keyword_map.get(matched_keyword.lower(), ()):
