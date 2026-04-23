@@ -80,7 +80,7 @@ def record_price_snapshot(item_type, item_id, item_name, mode, results, source="
         with _connect() as conn:
             last_same_day = conn.execute(
                 """
-                SELECT ps.id, ps.recorded_at, pso.price_value, pso.href
+                SELECT ps.id, ps.recorded_at, ps.source, pso.price_value, pso.href
                 FROM price_snapshots ps
                 LEFT JOIN price_snapshot_offers pso
                   ON pso.snapshot_id = ps.id AND pso.rank_num = 1
@@ -94,12 +94,15 @@ def record_price_snapshot(item_type, item_id, item_name, mode, results, source="
 
             current_top = safe_results[0] if safe_results else None
             if last_same_day:
+                prev_source = last_same_day["source"]
                 prev_href = last_same_day["href"]
                 prev_price = last_same_day["price_value"]
                 curr_href = current_top.get("href") if current_top else None
                 curr_price = current_top.get("price") if current_top else None
 
-                if prev_href == curr_href:
+                # Only dedupe if source matches — different source must always write
+                # (so source='auto' can override stale source='minprice' records)
+                if prev_source == source and prev_href == curr_href:
                     if prev_price is None and curr_price is None:
                         return None
                     if prev_price is not None and curr_price is not None and abs(prev_price - curr_price) < 100:
