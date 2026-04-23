@@ -26,6 +26,19 @@ def in_rebase():
            os.path.exists(os.path.join(git_dir, "rebase-apply"))
 
 
+def current_branch():
+    """Return current branch name, or empty string if HEAD is detached."""
+    r = git("symbolic-ref", "--short", "-q", "HEAD")
+    return (r.stdout or "").strip()
+
+
+def ensure_on_main():
+    """If HEAD is detached, force-checkout main."""
+    if not current_branch():
+        print("WARNING: detached HEAD detected, switching to main...")
+        git("checkout", "main", visible=True)
+
+
 def resolve_state_rebase():
     """While rebasing: take remote version for state-file conflicts, continue. Aborts on other conflicts.
 
@@ -64,6 +77,9 @@ def resolve_state_rebase():
 if in_rebase():
     print("WARNING: leftover rebase detected, aborting...")
     git("rebase", "--abort", visible=True)
+
+# Ensure we're on main (rebase --abort may leave detached HEAD in some cases)
+ensure_on_main()
 
 print("=== [1/3] Pulling latest state from GitHub ===")
 
