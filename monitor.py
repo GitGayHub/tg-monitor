@@ -1638,24 +1638,22 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 validated_cache[href] = True
                 return True
 
-            async def _validate_offers_list(offers):
-                """Validate top offers, remove excluded, return cleaned list."""
+            async def _validate_cheapest(offers):
+                """Validate only the cheapest offer. Remove if excluded, keep rest as-is."""
                 if not offers:
                     return offers
-                cleaned = []
-                for offer in offers:
-                    if await _validate_offer(offer):
-                        cleaned.append(offer)
-                return cleaned
+                if not await _validate_offer(offers[0]):
+                    return offers[1:]  # drop excluded cheapest, keep rest
+                return offers
 
-            # Validate cheapest offers in all maps
+            # Validate only the #1 cheapest offer per map (fast: ~20 requests max)
             for sid in list(auto_price_map.keys()):
-                auto_price_map[sid] = await _validate_offers_list(auto_price_map[sid])
+                auto_price_map[sid] = await _validate_cheapest(auto_price_map[sid])
             for sid in list(auto_pve_map.keys()):
-                auto_pve_map[sid] = await _validate_offers_list(auto_pve_map[sid])
+                auto_pve_map[sid] = await _validate_cheapest(auto_pve_map[sid])
             for eid in list(auto_edition_map.keys()):
-                auto_edition_map[eid] = await _validate_offers_list(auto_edition_map[eid])
-            auto_pve_confirmed = await _validate_offers_list(auto_pve_confirmed)
+                auto_edition_map[eid] = await _validate_cheapest(auto_edition_map[eid])
+            auto_pve_confirmed = await _validate_cheapest(auto_pve_confirmed)
 
             if validated_cache:
                 n_checked = len(validated_cache)
