@@ -873,31 +873,33 @@ async def _show_stats(query, context):
         return (2, 0)
     sorted_items = sorted(items.values(), key=_sort_key)
 
-    text = "💰 <b>Последние цены:</b>\n"
+    text = "💰 <b>Последние цены:</b>\n\n"
     single_source = len(sources) == 1
-    if single_source:
-        src_name = 'Автомониторинг' if 'auto' in sources else 'Мин. прайс'
-        text += f"Источник: {src_name}\n"
-    text += "\n"
 
     for item in sorted_items:
         name = html.escape(item['name'])
         a, p = item.get('any'), item.get('pve')
         if single_source:
-            se = ''
+            # Clean view: no source/mode emojis, order = any / pve
+            se, mode_any, mode_pve = '', '', ''
         else:
             src = (a or p or {}).get('source', 'minprice')
             se = '🔍 ' if src == 'minprice' else '📡 '
+            mode_any, mode_pve = '🔒 ', '🧟 '
         is_skin = item['it'] == 'skin'
         if is_skin:
             same = a and p and a.get('href') and a['href'] == p['href']
             a_display = '—' if (not a or same) else _price_link(a['price_text'], a['href'])
             p_display = _price_link(p['price_text'], p['href']) if p else '—'
-            text += f"{se}<b>{name}</b>: 🔒 {a_display} / 🧟 {p_display}\n"
+            text += f"{se}<b>{name}</b>: {mode_any}{a_display} / {mode_pve}{p_display}\n"
         else:
             best = a or p
             price = _price_link(best['price_text'], best['href']) if best else '—'
             text += f"{se}<b>{name}</b>: {price}\n"
+
+    if single_source:
+        src_name = '📡 Автомониторинг' if 'auto' in sources else '🔍 Мин. прайс'
+        text += f"\n<i>Источник: {src_name}</i>"
 
     keyboard = [
         [InlineKeyboardButton("📊 Статистика по скину", callback_data="set:stats:histmenu")],

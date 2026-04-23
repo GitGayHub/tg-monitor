@@ -195,8 +195,28 @@ def normalize_match_text(text):
     return text.strip()
 
 
-def contains_exclude_keyword(text, exclude_keywords):
+def contains_positive_keyword(text, positive_keywords):
+    """Returns the first matching positive phrase, or None.
+    Positive phrases indicate email/rebind IS available (whitelist)."""
     normalized_text = normalize_match_text(text)
+    for pos_word in (positive_keywords or []):
+        normalized_pos = normalize_match_text(pos_word)
+        if normalized_pos and normalized_pos in normalized_text:
+            return pos_word
+    return None
+
+
+def contains_exclude_keyword(text, exclude_keywords, positive_keywords=None):
+    """Returns the first matching exclude phrase, or None.
+    If positive_keywords is provided and matches, exclude is overridden (returns None).
+    This whitelist behavior fixes false positives like 'перепривяжу почту'."""
+    normalized_text = normalize_match_text(text)
+    # Whitelist: if any positive phrase is found, don't exclude
+    if positive_keywords:
+        for pos_word in positive_keywords:
+            normalized_pos = normalize_match_text(pos_word)
+            if normalized_pos and normalized_pos in normalized_text:
+                return None
     for exclude_word in exclude_keywords:
         normalized_exclude = normalize_match_text(exclude_word)
         if normalized_exclude and normalized_exclude in normalized_text:
@@ -1076,7 +1096,8 @@ def _sync_search_min_price(keywords, require_pve=False):
                         continue
 
                     exclude_kws = config.get_exclude_keywords()
-                    if contains_exclude_keyword(item_text, exclude_kws):
+                    positive_kws = config.get_positive_keywords()
+                    if contains_exclude_keyword(item_text, exclude_kws, positive_kws):
                         continue
 
                     price_value = parse_price(price_text)
@@ -1098,7 +1119,7 @@ def _sync_search_min_price(keywords, require_pve=False):
                                 continue
                             full_description, full_text = get_offer_texts(href)
                             combined_text = f"{item_text} {full_text}".strip()
-                            if contains_exclude_keyword(combined_text, exclude_kws):
+                            if contains_exclude_keyword(combined_text, exclude_kws, positive_kws):
                                 continue
                             pve_kws = config.get_confirmed_pve()
                             has_pve_in_desc = any(normalize_match_text(pk) in combined_text for pk in pve_kws)
@@ -1147,7 +1168,7 @@ def _sync_search_min_price(keywords, require_pve=False):
 
                     if 'аренда' in item_text and 'продажа' not in item_text:
                         continue
-                    if contains_exclude_keyword(item_text, config.get_exclude_keywords()):
+                    if contains_exclude_keyword(item_text, config.get_exclude_keywords(), config.get_positive_keywords()):
                         continue
 
                     matched_kw = _keywords_match_text(normalized_keywords, item_text)
@@ -1156,7 +1177,7 @@ def _sync_search_min_price(keywords, require_pve=False):
 
                     full_description, full_text = get_offer_texts(href)
                     combined_text = f"{item_text} {full_text}".strip()
-                    if contains_exclude_keyword(combined_text, config.get_exclude_keywords()):
+                    if contains_exclude_keyword(combined_text, config.get_exclude_keywords(), config.get_positive_keywords()):
                         continue
 
                     price_value = parse_price(price_text)
@@ -1190,6 +1211,7 @@ def _sync_search_min_price(keywords, require_pve=False):
     # Проверяем exclude keywords по полному описанию только для топ кандидатов.
     if not require_pve and results:
         exclude_kws = config.get_exclude_keywords()
+        positive_kws = config.get_positive_keywords()
         validated = []
         for candidate in results[:8]:
             href = candidate['href']
@@ -1200,7 +1222,7 @@ def _sync_search_min_price(keywords, require_pve=False):
                 except Exception as e:
                     logger.warning(f"Мін. прайс: не удалось открыть описание {href}: {e}")
             _, full_text = details_cache.get(href, ("", ""))
-            if full_text and contains_exclude_keyword(full_text, exclude_kws):
+            if full_text and contains_exclude_keyword(full_text, exclude_kws, positive_kws):
                 logger.info(f"Мін. прайс: отфильтровано по описанию — {href}")
                 continue
             validated.append(candidate)
@@ -1344,6 +1366,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
         skins_dict = config.get_enabled_skins_dict()
         exclude_keywords = config.get_exclude_keywords()
+        positive_keywords = config.get_positive_keywords()
         search_mode = config.search_mode
         confirmed_pve_only = search_mode == 'pve_only'
         confirmed_pve_enabled_effective = config.confirmed_pve_enabled if confirmed_pve_enabled_override is None else bool(confirmed_pve_enabled_override)
@@ -1490,7 +1513,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             # --- Auto price tracking: detect skins BEFORE exclude filter ---
             price_value = parse_price(price_text)
-            is_excluded = bool(contains_exclude_keyword(short_description, exclude_keywords))
+            is_excluded = bool(contains_exclude_keyword(short_description, exclude_keywords, positive_keywords))
             # Auto-tracking only for accounts page (not 'prochee' misc items)
             if price_value is not None and kw_to_skin and source_lot != 'prochee':
                 matched_skins = {}  # sid → sname
@@ -1627,7 +1650,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         get_offer_details(href), timeout=15
                     )
                     if full_desc:
-                        excluded = contains_exclude_keyword(full_desc, exclude_keywords)
+                        excluded = contains_exclude_keyword(full_desc, exclude_keywords, positive_keywords)
                         if excluded:
                             logger.info(f"🚫 Авто-валидация: исключён по описанию ('{excluded}'): {href}")
                             validated_cache[href] = False
@@ -1763,7 +1786,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 continue
 
             combined_text = candidate['short_description'] + " " + full_description
-            matched_exclude = contains_exclude_keyword(combined_text, exclude_keywords)
+            matched_exclude = contains_exclude_keyword(combined_text, exclude_keywords, positive_keywords)
             if matched_exclude:
                 logger.info(f"🚫 Исключено ('{matched_exclude}'): {candidate['short_description'][:40]}...")
                 try:
