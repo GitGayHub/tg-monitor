@@ -876,22 +876,19 @@ async def _show_stats(query, context):
     text = "💰 <b>Последние цены:</b>\n\n"
     single_source = len(sources) == 1
 
-    # Always show source line at the top
-    if len(sources) == 0:
-        text += "<i>Источник: —</i>\n\n"
-    elif single_source:
+    # Only show source line when all items share the same source
+    if single_source:
         src_name = '📡 Автомониторинг' if 'auto' in sources else '🔍 Мин. прайс'
         text += f"<i>Источник: {src_name}</i>\n\n"
-    else:
-        text += "<i>Источник: 📡 Авто + 🔍 Мин. прайс (смешано)</i>\n\n"
 
     for item in sorted_items:
         name = html.escape(item['name'])
         a, p = item.get('any'), item.get('pve')
         if single_source:
-            # Clean view: no per-line source emoji, rely on order any / pve
+            # Clean view: no per-line emoji, order = any / pve
             se = ''
         else:
+            # Mixed sources: show per-item emoji so user knows where each came from
             src = (a or p or {}).get('source', 'minprice')
             se = '🔍 ' if src == 'minprice' else '📡 '
         is_skin = item['it'] == 'skin'
