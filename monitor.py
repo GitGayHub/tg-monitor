@@ -1404,14 +1404,22 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         banned_count = 0
         candidates = []
 
-        # Build keyword → skin_id map for auto price tracking
-        auto_price_map = {}  # skin_id → list of up to 3 cheapest offers (mode=any)
-        auto_pve_map = {}    # skin_id → list of up to 3 cheapest PVE offers
+        # Build keyword maps for auto price tracking
+        auto_price_map = {}   # skin_id → [offers] (mode=any)
+        auto_pve_map = {}     # skin_id → [offers] (mode=pve)
+        auto_edition_map = {} # edition_id → [offers]
+        auto_pve_confirmed = []  # top-3 cheapest confirmed-PVE offers
+        auto_pve_seen = False    # True if any confirmed PVE offer seen
         kw_to_skin = {}
+        kw_to_edition = {}
         if skip_seen:  # only for background auto-monitoring
             for sid, skin in skins_dict.items():
                 for kw in skin.get('keywords', []):
                     kw_to_skin[kw.lower()] = (sid, sid.replace('_', ' ').title())
+            for eid, ed in config.get_all_editions().items():
+                if ed.get('enabled', True):
+                    for kw in ed.get('keywords', []):
+                        kw_to_edition[kw.lower()] = (eid, eid.replace('_', ' ').title())
 
         for idx, item in enumerate(listings, start=1):
             if cancelled():
@@ -1515,6 +1523,40 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         if len(lst) > 3:
                             lst.pop()
 
+            # Track editions independently (offer can have both skin + edition)
+            if price_value is not None and kw_to_edition:
+                matched_eds = {}
+                for kw, (eid, ename) in kw_to_edition.items():
+                    if eid in matched_eds:
+                        continue
+                    pattern_kw = r'\b' + re.escape(kw) + r'\b'
+                    if re.search(pattern_kw, short_desc_lower):
+                        matched_eds[eid] = ename
+                if matched_eds:
+                    tier = {'super_deluxe': 1, 'limited': 2, 'ultimate': 3}
+                    best_eid = max(matched_eds.keys(), key=lambda e: tier.get(e, 0))
+                    best_ename = matched_eds[best_eid]
+                    auto_edition_map.setdefault(best_eid, [])
+                    if not is_excluded:
+                        entry = {'price': price_value, 'price_text': price_text,
+                                 'href': href, 'seller': user, 'name': best_ename}
+                        auto_edition_map[best_eid].append(entry)
+                        auto_edition_map[best_eid].sort(key=lambda x: x['price'])
+                        if len(auto_edition_map[best_eid]) > 3:
+                            auto_edition_map[best_eid].pop()
+
+            # Track confirmed PVE (cheapest accounts with confirmed PVE)
+            if price_value is not None and skip_seen:
+                if has_pve(short_desc_lower, include_unconfirmed=False):
+                    auto_pve_seen = True
+                    if not is_excluded:
+                        auto_pve_confirmed.append(
+                            {'price': price_value, 'price_text': price_text,
+                             'href': href, 'seller': user, 'name': 'STW'})
+                        auto_pve_confirmed.sort(key=lambda x: x['price'])
+                        if len(auto_pve_confirmed) > 3:
+                            auto_pve_confirmed.pop()
+
             if not matched_keyword:
                 if skip_seen and not already_seen:
                     seen_ids.add(offer_id)
@@ -1556,31 +1598,41 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             })
 
         # Save auto-monitoring prices to history
-        # Skins with empty lists → snapshot with 0 results (source=auto, shows "—" with 📡)
-        if skip_seen and (auto_price_map or auto_pve_map):
-            def _skin_name(sid):
+        # Empty lists → snapshot with 0 results (source=auto, shows "—" with 📡)
+        if skip_seen:
+            def _auto_name(sid):
                 return sid.replace('_', ' ').title()
 
-            non_empty_any = sum(1 for v in auto_price_map.values() if v)
-            non_empty_pve = sum(1 for v in auto_pve_map.values() if v)
-            for sid, offers in auto_price_map.items():
+            def _save_auto(item_type, item_id, name, mode, offers):
                 record_price_snapshot(
-                    'skin', sid, _skin_name(sid), 'any',
+                    item_type, item_id, name, mode,
                     [{'price': o['price'], 'price_text': o['price_text'],
                       'href': o['href'], 'seller': o['seller']} for o in offers],
                     source='auto'
                 )
-            for sid, offers in auto_pve_map.items():
-                record_price_snapshot(
-                    'skin', sid, _skin_name(sid), 'pve',
-                    [{'price': o['price'], 'price_text': o['price_text'],
-                      'href': o['href'], 'seller': o['seller']} for o in offers],
-                    source='auto'
-                )
-            logger.info(
-                f"📈 Авто-мониторинг: без PVE {non_empty_any}/{len(auto_price_map)} скинов с ценами, "
-                f"с PVE {non_empty_pve}/{len(auto_pve_map)} скинов с ценами"
-            )
+
+            parts = []
+            if auto_price_map or auto_pve_map:
+                for sid, offers in auto_price_map.items():
+                    _save_auto('skin', sid, _auto_name(sid), 'any', offers)
+                for sid, offers in auto_pve_map.items():
+                    _save_auto('skin', sid, _auto_name(sid), 'pve', offers)
+                n_any = sum(1 for v in auto_price_map.values() if v)
+                n_pve = sum(1 for v in auto_pve_map.values() if v)
+                parts.append(f"скины: {n_any}/{len(auto_price_map)} без PVE, {n_pve}/{len(auto_pve_map)} с PVE")
+
+            if auto_edition_map:
+                for eid, offers in auto_edition_map.items():
+                    _save_auto('edition', eid, _auto_name(eid), 'any', offers)
+                n_ed = sum(1 for v in auto_edition_map.values() if v)
+                parts.append(f"издания: {n_ed}/{len(auto_edition_map)}")
+
+            if auto_pve_seen:
+                _save_auto('pve', 'confirmed', 'STW', 'confirmed', auto_pve_confirmed)
+                parts.append(f"STW: {'да' if auto_pve_confirmed else 'только без почты'}")
+
+            if parts:
+                logger.info(f"📈 Авто-мониторинг: {', '.join(parts)}")
 
         new_candidates = len(candidates)
         logger.info(

@@ -827,7 +827,7 @@ async def _show_stats(query, context):
         key = f"{it}:{ii}"
         if key not in items:
             if it == 'pve':
-                name = 'Подтв. PVE' if ii == 'confirmed' else 'Неподтв. PVE'
+                name = 'STW' if ii == 'confirmed' else 'Неподтв. PVE'
             else:
                 name = row.get('item_name') or ii or '?'
             items[key] = {
@@ -854,6 +854,19 @@ async def _show_stats(query, context):
         else:
             items[key]['any'] = entry
 
+    # Sort items: skins alphabetically → STW → Super Deluxe → Limited → Ultimate
+    _edition_order = {'super_deluxe': 1, 'limited': 2, 'ultimate': 3}
+    def _sort_key(item):
+        it, ii = item['it'], item['ii']
+        if it == 'skin':
+            return (0, item['name'].lower())
+        if it == 'pve':
+            return (1, 0)
+        if it == 'edition':
+            return (1, _edition_order.get(ii, 99))
+        return (2, 0)
+    sorted_items = sorted(items.values(), key=_sort_key)
+
     text = "💰 <b>Последние цены:</b>\n"
     single_source = len(sources) == 1
     if single_source:
@@ -861,14 +874,14 @@ async def _show_stats(query, context):
         text += f"Источник: {src_name}\n"
     text += "\n"
 
-    for item in items.values():
+    for item in sorted_items:
         name = html.escape(item['name'])
         a, p = item.get('any'), item.get('pve')
         if single_source:
             se = ''
         else:
             src = (a or p or {}).get('source', 'minprice')
-            se = '🔍' if src == 'minprice' else '📡'
+            se = '🔍 ' if src == 'minprice' else '📡 '
         is_skin = item['it'] == 'skin'
         if is_skin:
             same = a and p and a.get('href') and a['href'] == p['href']
