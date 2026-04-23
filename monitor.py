@@ -1105,30 +1105,12 @@ def _sync_search_min_price(keywords, require_pve=False):
                     if price_value is not None and price_value > 0:
                         normalized_kw = normalize_match_text(kw)
                         if normalized_kw and _keyword_word_match(normalized_kw, item_text):
-                            # Быстрый путь: без PVE-фильтра детали не нужны — summary уже подтверждает
-                            # и ключевое слово, и отсутствие exclude-слов. Это на порядок ускоряет мин. прайс.
-                            if not require_pve:
-                                all_results[href] = {
-                                    'price': price_value,
-                                    'price_text': price_text,
-                                    'description': desc[:200],
-                                    'seller': seller,
-                                    'href': href,
-                                    'matched_kw': kw
-                                }
-                                continue
-                            full_description, full_text = get_offer_texts(href)
-                            combined_text = f"{item_text} {full_text}".strip()
-                            if contains_exclude_keyword(combined_text, exclude_kws, positive_kws):
-                                continue
-                            pve_kws = config.get_confirmed_pve()
-                            has_pve_in_desc = any(normalize_match_text(pk) in combined_text for pk in pve_kws)
-                            if not has_pve_in_desc:
-                                continue
+                            # Быстрый путь: собираем кандидатов по короткому тексту,
+                            # полные описания загружаем позже только для топ-N.
                             all_results[href] = {
                                 'price': price_value,
                                 'price_text': price_text,
-                                'description': (full_description or desc)[:200],
+                                'description': desc[:200],
                                 'seller': seller,
                                 'href': href,
                                 'matched_kw': kw
@@ -1175,27 +1157,17 @@ def _sync_search_min_price(keywords, require_pve=False):
                     if not matched_kw:
                         continue
 
-                    full_description, full_text = get_offer_texts(href)
-                    combined_text = f"{item_text} {full_text}".strip()
-                    if contains_exclude_keyword(combined_text, config.get_exclude_keywords(), config.get_positive_keywords()):
-                        continue
-
                     price_value = parse_price(price_text)
                     if price_value is None or price_value <= 0:
                         continue
                     if current_best is not None and price_value >= current_best:
                         continue
 
-                    if require_pve:
-                        confirmed_pve_tokens = [normalize_match_text(pk) for pk in config.get_confirmed_pve()]
-                        has_confirmed = any(token in combined_text for token in confirmed_pve_tokens if token)
-                        if not has_confirmed:
-                            continue
-
+                    # Collect candidate; full description validated later with top-N
                     all_results[href] = {
                         'price': price_value,
                         'price_text': price_text,
-                        'description': (full_description or desc)[:200],
+                        'description': desc[:200],
                         'seller': seller,
                         'href': href,
                         'matched_kw': matched_kw if isinstance(matched_kw, str) else keywords[0],
@@ -1207,30 +1179,34 @@ def _sync_search_min_price(keywords, require_pve=False):
 
     results = sorted(all_results.values(), key=lambda x: x['price'])
 
-    # Для без-PVE пути описания не открывались (быстрый путь).
-    # Проверяем exclude keywords по полному описанию только для топ кандидатов.
-    if not require_pve and results:
-        exclude_kws = config.get_exclude_keywords()
-        positive_kws = config.get_positive_keywords()
-        validated = []
-        for candidate in results[:8]:
-            href = candidate['href']
-            if href not in details_cache:
-                try:
-                    get_offer_texts(href)
-                    time.sleep(random.uniform(0.25, 0.5))
-                except Exception as e:
-                    logger.warning(f"Мін. прайс: не удалось открыть описание {href}: {e}")
-            _, full_text = details_cache.get(href, ("", ""))
-            if full_text and contains_exclude_keyword(full_text, exclude_kws, positive_kws):
-                logger.info(f"Мін. прайс: отфильтровано по описанию — {href}")
+    # Validate top candidates by loading full descriptions (both PVE and non-PVE).
+    # This keeps the search fast: only top-N get HTTP requests, not all matches.
+    exclude_kws = config.get_exclude_keywords()
+    positive_kws = config.get_positive_keywords()
+    pve_tokens = [normalize_match_text(pk) for pk in config.get_confirmed_pve()] if require_pve else []
+    validated = []
+    for candidate in results[:12]:
+        href = candidate['href']
+        if href not in details_cache:
+            try:
+                get_offer_texts(href)
+                time.sleep(random.uniform(0.25, 0.5))
+            except Exception as e:
+                logger.warning(f"Мін. прайс: не удалось открыть описание {href}: {e}")
+        full_desc, full_text = details_cache.get(href, ("", ""))
+        if full_text and contains_exclude_keyword(full_text, exclude_kws, positive_kws):
+            logger.info(f"Мін. прайс: отфильтровано по описанию — {href}")
+            continue
+        if require_pve:
+            combined = f"{normalize_match_text(candidate.get('description',''))} {full_text}"
+            if not any(token in combined for token in pve_tokens if token):
                 continue
-            validated.append(candidate)
-            if len(validated) >= 3:
-                break
-        return validated
-
-    return results[:3]
+        if full_desc:
+            candidate['description'] = full_desc[:200]
+        validated.append(candidate)
+        if len(validated) >= 3:
+            break
+    return validated
 
 
 async def search_min_price(keywords, require_pve=False):
