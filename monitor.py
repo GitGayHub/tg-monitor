@@ -1492,7 +1492,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             # --- Auto price tracking: detect skins BEFORE exclude filter ---
             price_value = parse_price(price_text)
             is_excluded = bool(contains_exclude_keyword(short_description, exclude_keywords))
-            if price_value is not None and kw_to_skin:
+            # Auto-tracking only for accounts page (not 'prochee' misc items)
+            if price_value is not None and kw_to_skin and source_lot != 'prochee':
                 matched_skins = {}  # sid → sname
                 for kw, (sid, sname) in kw_to_skin.items():
                     if sid in matched_skins:
@@ -1524,7 +1525,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             lst.pop()
 
             # Track editions independently (offer can have both skin + edition)
-            if price_value is not None and kw_to_edition:
+            if price_value is not None and kw_to_edition and source_lot != 'prochee':
                 matched_eds = {}
                 for kw, (eid, ename) in kw_to_edition.items():
                     if eid in matched_eds:
@@ -1548,7 +1549,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             auto_edition_map[best_eid].pop()
 
             # Track confirmed PVE (cheapest accounts with confirmed PVE)
-            if price_value is not None and skip_seen:
+            if price_value is not None and skip_seen and source_lot != 'prochee':
                 if has_pve(short_desc_lower, include_unconfirmed=False):
                     auto_pve_seen = True
                     if not is_excluded:
