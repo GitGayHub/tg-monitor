@@ -180,7 +180,7 @@ def get_price_summary():
             last = conn.execute("SELECT MAX(recorded_at) FROM price_snapshots").fetchone()[0]
             rows = conn.execute(
                 """
-                SELECT ps.item_type, ps.item_id, ps.item_name, ps.mode,
+                SELECT ps.id, ps.item_type, ps.item_id, ps.item_name, ps.mode,
                        pso.price_value, pso.price_text, pso.href, ps.recorded_at, ps.source
                 FROM price_snapshots ps
                 JOIN price_snapshot_offers pso ON pso.snapshot_id = ps.id AND pso.rank_num = 1
@@ -188,7 +188,7 @@ def get_price_summary():
                     SELECT MAX(id) FROM price_snapshots
                     GROUP BY item_type, item_id, mode
                 )
-                ORDER BY ps.item_name
+                ORDER BY ps.id DESC
                 """
             ).fetchall()
     return {

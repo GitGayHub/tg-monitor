@@ -1449,9 +1449,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 banned_count += 1
                 continue
 
-            if skip_seen and offer_id in seen_ids:
+            already_seen = skip_seen and offer_id in seen_ids
+            if already_seen:
                 already_seen_count += 1
-                continue
+                # Continue processing to update auto_price_map for stats,
+                # but will skip notification logic below.
 
             desc_div = item.find('div', class_='tc-desc-text')
             price_div = item.find('div', class_='tc-price')
@@ -1479,15 +1481,16 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     break
 
             if not matched_keyword:
-                if skip_seen:
+                if skip_seen and not already_seen:
                     seen_ids.add(offer_id)
                     save_seen_id(offer_id)
                 continue
 
             matched_exclude = contains_exclude_keyword(short_description, exclude_keywords)
             if matched_exclude:
-                logger.info(f"🚫 Исключено в кратком описании ('{matched_exclude}'): {short_description[:40]}...")
-                if skip_seen:
+                if not already_seen:
+                    logger.info(f"🚫 Исключено в кратком описании ('{matched_exclude}'): {short_description[:40]}...")
+                if skip_seen and not already_seen:
                     seen_ids.add(offer_id)
                     save_seen_id(offer_id)
                 continue
@@ -1511,9 +1514,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     if log_entry:
                         update_recheck_log_offer(log_entry, 'any_offer', price_value, price_text, href)
             if price_value is None or price_value > effective_max_price:
-                if skip_seen:
+                if skip_seen and not already_seen:
                     seen_ids.add(offer_id)
                     save_seen_id(offer_id)
+                continue
+
+            # Skip notification for already-seen offers, but auto_price_map is already updated
+            if already_seen:
                 continue
 
             candidates.append({

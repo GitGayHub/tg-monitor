@@ -805,28 +805,48 @@ async def _show_stats(query, context):
     summary = get_price_summary()
     prices = summary.get('latest_prices', [])
 
+    def _normalize_pve_id(it, ii, mode):
+        """Merge legacy PVE item_ids ('', '__pve__', 'confirmed') into one logical item per mode."""
+        if it != 'pve':
+            return ii
+        if 'unconfirmed' in (mode or '').lower() or ii == 'unconfirmed':
+            return 'unconfirmed'
+        return 'confirmed'
+
+    # prices come sorted by id DESC (newest first). First occurrence per (key, slot) wins.
     items = OrderedDict()
     sources = set()
     for row in prices:
-        key = f"{row.get('item_type', 'skin')}:{row.get('item_id', '')}"
+        it = row.get('item_type', 'skin')
+        raw_ii = row.get('item_id', '')
+        mode = (row.get('mode') or '').lower()
+        ii = _normalize_pve_id(it, raw_ii, mode)
+        key = f"{it}:{ii}"
         if key not in items:
+            if it == 'pve':
+                name = 'Подтв. PVE' if ii == 'confirmed' else 'Неподтв. PVE'
+            else:
+                name = row.get('item_name') or ii or '?'
             items[key] = {
-                'name': row.get('item_name') or row.get('item_id', '?'),
-                'it': row.get('item_type', 'skin'),
-                'ii': row.get('item_id', ''),
+                'name': name,
+                'it': it,
+                'ii': ii,
                 'any': None, 'pve': None,
             }
-        mode = (row.get('mode') or '').lower()
         raw_src = row.get('source', 'minprice')
         src = 'auto' if raw_src == 'auto' else 'minprice'
-        sources.add(src)
         entry = {
             'price_text': row.get('price_text') or '—',
             'href': row.get('href'),
             'recorded_at': row.get('recorded_at', ''),
             'source': src,
         }
-        if 'pve' in mode:
+        # Only assign to slot if not already filled (newest wins)
+        slot = 'pve' if 'pve' in mode else 'any'
+        if items[key][slot] is not None:
+            continue
+        sources.add(src)
+        if slot == 'pve':
             items[key]['pve'] = entry
         else:
             items[key]['any'] = entry
@@ -886,20 +906,33 @@ async def _show_stats_info(query, context, item_type, item_id):
     await query.answer(alert, show_alert=True)
 
 
-async def _show_stats_top3_menu(query, context):
-    """Меню выбора скина для топ-3."""
-    summary = get_price_summary()
-    prices = summary.get('latest_prices', [])
+def _normalize_stats_items(prices):
+    """Dedupe legacy PVE item_ids; returns list of {it, ii, name}."""
     seen = set()
-    keyboard = []
+    result = []
     for row in prices:
-        it, ii = row.get('item_type', 'skin'), row.get('item_id', '')
+        it = row.get('item_type', 'skin')
+        raw_ii = row.get('item_id', '')
+        mode = (row.get('mode') or '').lower()
+        if it == 'pve':
+            ii = 'unconfirmed' if 'unconfirmed' in mode or raw_ii == 'unconfirmed' else 'confirmed'
+            name = 'Подтв. PVE' if ii == 'confirmed' else 'Неподтв. PVE'
+        else:
+            ii = raw_ii
+            name = row.get('item_name') or raw_ii or '?'
         key = f"{it}:{ii}"
         if key in seen:
             continue
         seen.add(key)
-        name = row.get('item_name') or ii
-        keyboard.append([InlineKeyboardButton(f"⭐ {name}", callback_data=f"set:stats:top3:{it}:{ii}")])
+        result.append({'it': it, 'ii': ii, 'name': name})
+    return result
+
+
+async def _show_stats_top3_menu(query, context):
+    """Меню выбора скина для топ-3."""
+    summary = get_price_summary()
+    items = _normalize_stats_items(summary.get('latest_prices', []))
+    keyboard = [[InlineKeyboardButton(f"⭐ {x['name']}", callback_data=f"set:stats:top3:{x['it']}:{x['ii']}")] for x in items]
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="set:stats")])
     await query.edit_message_text("⭐ <b>Выберите позицию:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
@@ -943,17 +976,8 @@ async def _show_stats_top3_item(query, context, item_type, item_id):
 async def _show_stats_hist_menu(query, context):
     """Меню выбора скина для просмотра истории."""
     summary = get_price_summary()
-    prices = summary.get('latest_prices', [])
-    seen = set()
-    keyboard = []
-    for row in prices:
-        it, ii = row.get('item_type', 'skin'), row.get('item_id', '')
-        key = f"{it}:{ii}"
-        if key in seen:
-            continue
-        seen.add(key)
-        name = row.get('item_name') or ii
-        keyboard.append([InlineKeyboardButton(f"📜 {name}", callback_data=f"set:stats:hist:{it}:{ii}")])
+    items = _normalize_stats_items(summary.get('latest_prices', []))
+    keyboard = [[InlineKeyboardButton(f"📜 {x['name']}", callback_data=f"set:stats:hist:{x['it']}:{x['ii']}")] for x in items]
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="set:stats")])
     await query.edit_message_text("📜 <b>Выберите позицию:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
