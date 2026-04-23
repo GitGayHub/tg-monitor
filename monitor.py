@@ -1481,9 +1481,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     matched_keyword = keyword
                     break
 
-            # --- Auto price tracking BEFORE any filtering ---
-            # We want ALL market prices for stats, even from excluded offers.
+            # --- Auto price tracking: detect skins BEFORE exclude filter ---
             price_value = parse_price(price_text)
+            is_excluded = bool(contains_exclude_keyword(short_description, exclude_keywords))
             if price_value is not None and kw_to_skin:
                 matched_skins = {}  # sid → sname
                 for kw, (sid, sname) in kw_to_skin.items():
@@ -1493,23 +1493,27 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     if re.search(pattern_kw, short_desc_lower):
                         matched_skins[sid] = sname
                 if matched_skins:
-                    # If multiple skins match, attribute to the most expensive one
                     best_sid = max(
                         matched_skins.keys(),
                         key=lambda s: skins_dict.get(s, {}).get('price', 0)
                     )
                     best_sname = matched_skins[best_sid]
-                    entry = {'price': price_value, 'price_text': price_text,
-                             'href': href, 'seller': user, 'name': best_sname}
-                    if has_pve(short_desc_lower, include_unconfirmed=False):
-                        target = auto_pve_map
+                    # Always mark skin as "seen by auto" (for 📡 icon)
+                    is_pve = has_pve(short_desc_lower, include_unconfirmed=False)
+                    if is_pve:
+                        auto_pve_map.setdefault(best_sid, [])
                     else:
-                        target = auto_price_map
-                    lst = target.setdefault(best_sid, [])
-                    lst.append(entry)
-                    lst.sort(key=lambda x: x['price'])
-                    if len(lst) > 3:
-                        lst.pop()
+                        auto_price_map.setdefault(best_sid, [])
+                    # Only record price if NOT excluded (no "без почты" etc.)
+                    if not is_excluded:
+                        entry = {'price': price_value, 'price_text': price_text,
+                                 'href': href, 'seller': user, 'name': best_sname}
+                        target = auto_pve_map if is_pve else auto_price_map
+                        lst = target[best_sid]
+                        lst.append(entry)
+                        lst.sort(key=lambda x: x['price'])
+                        if len(lst) > 3:
+                            lst.pop()
 
             if not matched_keyword:
                 if skip_seen and not already_seen:
@@ -1517,10 +1521,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     save_seen_id(offer_id)
                 continue
 
-            matched_exclude = contains_exclude_keyword(short_description, exclude_keywords)
-            if matched_exclude:
+            if is_excluded:
                 if not already_seen:
-                    logger.info(f"🚫 Исключено в кратком описании ('{matched_exclude}'): {short_description[:40]}...")
+                    logger.info(f"🚫 Исключено в кратком описании: {short_description[:40]}...")
                 if skip_seen and not already_seen:
                     seen_ids.add(offer_id)
                     save_seen_id(offer_id)
@@ -1553,24 +1556,31 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             })
 
         # Save auto-monitoring prices to history
+        # Skins with empty lists → snapshot with 0 results (source=auto, shows "—" with 📡)
         if skip_seen and (auto_price_map or auto_pve_map):
+            def _skin_name(sid):
+                return sid.replace('_', ' ').title()
+
+            non_empty_any = sum(1 for v in auto_price_map.values() if v)
+            non_empty_pve = sum(1 for v in auto_pve_map.values() if v)
             for sid, offers in auto_price_map.items():
-                name = offers[0]['name'] if offers else sid
                 record_price_snapshot(
-                    'skin', sid, name, 'any',
+                    'skin', sid, _skin_name(sid), 'any',
                     [{'price': o['price'], 'price_text': o['price_text'],
                       'href': o['href'], 'seller': o['seller']} for o in offers],
                     source='auto'
                 )
             for sid, offers in auto_pve_map.items():
-                name = offers[0]['name'] if offers else sid
                 record_price_snapshot(
-                    'skin', sid, name, 'pve',
+                    'skin', sid, _skin_name(sid), 'pve',
                     [{'price': o['price'], 'price_text': o['price_text'],
                       'href': o['href'], 'seller': o['seller']} for o in offers],
                     source='auto'
                 )
-            logger.info(f"📈 Авто-цены записаны: {len(auto_price_map)} без PVE, {len(auto_pve_map)} с PVE")
+            logger.info(
+                f"📈 Авто-мониторинг: без PVE {non_empty_any}/{len(auto_price_map)} скинов с ценами, "
+                f"с PVE {non_empty_pve}/{len(auto_pve_map)} скинов с ценами"
+            )
 
         new_candidates = len(candidates)
         logger.info(

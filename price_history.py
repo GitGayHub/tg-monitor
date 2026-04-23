@@ -183,7 +183,7 @@ def get_price_summary():
                 SELECT ps.id, ps.item_type, ps.item_id, ps.item_name, ps.mode,
                        pso.price_value, pso.price_text, pso.href, ps.recorded_at, ps.source
                 FROM price_snapshots ps
-                JOIN price_snapshot_offers pso ON pso.snapshot_id = ps.id AND pso.rank_num = 1
+                LEFT JOIN price_snapshot_offers pso ON pso.snapshot_id = ps.id AND pso.rank_num = 1
                 WHERE ps.id IN (
                     SELECT MAX(id) FROM price_snapshots
                     GROUP BY item_type, item_id, mode
