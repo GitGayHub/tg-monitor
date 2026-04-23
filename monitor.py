@@ -1692,8 +1692,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 all_skin_ids.add(sid)
             for sid in all_skin_ids:
                 _save_auto('skin', sid, _auto_name(sid), 'any', auto_price_map.get(sid, []))
-                if sid in auto_pve_map:
-                    _save_auto('skin', sid, _auto_name(sid), 'pve', auto_pve_map[sid])
+                _save_auto('skin', sid, _auto_name(sid), 'pve', auto_pve_map.get(sid, []))
             n_any = sum(1 for sid in all_skin_ids if auto_price_map.get(sid))
             n_pve = sum(1 for sid in all_skin_ids if auto_pve_map.get(sid))
             parts.append(f"скины: {n_any}/{len(all_skin_ids)} без PVE, {n_pve}/{len(all_skin_ids)} с PVE")
