@@ -1601,7 +1601,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
         # Save auto-monitoring prices to history
         # Empty lists → snapshot with 0 results (source=auto, shows "—" with 📡)
-        if skip_seen:
+        if skip_seen and kw_to_skin:
             def _auto_name(sid):
                 return sid.replace('_', ' ').title()
 
@@ -1613,28 +1613,82 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     source='auto'
                 )
 
+            # --- Validate top offers by loading full descriptions ---
+            # Only check cheapest (first) offer per map to minimize HTTP requests
+            validated_cache = {}  # href → True/False
+
+            async def _validate_offer(offer):
+                """Load full description and check exclude keywords. Returns True if OK."""
+                href = offer.get('href', '')
+                if href in validated_cache:
+                    return validated_cache[href]
+                try:
+                    full_desc, _ = await asyncio.wait_for(
+                        get_offer_details(href), timeout=15
+                    )
+                    if full_desc:
+                        excluded = contains_exclude_keyword(full_desc, exclude_keywords)
+                        if excluded:
+                            logger.info(f"🚫 Авто-валидация: исключён по описанию ('{excluded}'): {href}")
+                            validated_cache[href] = False
+                            return False
+                except Exception as e:
+                    logger.debug(f"⚠️ Авто-валидация: не удалось загрузить {href}: {e}")
+                validated_cache[href] = True
+                return True
+
+            async def _validate_offers_list(offers):
+                """Validate top offers, remove excluded, return cleaned list."""
+                if not offers:
+                    return offers
+                cleaned = []
+                for offer in offers:
+                    if await _validate_offer(offer):
+                        cleaned.append(offer)
+                return cleaned
+
+            # Validate cheapest offers in all maps
+            for sid in list(auto_price_map.keys()):
+                auto_price_map[sid] = await _validate_offers_list(auto_price_map[sid])
+            for sid in list(auto_pve_map.keys()):
+                auto_pve_map[sid] = await _validate_offers_list(auto_pve_map[sid])
+            for eid in list(auto_edition_map.keys()):
+                auto_edition_map[eid] = await _validate_offers_list(auto_edition_map[eid])
+            auto_pve_confirmed = await _validate_offers_list(auto_pve_confirmed)
+
+            if validated_cache:
+                n_checked = len(validated_cache)
+                n_removed = sum(1 for v in validated_cache.values() if not v)
+                logger.info(f"🔍 Авто-валидация: проверено {n_checked} описаний, исключено {n_removed}")
+
             parts = []
-            if auto_price_map or auto_pve_map:
-                for sid, offers in auto_price_map.items():
-                    _save_auto('skin', sid, _auto_name(sid), 'any', offers)
-                for sid, offers in auto_pve_map.items():
-                    _save_auto('skin', sid, _auto_name(sid), 'pve', offers)
-                n_any = sum(1 for v in auto_price_map.values() if v)
-                n_pve = sum(1 for v in auto_pve_map.values() if v)
-                parts.append(f"скины: {n_any}/{len(auto_price_map)} без PVE, {n_pve}/{len(auto_pve_map)} с PVE")
 
-            if auto_edition_map:
-                for eid, offers in auto_edition_map.items():
-                    _save_auto('edition', eid, _auto_name(eid), 'any', offers)
-                n_ed = sum(1 for v in auto_edition_map.values() if v)
-                parts.append(f"издания: {n_ed}/{len(auto_edition_map)}")
+            # Save for ALL enabled skins (even empty → "—" with 📡)
+            all_skin_ids = set()
+            for kw, (sid, sname) in kw_to_skin.items():
+                all_skin_ids.add(sid)
+            for sid in all_skin_ids:
+                _save_auto('skin', sid, _auto_name(sid), 'any', auto_price_map.get(sid, []))
+                if sid in auto_pve_map:
+                    _save_auto('skin', sid, _auto_name(sid), 'pve', auto_pve_map[sid])
+            n_any = sum(1 for sid in all_skin_ids if auto_price_map.get(sid))
+            n_pve = sum(1 for sid in all_skin_ids if auto_pve_map.get(sid))
+            parts.append(f"скины: {n_any}/{len(all_skin_ids)} без PVE, {n_pve}/{len(all_skin_ids)} с PVE")
 
-            if auto_pve_seen:
-                _save_auto('pve', 'confirmed', 'STW', 'confirmed', auto_pve_confirmed)
-                parts.append(f"STW: {'да' if auto_pve_confirmed else 'только без почты'}")
+            # Save for ALL enabled editions (even empty → "—" with 📡)
+            all_edition_ids = set()
+            for kw, (eid, ename) in kw_to_edition.items():
+                all_edition_ids.add(eid)
+            for eid in all_edition_ids:
+                _save_auto('edition', eid, _auto_name(eid), 'any', auto_edition_map.get(eid, []))
+            n_ed = sum(1 for eid in all_edition_ids if auto_edition_map.get(eid))
+            parts.append(f"издания: {n_ed}/{len(all_edition_ids)}")
 
-            if parts:
-                logger.info(f"📈 Авто-мониторинг: {', '.join(parts)}")
+            # Save STW (always write auto snapshot so 📡 shows)
+            _save_auto('pve', 'confirmed', 'STW', 'confirmed', auto_pve_confirmed)
+            parts.append(f"STW: {'да' if auto_pve_confirmed else '—'}")
+
+            logger.info(f"📈 Авто-мониторинг: {', '.join(parts)}")
 
         new_candidates = len(candidates)
         logger.info(
