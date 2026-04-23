@@ -27,7 +27,12 @@ def in_rebase():
 
 
 def resolve_state_rebase():
-    """While rebasing: take remote version for state-file conflicts, continue. Aborts on other conflicts."""
+    """While rebasing: take remote version for state-file conflicts, continue. Aborts on other conflicts.
+
+    NOTE: during rebase, git flips --ours/--theirs semantics:
+      --ours  = the branch being rebased ONTO (upstream/remote) <-- what we want for state
+      --theirs = the local commit being replayed
+    """
     guard = 0
     while in_rebase() and guard < 20:
         guard += 1
@@ -42,7 +47,8 @@ def resolve_state_rebase():
             return False
         if unmerged:
             for f in unmerged:
-                git("checkout", "--theirs", "--", f)
+                # --ours during rebase = upstream (remote) version
+                git("checkout", "--ours", "--", f)
                 git("add", "--", f)
         env = os.environ.copy()
         env["GIT_EDITOR"] = "true"
