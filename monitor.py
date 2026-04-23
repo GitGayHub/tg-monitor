@@ -1662,28 +1662,32 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             parts = []
 
-            # Save for ALL enabled skins (even empty → "—" with 📡)
+            # Save only skins/editions with actual offers (don't erase old data with empty snapshots)
             all_skin_ids = set()
             for kw, (sid, sname) in kw_to_skin.items():
                 all_skin_ids.add(sid)
             for sid in all_skin_ids:
-                _save_auto('skin', sid, _auto_name(sid), 'any', auto_price_map.get(sid, []))
-                _save_auto('skin', sid, _auto_name(sid), 'pve', auto_pve_map.get(sid, []))
+                if auto_price_map.get(sid):
+                    _save_auto('skin', sid, _auto_name(sid), 'any', auto_price_map[sid])
+                if auto_pve_map.get(sid):
+                    _save_auto('skin', sid, _auto_name(sid), 'pve', auto_pve_map[sid])
             n_any = sum(1 for sid in all_skin_ids if auto_price_map.get(sid))
             n_pve = sum(1 for sid in all_skin_ids if auto_pve_map.get(sid))
             parts.append(f"скины: {n_any}/{len(all_skin_ids)} без PVE, {n_pve}/{len(all_skin_ids)} с PVE")
 
-            # Save for ALL enabled editions (even empty → "—" with 📡)
+            # Save only editions with actual offers
             all_edition_ids = set()
             for kw, (eid, ename) in kw_to_edition.items():
                 all_edition_ids.add(eid)
             for eid in all_edition_ids:
-                _save_auto('edition', eid, _auto_name(eid), 'any', auto_edition_map.get(eid, []))
+                if auto_edition_map.get(eid):
+                    _save_auto('edition', eid, _auto_name(eid), 'any', auto_edition_map[eid])
             n_ed = sum(1 for eid in all_edition_ids if auto_edition_map.get(eid))
             parts.append(f"издания: {n_ed}/{len(all_edition_ids)}")
 
-            # Save STW (always write auto snapshot so 📡 shows)
-            _save_auto('pve', 'confirmed', 'STW', 'confirmed', auto_pve_confirmed)
+            # Save STW only if offers found
+            if auto_pve_confirmed:
+                _save_auto('pve', 'confirmed', 'STW', 'confirmed', auto_pve_confirmed)
             parts.append(f"STW: {'да' if auto_pve_confirmed else '—'}")
 
             logger.info(f"📈 Авто-мониторинг: {', '.join(parts)}")
