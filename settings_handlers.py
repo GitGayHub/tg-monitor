@@ -853,15 +853,17 @@ async def _show_stats(query, context):
                 continue
         items[key][slot] = entry
 
-    # Rebuild sources from final slot assignments
+    # Rebuild sources only from DISPLAYED slots (avoids stale phantom entries)
     for item in items.values():
-        for slot_name in ('any', 'pve'):
-            e = item.get(slot_name)
-            if e:
-                sources.add(e.get('source', 'minprice'))
-    # If auto-monitoring has run, it covers everything — treat stale minprice as auto
-    if 'auto' in sources:
-        sources = {'auto'}
+        a, p = item.get('any'), item.get('pve')
+        if item['it'] == 'skin':
+            # Both slots shown for skins
+            if a: sources.add(a.get('source', 'minprice'))
+            if p: sources.add(p.get('source', 'minprice'))
+        else:
+            # Non-skin (STW, editions): only one slot displayed
+            best = a or p
+            if best: sources.add(best.get('source', 'minprice'))
 
     # Sort items: skins alphabetically → STW → Super Deluxe → Limited → Ultimate
     _edition_order = {'super_deluxe': 1, 'limited': 2, 'ultimate': 3}
