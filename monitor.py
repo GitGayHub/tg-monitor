@@ -684,7 +684,7 @@ def _record_cached_recheck_history(position, item_state):
             'edition',
             position['id'],
             position['name'],
-            'all',
+            'any',
             [any_offer] if any_offer else [],
             source='recheck_log'
         )
