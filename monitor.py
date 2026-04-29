@@ -2551,7 +2551,8 @@ def main():
     gh_status = '✅ подключён' if GITHUB_TOKEN and GITHUB_REPO else '❌ не задан'
     tg_token_short = f"{TELEGRAM_BOT_TOKEN[:6]}…{TELEGRAM_BOT_TOKEN[-4:]}" if TELEGRAM_BOT_TOKEN and len(TELEGRAM_BOT_TOKEN) > 10 else '❌ не задан'
     tg_chat = chat_id or '—'
-    bot_name = bot_username or '(определится при запуске)'
+    bot_id = TELEGRAM_BOT_TOKEN.split(':')[0] if TELEGRAM_BOT_TOKEN else '—'
+    bot_name = bot_username or f"bot#{bot_id}"
 
     print("╔══════════════════════════════════════╗")
     print("║       FunPay Monitor Bot             ║")
