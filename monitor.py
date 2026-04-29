@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 import base64
+import subprocess
 
 from config_manager import ConfigManager
 from price_history import init_price_history_db, record_price_snapshot, record_red_flag, get_latest_top3
@@ -2547,8 +2548,19 @@ def main():
     skin_names = [sid.replace('_', ' ').title() for sid in enabled_skins.keys()]
 
     # --- Startup banner ---
-    gh_repo = GITHUB_REPO or '—'
-    gh_status = '✅ подключён' if GITHUB_TOKEN and GITHUB_REPO else '❌ не задан'
+    gh_env_repo = GITHUB_REPO or '—'
+    gh_status = '✅' if GITHUB_TOKEN and GITHUB_REPO else '❌ не задан'
+    # Get git remote URL to compare with env
+    try:
+        _remote_result = subprocess.run(['git', 'remote', 'get-url', 'origin'], capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
+        gh_remote = _remote_result.stdout.strip().replace('https://github.com/', '').replace('.git', '').split('@github.com/')[-1] if _remote_result.returncode == 0 else '—'
+    except Exception:
+        gh_remote = '—'
+    # Check mismatch between env GITHUB_REPOSITORY and actual git remote
+    gh_match = True
+    if GITHUB_REPO and gh_remote != '—':
+        gh_match = GITHUB_REPO.lower().rstrip('/') == gh_remote.lower().rstrip('/')
+
     tg_token_short = f"{TELEGRAM_BOT_TOKEN[:6]}…{TELEGRAM_BOT_TOKEN[-4:]}" if TELEGRAM_BOT_TOKEN and len(TELEGRAM_BOT_TOKEN) > 10 else '❌ не задан'
     tg_chat = chat_id or '—'
     bot_id = TELEGRAM_BOT_TOKEN.split(':')[0] if TELEGRAM_BOT_TOKEN else '—'
@@ -2557,18 +2569,23 @@ def main():
     print("╔══════════════════════════════════════╗")
     print("║       FunPay Monitor Bot             ║")
     print("╠══════════════════════════════════════╣")
-    print(f"  GitHub:   {gh_repo} {gh_status}")
-    print(f"  Telegram: {bot_name}")
-    print(f"  Token:    {tg_token_short}")
-    print(f"  Chat ID:  {tg_chat}")
+    print(f"  Git remote: {gh_remote}")
+    print(f"  Git env:    {gh_env_repo} {gh_status}")
+    if not gh_match:
+        print(f"  ⚠️  НЕСОВПАДЕНИЕ! remote ≠ env")
+    else:
+        print(f"  Git:        ✅ remote = env")
+    print(f"  Telegram:   {bot_name}")
+    print(f"  Token:      {tg_token_short}")
+    print(f"  Chat ID:    {tg_chat}")
     print("╠══════════════════════════════════════╣")
     skins = config.get_all_skins()
     enabled = {sid: s for sid, s in skins.items() if s.get('enabled', True)}
     max_skin_price = max((s.get('price', 0) for s in enabled.values()), default=0) + config.pve_bonus
-    print(f"  Скинов:     {len(enabled_skins)}/{len(skins)}")
-    print(f"  PVE-слов:   {len(config.get_confirmed_pve())} подтв.")
-    print(f"  Исключений: {len(config.get_exclude_keywords())} фраз")
-    print(f"  Макс. цена: {max_skin_price}₽")
+    print(f"  Скинов:      {len(enabled_skins)}/{len(skins)}")
+    print(f"  PVE-слов:    {len(config.get_confirmed_pve())} подтв.")
+    print(f"  Исключений:  {len(config.get_exclude_keywords())} фраз")
+    print(f"  Макс. цена:  {max_skin_price}₽")
     print(f"  Просмотрено: {len(seen_ids)} товаров")
     print("╚══════════════════════════════════════╝")
     print("Запустите бота и напишите ему /start в Telegram.")
