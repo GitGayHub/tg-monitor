@@ -2546,18 +2546,31 @@ def main():
     enabled_skins = config.get_enabled_skins()
     skin_names = [sid.replace('_', ' ').title() for sid in enabled_skins.keys()]
 
-    print("--- FunPay Monitor Bot ---")
-    print(f"Скинов активно: {len(enabled_skins)}/{len(config.get_all_skins())}")
-    print(f"Подтв. PVE-слов: {len(config.get_confirmed_pve())}")
-    print(f"Неподтв. PVE (по /recheck ++pve): {', '.join(config.get_unconfirmed_pve())}")
-    print(f"Исключаю: {len(config.get_exclude_keywords())} фраз-красных флагов")
+    # --- Startup banner ---
+    gh_repo = GITHUB_REPO or '—'
+    gh_status = '✅ подключён' if GITHUB_TOKEN and GITHUB_REPO else '❌ не задан'
+    tg_token_short = f"{TELEGRAM_BOT_TOKEN[:6]}…{TELEGRAM_BOT_TOKEN[-4:]}" if TELEGRAM_BOT_TOKEN and len(TELEGRAM_BOT_TOKEN) > 10 else '❌ не задан'
+    tg_chat = chat_id or '—'
+    bot_name = bot_username or '(определится при запуске)'
+
+    print("╔══════════════════════════════════════╗")
+    print("║       FunPay Monitor Bot             ║")
+    print("╠══════════════════════════════════════╣")
+    print(f"  GitHub:   {gh_repo} {gh_status}")
+    print(f"  Telegram: {bot_name}")
+    print(f"  Token:    {tg_token_short}")
+    print(f"  Chat ID:  {tg_chat}")
+    print("╠══════════════════════════════════════╣")
     skins = config.get_all_skins()
     enabled = {sid: s for sid, s in skins.items() if s.get('enabled', True)}
     max_skin_price = max((s.get('price', 0) for s in enabled.values()), default=0) + config.pve_bonus
-    print(f"Макс. цена (авто): {max_skin_price}₽ (макс. скин + PVE бонус)")
-    print(f"Уже просмотрено: {len(seen_ids)} товаров")
+    print(f"  Скинов:     {len(enabled_skins)}/{len(skins)}")
+    print(f"  PVE-слов:   {len(config.get_confirmed_pve())} подтв.")
+    print(f"  Исключений: {len(config.get_exclude_keywords())} фраз")
+    print(f"  Макс. цена: {max_skin_price}₽")
+    print(f"  Просмотрено: {len(seen_ids)} товаров")
+    print("╚══════════════════════════════════════╝")
     print("Запустите бота и напишите ему /start в Telegram.")
-    print("Управление — через меню кнопок в Telegram.")
 
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).concurrent_updates(True).post_init(post_init).build()
     application.add_handler(CommandHandler("start", start))
