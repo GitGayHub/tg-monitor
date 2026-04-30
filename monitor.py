@@ -1485,7 +1485,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             matched_keyword = ""
             for keyword in item_keywords:
-                pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+                pattern = r'\b' + re.escape(normalize_match_text(keyword)) + r'\b'
                 if re.search(pattern, short_desc_lower):
                     matched_keyword = keyword
                     break
@@ -1640,12 +1640,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 return True
 
             async def _validate_cheapest(offers):
-                """Validate only the cheapest offer. Remove if excluded, keep rest as-is."""
-                if not offers:
-                    return offers
-                if not await _validate_offer(offers[0]):
-                    return offers[1:]  # drop excluded cheapest, keep rest
-                return offers
+                """Validate cheapest offers. Remove excluded ones from the top."""
+                result = list(offers)
+                while result:
+                    if await _validate_offer(result[0]):
+                        break  # cheapest is valid
+                    result = result[1:]  # drop excluded, check next
+                return result
 
             # Validate only the #1 cheapest offer per map (fast: ~20 requests max)
             for sid in list(auto_price_map.keys()):
@@ -2192,7 +2193,7 @@ async def pricetest(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Неверный формат. Пример: /pricetest 8000 3500")
         return
 
-    max_price_override = max(rare_price, pve_price) if pve_price is not None else rare_price
+    max_price_override = (rare_price + pve_price) if pve_price is not None else rare_price
     pve_text = f"{pve_price}₽" if pve_price is not None else f"стандартные {config.pve_bonus}/1000₽"
 
     # Устанавливаем режим
@@ -2352,7 +2353,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     max_skin_price = max((s.get('price', 0) for s in enabled.values()), default=config.max_price)
     effective_max = max_skin_price + config.pve_bonus
     if config.confirmed_pve_enabled:
-        effective_max = max(effective_max, config.confirmed_pve_price + config.pve_bonus)
+        effective_max = max(effective_max, config.confirmed_pve_price)
 
     await update.message.reply_text(
         f"✅ Бот активирован! Ваш ID: {user_chat_id}.\n\n"
