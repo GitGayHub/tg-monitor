@@ -2566,6 +2566,26 @@ def main():
     bot_id = TELEGRAM_BOT_TOKEN.split(':')[0] if TELEGRAM_BOT_TOKEN else '—'
     bot_name = bot_username or f"bot#{bot_id}"
 
+    # Validate GitHub PAT by calling API
+    gh_pat_status = '❌ не задан'
+    if GITHUB_TOKEN:
+        try:
+            import urllib.request, urllib.error
+            _pat_req = urllib.request.Request(
+                'https://api.github.com/user',
+                headers={'Authorization': f'token {GITHUB_TOKEN}', 'Accept': 'application/vnd.github.v3+json'})
+            _pat_resp = urllib.request.urlopen(_pat_req, timeout=10)
+            _pat_data = json.loads(_pat_resp.read())
+            _pat_user = _pat_data.get('login', '?')
+            gh_pat_status = f'✅ {_pat_user}'
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                gh_pat_status = '❌ СЛЕТЕЛ (401 Unauthorized)'
+            else:
+                gh_pat_status = f'⚠️ HTTP {e.code}'
+        except Exception as e:
+            gh_pat_status = f'⚠️ {e}'
+
     print("╔══════════════════════════════════════╗")
     print("║       FunPay Monitor Bot             ║")
     print("╠══════════════════════════════════════╣")
@@ -2575,6 +2595,7 @@ def main():
         print(f"  ⚠️  НЕСОВПАДЕНИЕ! remote ≠ env")
     else:
         print(f"  Git:        ✅ remote = env")
+    print(f"  GH Token:   {gh_pat_status}")
     print(f"  Telegram:   {bot_name}")
     print(f"  Token:      {tg_token_short}")
     print(f"  Chat ID:    {tg_chat}")
