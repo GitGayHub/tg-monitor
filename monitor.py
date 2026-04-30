@@ -1665,6 +1665,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             def _old_offer_gone(item_type, item_id, mode):
                 """Check if previously saved offer is no longer on the listing page."""
+                # If listing was truncated (2000 items), we can't be sure the offer is gone
+                if total_listings >= 2000:
+                    return False
                 try:
                     top = get_latest_top3(item_type, item_id, mode)
                     if top:
