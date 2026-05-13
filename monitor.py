@@ -1905,6 +1905,18 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     logger.info(f"💸 Слишком дорого: {seller_price}₽ > {my_max_price}₽ ({price_breakdown})")
                     continue
 
+            # === ФИНАЛЬНАЯ ЗАЩИТА: не отправлять скины без PVE если require_pve ===
+            if not premium_only and found_skins:
+                has_confirmed_final = has_pve(combined_text, include_unconfirmed=False)
+                has_any_final = has_pve(combined_text, include_unconfirmed=True)
+                all_require = all(
+                    config.get_all_skins().get(s['id'], {}).get('require_pve', False)
+                    for s in found_skins
+                )
+                if all_require and not has_confirmed_final and not has_any_final:
+                    logger.info(f"🛡️ Защита: все скины require_pve но PVE не найдено — пропуск: {candidate['short_description'][:50]}")
+                    continue
+
             rating_emoji = "⭐" if "из 5" in rating_text else "❓"
             skins_list = ", ".join([s['keyword'] for s in found_skins]) if found_skins else "Нет"
             main_feature = get_main_feature(found_skins, has_pve_flag, rare_override=rare_override)
