@@ -2,7 +2,7 @@ name: FunPay Monitor
 
 on:
   schedule:
-    - cron: "5 */2 * * *"
+    - cron: "5,20,35,50 */2 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -78,18 +78,28 @@ jobs:
                   with open(log_file) as f: logs = json.load(f)
               except: logs = []
           output = open('run_output.log').read()
-          sent = output.count('Отправлено:') + output.count('sent_count')
+          sent = output.count('Отправлено:')
           new_candidates = 0
           for line in output.splitlines():
               if 'Новых кандидатов:' in line:
                   try: new_candidates = int(line.split('Новых кандидатов:')[1].strip().split()[0])
                   except: pass
+          trigger = '${{ github.event_name }}'
           entry = {
               'time': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'),
+              'trigger': trigger,
               'sent': sent,
               'new_candidates': new_candidates,
               'total_lines': len(output.splitlines()),
           }
+          if trigger == 'workflow_dispatch' and len(logs) > 0:
+              try:
+                  last_t = logs[-1].get('time','')
+                  from datetime import datetime as dt2
+                  lt = dt2.strptime(last_t, '%Y-%m-%d %H:%M UTC')
+                  gap = (datetime.now(timezone.utc).replace(tzinfo=None) - lt).total_seconds() / 60
+                  entry['trigger'] = 'cron-job.org' if gap > 20 else 'self-trigger'
+              except: entry['trigger'] = 'dispatch'
           logs.append(entry)
           logs = logs[-50:]
           with open(log_file, 'w') as f: json.dump(logs, f, indent=1)
