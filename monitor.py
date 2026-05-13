@@ -2507,14 +2507,54 @@ async def run_once():
         print("ОШИБКА: Chat ID не найден. Установите переменную окружения TELEGRAM_CHAT_ID")
         return
 
-    print("--- Запуск в режиме ONE-SHOT (GitHub Actions) ---")
+    # --- Диагностика окружения (для логов GitHub Actions) ---
+    print("╔══════════════════════════════════════╗")
+    print("║   FunPay Monitor — ONE-SHOT mode     ║")
+    print("╠══════════════════════════════════════╣")
+    gh_repo = GITHUB_REPO or '—'
+    gh_token_ok = '✅' if GITHUB_TOKEN else '❌ не задан'
+    tg_token_short = f"{TELEGRAM_BOT_TOKEN[:6]}…{TELEGRAM_BOT_TOKEN[-4:]}" if len(TELEGRAM_BOT_TOKEN) > 10 else '?'
+    print(f"  GitHub repo:  {gh_repo}")
+    print(f"  GitHub token: {gh_token_ok}")
+    print(f"  TG token:     {tg_token_short}")
+    print(f"  TG chat_id:   {chat_id}")
+    print(f"  Seen IDs:     {len(seen_ids)}")
+    print(f"  Banned IDs:   {len(banned_ids)}")
+
+    # Validate GH_PAT if available
+    gh_pat = os.environ.get('GH_PAT') or GITHUB_TOKEN
+    if gh_pat:
+        try:
+            import urllib.request, urllib.error
+            _pat_req = urllib.request.Request(
+                'https://api.github.com/user',
+                headers={'Authorization': f'token {gh_pat}', 'Accept': 'application/vnd.github.v3+json'})
+            _pat_resp = urllib.request.urlopen(_pat_req, timeout=10)
+            _pat_data = json.loads(_pat_resp.read())
+            _pat_user = _pat_data.get('login', '?')
+            print(f"  GH PAT user:  ✅ {_pat_user}")
+        except Exception as e:
+            print(f"  GH PAT user:  ❌ ОШИБКА: {e}")
+    else:
+        print(f"  GH PAT user:  ⚠️ не задан (цепочка не будет работать)")
+
+    enabled_skins = config.get_enabled_skins()
+    skin_prices = [s.get('price', 0) for s in enabled_skins.values()]
+    max_price = max(skin_prices, default=config.max_price) + config.pve_bonus
+    print(f"  Скинов:       {len(enabled_skins)}")
+    print(f"  Макс. цена:   {max_price}₽")
+    print(f"  Интервал:     {config.check_interval}с")
+    print("╚══════════════════════════════════════╝")
+
+    print("\n--- Запуск проверки ---")
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     try:
         bot_username = (await bot.get_me()).username
-    except Exception:
-        pass
-    await process_offers(bot_instance=bot, skip_seen=True)
-    print("--- Готово ---")
+        print(f"  Bot username: @{bot_username}")
+    except Exception as e:
+        print(f"  ⚠️ Не удалось получить username бота: {e}")
+    sent = await process_offers(bot_instance=bot, skip_seen=True)
+    print(f"--- Готово (отправлено: {sent}) ---")
 
 async def post_init(application):
     global bot_username
