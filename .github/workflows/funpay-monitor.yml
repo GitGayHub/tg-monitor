@@ -69,7 +69,7 @@ jobs:
           python monitor.py --once 2>&1 | tee run_output.log
           # Append mini-log entry for diagnostics
           python -c "
-          import json, os
+          import json, os, re
           from datetime import datetime, timezone
           log_file = 'run_log.json'
           logs = []
@@ -80,9 +80,21 @@ jobs:
           output = open('run_output.log').read()
           sent = output.count('Отправлено:')
           new_candidates = 0
+          skip_no_pve = output.count('требует PVE, но PVE не найден')
+          skip_exclude = output.count('Исключено (')
+          skip_price = output.count('Слишком дорого:')
+          skip_guard = output.count('Защита:')
+          total_on_site = 0
+          already_seen = 0
           for line in output.splitlines():
               if 'Новых кандидатов:' in line:
                   try: new_candidates = int(line.split('Новых кандидатов:')[1].strip().split()[0])
+                  except: pass
+              if 'Всего на сайте:' in line:
+                  try: total_on_site = int(line.split('Всего на сайте:')[1].strip().split()[0])
+                  except: pass
+              if 'Уже просмотрено:' in line:
+                  try: already_seen = int(line.split('Уже просмотрено:')[1].strip().split()[0])
                   except: pass
           trigger = '${{ github.event_name }}'
           entry = {
@@ -90,7 +102,12 @@ jobs:
               'trigger': trigger,
               'sent': sent,
               'new_candidates': new_candidates,
-              'total_lines': len(output.splitlines()),
+              'total_on_site': total_on_site,
+              'already_seen': already_seen,
+              'skip_no_pve': skip_no_pve,
+              'skip_exclude': skip_exclude,
+              'skip_price': skip_price,
+              'skip_guard': skip_guard,
           }
           if trigger == 'workflow_dispatch' and len(logs) > 0:
               try:
