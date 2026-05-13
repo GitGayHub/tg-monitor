@@ -2491,6 +2491,208 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif text in ("⏹ Стоп", "Stop"):
         await stop_command(update, context)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Startup diagnostics helpers (adapted from eSearch)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _humanize_age(seconds):
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
+
+
+def _short_secret(value):
+    if not value:
+        return "❌ не задан"
+    if len(value) <= 12:
+        return "******"
+    return f"{value[:6]}…{value[-4:]}"
+
+
+def _normalize_github_repo(value):
+    if not value:
+        return "—"
+    raw = value.strip().replace("\\", "/")
+    if "github.com" in raw:
+        tail = raw.split("github.com", 1)[1].lstrip("/:").split("?", 1)[0]
+        # Strip token from URL if present (user:token@github.com)
+        if "@" in raw.split("github.com")[0]:
+            pass  # tail is already clean
+        parts = tail.split("/")
+        if len(parts) >= 2:
+            repo = f"{parts[0]}/{parts[1]}"
+            return repo[:-4] if repo.endswith(".git") else repo
+    raw = raw[:-4] if raw.endswith(".git") else raw
+    return raw
+
+
+def _get_git_remote_repo():
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    try:
+        result = subprocess.run(
+            ["git", "-c", f"safe.directory={repo_dir}", "remote", "get-url", "origin"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return "⚠️ remote not found"
+        return _normalize_github_repo(result.stdout.strip())
+    except Exception as e:
+        return f"⚠️ {e}"
+
+
+def _validate_telegram_bot():
+    """Validate Telegram bot token by calling getMe. Returns (status_str, token_bot_id, actual_bot_id)."""
+    if not TELEGRAM_BOT_TOKEN:
+        return "❌ не задан", "—", "—"
+    token_bot_id = TELEGRAM_BOT_TOKEN.split(":", 1)[0] if ":" in TELEGRAM_BOT_TOKEN else "?"
+    try:
+        import urllib.request, urllib.error
+        req = urllib.request.Request(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe")
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+        if not data.get("ok"):
+            return "❌ getMe ok=false", token_bot_id, "—"
+        bot_data = data.get("result", {})
+        actual_id = str(bot_data.get("id", "—"))
+        username = bot_data.get("username") or "?"
+        match = "✅" if actual_id == token_bot_id else "⚠️"
+        return f"{match} @{username} id={actual_id}", token_bot_id, actual_id
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return "❌ СЛЕТЕЛ/INVALID (401 Unauthorized)", token_bot_id, "—"
+        return f"⚠️ HTTP {e.code}", token_bot_id, "—"
+    except Exception as e:
+        return f"⚠️ {e}", token_bot_id, "—"
+
+
+def _validate_github_pat():
+    """Validate GitHub token by calling /user. Returns status string."""
+    if not GITHUB_TOKEN:
+        return "❌ не задан"
+    try:
+        import urllib.request, urllib.error
+        req = urllib.request.Request(
+            "https://api.github.com/user",
+            headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json",
+            },
+        )
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+        return f"✅ {data.get('login', '?')}"
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return "❌ СЛЕТЕЛ (401 Unauthorized)"
+        return f"⚠️ HTTP {e.code}"
+    except Exception as e:
+        return f"⚠️ {e}"
+
+
+def _validate_github_actions(repo):
+    """Query latest workflow run status. Returns human-readable summary."""
+    if not repo or repo == "—":
+        return "— нет репозитория"
+    if not GITHUB_TOKEN:
+        return "⚠️ нет GH Token"
+    try:
+        import urllib.request, urllib.error
+        from datetime import datetime, timezone
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/actions/runs?per_page=1",
+            headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json",
+            },
+        )
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+        runs = data.get("workflow_runs") or []
+        if not runs:
+            return "— нет запусков"
+        run = runs[0]
+        status = run.get("status") or "?"
+        conclusion = run.get("conclusion")
+        name = run.get("name") or "workflow"
+        created = run.get("created_at") or run.get("run_started_at")
+        age_str = ""
+        if created:
+            try:
+                dt = datetime.strptime(created, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                age = (datetime.now(timezone.utc) - dt).total_seconds()
+                age_str = f" {_humanize_age(age)} ago"
+            except Exception:
+                pass
+        if status in ("queued", "in_progress", "waiting", "requested"):
+            return f"🔄 {status}{age_str} ({name})"
+        emoji = {
+            "success": "✅",
+            "failure": "❌",
+            "cancelled": "🚫",
+            "skipped": "⏭️",
+            "timed_out": "⏱️",
+            "neutral": "➖",
+            "action_required": "⚠️",
+        }.get(conclusion, "⚠️")
+        return f"{emoji} {conclusion or status}{age_str} ({name})"
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return "❌ 401 — токен не имеет доступа"
+        if e.code == 404:
+            return "❌ 404 — репозиторий или Actions не найдены"
+        return f"⚠️ HTTP {e.code}"
+    except Exception as e:
+        return f"⚠️ {e}"
+
+
+def _log_startup_banner(mode):
+    """Print full diagnostic banner at startup (both local and GitHub Actions)."""
+    remote_repo = _get_git_remote_repo()
+    env_repo = _normalize_github_repo(GITHUB_REPO) if GITHUB_REPO else "—"
+    remote_ok = not remote_repo.startswith("⚠️") and remote_repo != "—"
+
+    tg_status, token_bot_id, actual_bot_id = _validate_telegram_bot()
+    gh_pat_user = _validate_github_pat()
+    gh_actions = _validate_github_actions(remote_repo if remote_ok else env_repo)
+
+    enabled_skins = config.get_enabled_skins()
+    skin_prices = [s.get('price', 0) for s in enabled_skins.values()]
+    max_price = max(skin_prices, default=config.max_price) + config.pve_bonus
+
+    logger.info("╔══════════════════════════════════════════════╗")
+    logger.info("║           FunPay Monitor Bot                ║")
+    logger.info("╠══════════════════════════════════════════════╣")
+    logger.info("  Mode:       %s", mode)
+    logger.info("  Repo:       %s", remote_repo)
+    logger.info("  Env repo:   %s", env_repo)
+    if remote_ok and env_repo != "—":
+        match = "✅" if remote_repo.lower() == env_repo.lower() else "⚠️ НЕСОВПАДЕНИЕ"
+        logger.info("  Repo match: %s", match)
+    logger.info("  GH Token:   %s", gh_pat_user)
+    logger.info("  GH Actions: %s", gh_actions)
+    logger.info("  Telegram:   %s", tg_status)
+    logger.info("  Chat ID:    %s", chat_id or "❌ не задан")
+    logger.info("╠══════════════════════════════════════════════╣")
+    logger.info("  Скинов:     %d/%d", len(enabled_skins), len(config.get_all_skins()))
+    logger.info("  PVE-слов:   %d подтв.", len(config.get_confirmed_pve()))
+    logger.info("  Исключений: %d фраз", len(config.get_exclude_keywords()))
+    logger.info("  Макс. цена: %d₽", max_price)
+    logger.info("  Seen IDs:   %d", len(seen_ids))
+    logger.info("  Banned IDs: %d", len(banned_ids))
+    logger.info("  Интервал:   %ds", config.check_interval)
+    logger.info("╚══════════════════════════════════════════════╝")
+
+
 async def run_once():
     global bot_username
     """Запуск один раз и выход, для GitHub Actions / Cron."""
@@ -2507,54 +2709,16 @@ async def run_once():
         print("ОШИБКА: Chat ID не найден. Установите переменную окружения TELEGRAM_CHAT_ID")
         return
 
-    # --- Диагностика окружения (для логов GitHub Actions) ---
-    print("╔══════════════════════════════════════╗")
-    print("║   FunPay Monitor — ONE-SHOT mode     ║")
-    print("╠══════════════════════════════════════╣")
-    gh_repo = GITHUB_REPO or '—'
-    gh_token_ok = '✅' if GITHUB_TOKEN else '❌ не задан'
-    tg_token_short = f"{TELEGRAM_BOT_TOKEN[:6]}…{TELEGRAM_BOT_TOKEN[-4:]}" if len(TELEGRAM_BOT_TOKEN) > 10 else '?'
-    print(f"  GitHub repo:  {gh_repo}")
-    print(f"  GitHub token: {gh_token_ok}")
-    print(f"  TG token:     {tg_token_short}")
-    print(f"  TG chat_id:   {chat_id}")
-    print(f"  Seen IDs:     {len(seen_ids)}")
-    print(f"  Banned IDs:   {len(banned_ids)}")
+    _log_startup_banner("ONE-SHOT")
 
-    # Validate GH_PAT if available
-    gh_pat = os.environ.get('GH_PAT') or GITHUB_TOKEN
-    if gh_pat:
-        try:
-            import urllib.request, urllib.error
-            _pat_req = urllib.request.Request(
-                'https://api.github.com/user',
-                headers={'Authorization': f'token {gh_pat}', 'Accept': 'application/vnd.github.v3+json'})
-            _pat_resp = urllib.request.urlopen(_pat_req, timeout=10)
-            _pat_data = json.loads(_pat_resp.read())
-            _pat_user = _pat_data.get('login', '?')
-            print(f"  GH PAT user:  ✅ {_pat_user}")
-        except Exception as e:
-            print(f"  GH PAT user:  ❌ ОШИБКА: {e}")
-    else:
-        print(f"  GH PAT user:  ⚠️ не задан (цепочка не будет работать)")
-
-    enabled_skins = config.get_enabled_skins()
-    skin_prices = [s.get('price', 0) for s in enabled_skins.values()]
-    max_price = max(skin_prices, default=config.max_price) + config.pve_bonus
-    print(f"  Скинов:       {len(enabled_skins)}")
-    print(f"  Макс. цена:   {max_price}₽")
-    print(f"  Интервал:     {config.check_interval}с")
-    print("╚══════════════════════════════════════╝")
-
-    print("\n--- Запуск проверки ---")
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     try:
         bot_username = (await bot.get_me()).username
-        print(f"  Bot username: @{bot_username}")
     except Exception as e:
-        print(f"  ⚠️ Не удалось получить username бота: {e}")
+        logger.warning("Не удалось получить username бота: %s", e)
+
     sent = await process_offers(bot_instance=bot, skip_seen=True)
-    print(f"--- Готово (отправлено: {sent}) ---")
+    logger.info("=== Done (sent: %s) ===", sent)
 
 async def post_init(application):
     global bot_username
@@ -2588,71 +2752,7 @@ def main():
     load_sent_offers()
     load_banned_ids()
 
-    enabled_skins = config.get_enabled_skins()
-    skin_names = [sid.replace('_', ' ').title() for sid in enabled_skins.keys()]
-
-    # --- Startup banner ---
-    gh_env_repo = GITHUB_REPO or '—'
-    gh_status = '✅' if GITHUB_TOKEN and GITHUB_REPO else '❌ не задан'
-    # Get git remote URL to compare with env
-    try:
-        _remote_result = subprocess.run(['git', 'remote', 'get-url', 'origin'], capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
-        gh_remote = _remote_result.stdout.strip().replace('https://github.com/', '').replace('.git', '').split('@github.com/')[-1] if _remote_result.returncode == 0 else '—'
-    except Exception:
-        gh_remote = '—'
-    # Check mismatch between env GITHUB_REPOSITORY and actual git remote
-    gh_match = True
-    if GITHUB_REPO and gh_remote != '—':
-        gh_match = GITHUB_REPO.lower().rstrip('/') == gh_remote.lower().rstrip('/')
-
-    tg_token_short = f"{TELEGRAM_BOT_TOKEN[:6]}…{TELEGRAM_BOT_TOKEN[-4:]}" if TELEGRAM_BOT_TOKEN and len(TELEGRAM_BOT_TOKEN) > 10 else '❌ не задан'
-    tg_chat = chat_id or '—'
-    bot_id = TELEGRAM_BOT_TOKEN.split(':')[0] if TELEGRAM_BOT_TOKEN else '—'
-    bot_name = bot_username or f"bot#{bot_id}"
-
-    # Validate GitHub PAT by calling API
-    gh_pat_status = '❌ не задан'
-    if GITHUB_TOKEN:
-        try:
-            import urllib.request, urllib.error
-            _pat_req = urllib.request.Request(
-                'https://api.github.com/user',
-                headers={'Authorization': f'token {GITHUB_TOKEN}', 'Accept': 'application/vnd.github.v3+json'})
-            _pat_resp = urllib.request.urlopen(_pat_req, timeout=10)
-            _pat_data = json.loads(_pat_resp.read())
-            _pat_user = _pat_data.get('login', '?')
-            gh_pat_status = f'✅ {_pat_user}'
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                gh_pat_status = '❌ СЛЕТЕЛ (401 Unauthorized)'
-            else:
-                gh_pat_status = f'⚠️ HTTP {e.code}'
-        except Exception as e:
-            gh_pat_status = f'⚠️ {e}'
-
-    print("╔══════════════════════════════════════╗")
-    print("║       FunPay Monitor Bot             ║")
-    print("╠══════════════════════════════════════╣")
-    print(f"  Git remote: {gh_remote}")
-    print(f"  Git env:    {gh_env_repo} {gh_status}")
-    if not gh_match:
-        print(f"  ⚠️  НЕСОВПАДЕНИЕ! remote ≠ env")
-    else:
-        print(f"  Git:        ✅ remote = env")
-    print(f"  GH Token:   {gh_pat_status}")
-    print(f"  Telegram:   {bot_name}")
-    print(f"  Token:      {tg_token_short}")
-    print(f"  Chat ID:    {tg_chat}")
-    print("╠══════════════════════════════════════╣")
-    skins = config.get_all_skins()
-    enabled = {sid: s for sid, s in skins.items() if s.get('enabled', True)}
-    max_skin_price = max((s.get('price', 0) for s in enabled.values()), default=0) + config.pve_bonus
-    print(f"  Скинов:      {len(enabled_skins)}/{len(skins)}")
-    print(f"  PVE-слов:    {len(config.get_confirmed_pve())} подтв.")
-    print(f"  Исключений:  {len(config.get_exclude_keywords())} фраз")
-    print(f"  Макс. цена:  {max_skin_price}₽")
-    print(f"  Просмотрено: {len(seen_ids)} товаров")
-    print("╚══════════════════════════════════════╝")
+    _log_startup_banner("LOCAL")
     print("Запустите бота и напишите ему /start в Telegram.")
 
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).concurrent_updates(True).post_init(post_init).build()
