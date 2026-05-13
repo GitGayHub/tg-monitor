@@ -1,0 +1,3 @@
+Запуск бота:
+
+powershell -ExecutionPolicy Bypass -File "D:\AStest\funpay-bot-repo\run.ps1"

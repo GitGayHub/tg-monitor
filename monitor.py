@@ -1913,8 +1913,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     config.get_all_skins().get(s['id'], {}).get('require_pve', False)
                     for s in found_skins
                 )
-                if all_require and not has_confirmed_final and not has_any_final:
-                    logger.info(f"🛡️ Защита: все скины require_pve но PVE не найдено — пропуск: {candidate['short_description'][:50]}")
+                if all_require and not has_confirmed_final:
+                    # Все скины требуют подтверждённое PVE — неподтверждённое не считается
+                    if not has_any_final:
+                        logger.info(f"🛡️ Защита: все скины require_pve но PVE не найдено — пропуск: {candidate['short_description'][:50]}")
+                    else:
+                        logger.info(f"🛡️ Защита: все скины require_pve, PVE только неподтверждённое — пропуск: {candidate['short_description'][:50]}")
                     continue
 
             rating_emoji = "⭐" if "из 5" in rating_text else "❓"
