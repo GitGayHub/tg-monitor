@@ -29,7 +29,6 @@ TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 
 # URLs с фильтром "только продажа" (несколько категорий Fortnite)
 FUNPAY_ACCOUNTS_URL = 'https://funpay.com/lots/248/?offer_type=sell'
-FUNPAY_OTHER_URL = 'https://funpay.com/lots/1098/?offer_type=sell'
 FUNPAY_URLS = [
     FUNPAY_ACCOUNTS_URL,  # Аккаунты для Fortnite (все платформы)
 ]
@@ -123,12 +122,6 @@ def clear_banned_ids():
         f.write('')
     return removed
 
-def clear_seen_ids():
-    global seen_ids
-    seen_ids = set()
-    with open(SEEN_IDS_FILE, 'w') as f:
-        f.write('')
-
 def load_sent_offers():
     global sent_offers
     try:
@@ -146,14 +139,6 @@ def save_sent_offer(offer_id, price, description):
     }
     with open(SENT_OFFERS_FILE, 'w', encoding='utf-8') as f:
         json.dump(sent_offers, f, ensure_ascii=False, indent=2)
-
-def is_offer_changed(offer_id, new_price, new_description):
-    if offer_id not in sent_offers:
-        return True
-    old = sent_offers[offer_id]
-    if abs(old.get('price', 0) - new_price) > 1:
-        return True
-    return False
 
 def parse_price(price_text):
     if not price_text:
@@ -194,17 +179,6 @@ def normalize_match_text(text):
     text = re.sub(r'[\u200b\u200c\u200d\ufeff]', '', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
-
-
-def contains_positive_keyword(text, positive_keywords):
-    """Returns the first matching positive phrase, or None.
-    Positive phrases indicate email/rebind IS available (whitelist)."""
-    normalized_text = normalize_match_text(text)
-    for pos_word in (positive_keywords or []):
-        normalized_pos = normalize_match_text(pos_word)
-        if normalized_pos and normalized_pos in normalized_text:
-            return pos_word
-    return None
 
 
 def contains_exclude_keyword(text, exclude_keywords, positive_keywords=None):
@@ -556,118 +530,6 @@ def _format_snapshot_price(price_value):
 
 def _pick_min_result(results):
     return results[0] if results else None
-
-
-async def build_recheck_log(snapshot, progress_callback=None):
-    positions = snapshot.get('positions', [])
-    total = len(positions)
-    sent_position_ids = set(snapshot.get('sent_position_ids', []))
-    diagnostics = []
-
-    for idx, position in enumerate(positions, start=1):
-        if progress_callback:
-            await progress_callback(idx - 1, total, position['name'])
-
-        if position['type'] == 'edition':
-            any_result = _pick_min_result(await search_min_price(position['keywords'], require_pve=False))
-            record_price_snapshot('edition', position['id'], position['name'], 'any', [any_result] if any_result else [], source='recheck_log')
-            limit_price = position['limit_price']
-            if position['id'] in sent_position_ids:
-                status = "✅ Отправлено"
-            elif any_result and any_result['price'] <= limit_price:
-                status = "✅ Отправлено"
-            elif any_result:
-                status = "💸 Дороже лимита"
-            else:
-                status = "❌ Не найдено"
-
-            diagnostics.append({
-                'type': 'edition',
-                'id': position['id'],
-                'name': position['name'],
-                'limit_text': _format_snapshot_price(limit_price),
-                'min_any_text': any_result['price_text'] if any_result else "—",
-                'min_pve_text': None,
-                'status': status,
-            })
-
-        elif position['type'] == 'pve':
-            any_result = _pick_min_result(await search_min_price(position['keywords_any'], require_pve=False))
-            confirmed_result = _pick_min_result(await search_min_price(position['keywords_confirmed'], require_pve=False))
-            results_for_history = [r for r in (confirmed_result, any_result) if r]
-            record_price_snapshot('pve', position['id'], position['name'], 'confirmed', results_for_history, source='recheck_log')
-            limit_price = position['limit_price']
-
-            if position['id'] in sent_position_ids:
-                status = "✅ Отправлено"
-            elif confirmed_result and confirmed_result['price'] <= limit_price:
-                status = "✅ Отправлено"
-            elif confirmed_result:
-                status = "💸 Дороже лимита"
-            elif any_result:
-                status = "❔ Нет лотов с PVE"
-            else:
-                status = "❌ Не найдено"
-
-            diagnostics.append({
-                'type': 'pve',
-                'id': position['id'],
-                'name': position['name'],
-                'limit_text': _format_snapshot_price(limit_price),
-                'min_any_text': any_result['price_text'] if any_result else "—",
-                'min_pve_text': confirmed_result['price_text'] if confirmed_result else "—",
-                'status': status,
-            })
-
-        else:
-            any_result = _pick_min_result(await search_min_price(position['keywords'], require_pve=False))
-            pve_result = _pick_min_result(await search_min_price(position['keywords'], require_pve=True))
-            history_mode = 'pve' if position.get('require_pve', False) else 'any'
-            results_for_history = [pve_result] if history_mode == 'pve' else [any_result]
-            if history_mode != 'pve' and not any_result and pve_result:
-                results_for_history = [pve_result]
-            record_price_snapshot('skin', position['id'], position['name'], history_mode, [r for r in results_for_history if r], source='recheck_log')
-            limit_price = position['limit_price']
-            require_pve = position.get('require_pve', False)
-
-            if position['id'] in sent_position_ids:
-                status = "✅ Отправлено"
-            elif require_pve:
-                if pve_result and pve_result['price'] <= limit_price:
-                    status = "✅ Отправлено"
-                elif pve_result:
-                    status = "💸 Дороже лимита"
-                elif any_result:
-                    status = "🔒 Только без PVE"
-                else:
-                    status = "❌ Не найдено"
-            else:
-                if any_result and any_result['price'] <= limit_price:
-                    status = "✅ Отправлено"
-                elif any_result:
-                    status = "💸 Дороже лимита"
-                elif pve_result and pve_result['price'] <= limit_price:
-                    status = "✅ Отправлено"
-                elif pve_result:
-                    status = "💸 Дороже лимита"
-                else:
-                    status = "❌ Не найдено"
-
-            diagnostics.append({
-                'type': 'skin',
-                'id': position['id'],
-                'name': position['name'],
-                'limit_text': _format_snapshot_price(limit_price),
-                'min_any_text': any_result['price_text'] if any_result else "—",
-                'min_pve_text': pve_result['price_text'] if pve_result else "—",
-                'status': status,
-                'require_pve': require_pve,
-            })
-
-        if progress_callback:
-            await progress_callback(idx, total, position['name'])
-
-    return diagnostics
 
 
 def init_recheck_log_state(snapshot):
@@ -1215,11 +1077,6 @@ def _sync_search_min_price(keywords, require_pve=False):
 async def search_min_price(keywords, require_pve=False):
     """Поиск минимальной цены по всем ключевым словам — НЕ блокирует event loop."""
     return await asyncio.to_thread(_sync_search_min_price, keywords, require_pve)
-
-
-async def search_min_price_single(keyword, require_pve=False):
-    """Поиск по одному ключевому слову — для прогресс-бара."""
-    return await asyncio.to_thread(_sync_search_min_price, [keyword], require_pve)
 
 
 async def process_offers(bot_instance=None, context=None, skip_seen=True, max_price_override=None,
@@ -2775,7 +2632,10 @@ def main():
 
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).concurrent_updates(True).post_init(post_init).build()
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("ban", ban))
+    application.add_handler(CommandHandler("recheck", recheck))
+    application.add_handler(CommandHandler("pricetest", pricetest))
     application.add_handler(CommandHandler("stop", stop_command))
 
     # Обработчик кнопок постоянной клавиатуры.
