@@ -245,7 +245,9 @@ def find_skins_in_text(text, skins_dict=None):
     """Находит все редкие скины в тексте. Использует skins_dict из config."""
     if skins_dict is None:
         skins_dict = config.get_enabled_skins_dict()
-    text_lower = text.lower()
+    # Normalize: replace zero-width chars with space, collapse multiple spaces
+    text_lower = re.sub(r'[\u200b\u200c\u200d\ufeff]', ' ', text.lower())
+    text_lower = re.sub(r'\s+', ' ', text_lower)
     found_skins = []
 
     for skin_id, skin_data in skins_dict.items():
