@@ -30,7 +30,7 @@ def decrypt(data: bytes, passphrase: str) -> bytes:
     return bytes(a ^ b for a, b in zip(ciphertext, keystream))
 
 def main():
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 5:
         # Check if environment variable is set
         passphrase = os.environ.get("CONFIG_PASSPHRASE")
         if not passphrase:
