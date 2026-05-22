@@ -5,7 +5,7 @@ Set-Location $PSScriptRoot
 $repoPath = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $repoPattern = [Regex]::Escape($repoPath)
 Get-CimInstance Win32_Process -Filter "name = 'python.exe'" |
-    Where-Object { $_.CommandLine -match $repoPattern -and $_.CommandLine -match '(monitor|run_launcher)\.py' } |
+    Where-Object { $_.CommandLine -match $repoPattern -and $_.CommandLine -match '(app|launcher|monitor|run_launcher)\.py' } |
     ForEach-Object {
         Write-Host "Stopping old bot process PID $($_.ProcessId)"
         Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
