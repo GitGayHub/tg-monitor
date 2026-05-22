@@ -13,7 +13,7 @@ if hasattr(sys.stderr, "reconfigure"):
 REPO = os.path.dirname(os.path.abspath(__file__))
 MONITOR = os.path.join(REPO, "app.py")
 LOCK_FILE = os.path.join(REPO, ".bot.lock")
-STATE_SYNC = ["seen_ids.txt", "sent_offers.json", "banned_ids.txt", "config.json", "price_history.db"]
+STATE_SYNC = ["seen_ids.txt", "sent_offers.json", "banned_ids.txt", "config.json.enc", "price_history.db"]
 STATE_PROTECTED = STATE_SYNC + ["price_history.db-shm", "price_history.db-wal"]
 STATE_SET = {p.replace("\\", "/") for p in STATE_PROTECTED}
 STATE_COMMIT_PREFIXES = ("Sync state after run", "Update monitor state")
@@ -414,6 +414,24 @@ git("config", "rebase.autoStash", "true")
 
 sync_from_remote()
 
+# Decrypt config if passphrase is provided
+passphrase = os.environ.get("CONFIG_PASSPHRASE")
+if passphrase and os.path.exists(os.path.join(REPO, "config.json.enc")):
+    print("Decrypting config.json.enc...")
+    try:
+        sys.path.append(REPO)
+        import config_crypt
+        with open(os.path.join(REPO, "config.json.enc"), "rb") as f:
+            decrypted = config_crypt.decrypt(f.read(), passphrase)
+        with open(os.path.join(REPO, "config.json"), "wb") as f:
+            f.write(decrypted)
+        print("  Config decrypted successfully.")
+    except Exception as e:
+        print(f"  ⚠️ Error decrypting config: {e}")
+elif not passphrase and not os.path.exists(os.path.join(REPO, "config.json")) and os.path.exists(os.path.join(REPO, "config.json.enc")):
+    print("⚠️ WARNING: config.json.enc exists but CONFIG_PASSPHRASE is not set!")
+    print("Please set CONFIG_PASSPHRASE in set_env.bat to decrypt the config.")
+
 print("\n=== [2/3] Starting bot (Ctrl+C to exit) ===\n")
 
 signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -422,6 +440,21 @@ try:
 finally:
     print("\n=== [3/3] Pushing state updates to GitHub ===")
     try:
+        # Re-encrypt config if passphrase is provided
+        passphrase = os.environ.get("CONFIG_PASSPHRASE")
+        if passphrase and os.path.exists(os.path.join(REPO, "config.json")):
+            print("Encrypting config.json...")
+            try:
+                sys.path.append(REPO)
+                import config_crypt
+                with open(os.path.join(REPO, "config.json"), "rb") as f:
+                    encrypted = config_crypt.encrypt(f.read(), passphrase)
+                with open(os.path.join(REPO, "config.json.enc"), "wb") as f:
+                    f.write(encrypted)
+                print("  Config encrypted successfully.")
+            except Exception as e:
+                print(f"  ⚠️ Error encrypting config: {e}")
+        
         git("add", *STATE_SYNC)
         if git_has_staged(STATE_SYNC):
             commit = git("commit", "-m", "Sync state after run", "--", *STATE_SYNC, visible=True)
@@ -441,6 +474,19 @@ finally:
                 except subprocess.TimeoutExpired:
                     print("WARNING: pull timed out — state kept locally.")
                     raise SystemExit(0)
+                
+                # Re-encrypt config after pull
+                if passphrase and os.path.exists(os.path.join(REPO, "config.json")):
+                    try:
+                        sys.path.append(REPO)
+                        import config_crypt
+                        with open(os.path.join(REPO, "config.json"), "rb") as f:
+                            encrypted = config_crypt.encrypt(f.read(), passphrase)
+                        with open(os.path.join(REPO, "config.json.enc"), "wb") as f:
+                            f.write(encrypted)
+                    except Exception as e:
+                        print(f"  ⚠️ Error re-encrypting config after pull: {e}")
+                
                 # Re-commit and push
                 git("add", *STATE_SYNC)
                 if git_has_staged(STATE_SYNC):

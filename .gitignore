@@ -19,3 +19,5 @@ commit.bat
 set_env.bat
 set_env.sh
 .bot.lock
+config.json
+*.bak*

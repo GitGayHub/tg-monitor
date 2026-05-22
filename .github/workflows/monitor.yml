@@ -58,6 +58,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Decrypt config
+        if: steps.cooldown.outputs.skip != 'true'
+        env:
+          CONFIG_PASSPHRASE: ${{ secrets.CONFIG_PASSPHRASE }}
+        run: |
+          python config_crypt.py decrypt config.json.enc config.json
+
+
       - name: Run monitor once
         if: steps.cooldown.outputs.skip != 'true'
         env:
@@ -128,30 +136,34 @@ jobs:
       - name: Commit runtime state
         if: steps.cooldown.outputs.skip != 'true'
         shell: bash
+        env:
+          CONFIG_PASSPHRASE: ${{ secrets.CONFIG_PASSPHRASE }}
         run: |
           set -e
           git config --global user.name "Monitor Bot"
           git config --global user.email "bot@noreply.github.com"
           # Backup state files before rebase
           backup_dir="$(mktemp -d)"
-          for f in seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json run_log.json; do
+          for f in seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
             if [ -f "$f" ]; then
               cp "$f" "$backup_dir/$f"
             fi
           done
           # Rebase on latest main to avoid conflicts
-          git checkout -- seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json run_log.json 2>/dev/null || true
+          git checkout -- seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json 2>/dev/null || true
           git fetch origin main || true
           if ! git rebase origin/main; then
             git rebase --abort || true
           fi
           # Restore state files after rebase
-          for f in seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json run_log.json; do
+          for f in seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
             if [ -f "$backup_dir/$f" ]; then
               cp "$backup_dir/$f" "$f"
             fi
           done
-          git add seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json run_log.json || true
+          # Re-encrypt config before committing
+          python config_crypt.py encrypt config.json config.json.enc
+          git add seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json || true
           if git diff --cached --quiet; then
             echo "No runtime state changes"
             exit 0
