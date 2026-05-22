@@ -1,4 +1,4 @@
-﻿"""Launcher: git pull -> run bot -> git push. Auto-resolves state conflicts."""
+"""Launcher: git pull -> run bot -> git push. Auto-resolves state conflicts."""
 import subprocess
 import sys
 import os
@@ -11,7 +11,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 REPO = os.path.dirname(os.path.abspath(__file__))
-MONITOR = os.path.join(REPO, "monitor.py")
+MONITOR = os.path.join(REPO, "app.py")
 LOCK_FILE = os.path.join(REPO, ".bot.lock")
 STATE_SYNC = ["seen_ids.txt", "sent_offers.json", "banned_ids.txt", "config.json", "price_history.db"]
 STATE_PROTECTED = STATE_SYNC + ["price_history.db-shm", "price_history.db-wal"]

@@ -1,5 +1,5 @@
-﻿"""
-Тестовый прогон: поднимает все цены в config.json x3, запускает monitor.py --once,
+"""
+Тестовый прогон: поднимает все цены в config.json x3, запускает app.py --once,
 потом восстанавливает оригинальный config.json.
 """
 import json
@@ -54,10 +54,10 @@ print(f"[x3 test] Цены изменены x3:")
 for c in changed:
     print(c)
 
-# 3. Запуск monitor.py --once
-print("\n[x3 test] Запускаю monitor.py --once ...")
+# 3. Запуск app.py --once
+print("\n[x3 test] Запускаю app.py --once ...")
 result = subprocess.run(
-    [sys.executable, "monitor.py", "--once"],
+    [sys.executable, "app.py", "--once"],
     env={**os.environ},
     cwd=os.path.dirname(os.path.abspath(__file__)),
 )

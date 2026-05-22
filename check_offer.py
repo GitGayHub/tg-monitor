@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import asyncio
 import os
 import requests
@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # from monitor.py if it is importable, or we can just import the key functions.
 # Let's read the code from monitor.py and call its functions.
-import app
+import app as monitor
 
 async def main():
     sys.stdout.reconfigure(encoding='utf-8')

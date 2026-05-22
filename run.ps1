@@ -24,4 +24,8 @@ if (Test-Path ".\set_env.bat") {
     exit 1
 }
 
-python "$PSScriptRoot\run_launcher.py"
+$pythonPath = "python"
+if (Test-Path "$PSScriptRoot\.venv\Scripts\python.exe") {
+    $pythonPath = "$PSScriptRoot\.venv\Scripts\python.exe"
+}
+& $pythonPath "$PSScriptRoot\launcher.py"

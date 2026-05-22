@@ -10,7 +10,7 @@ param(
     [string]$Repo = "GitGayHub/tg-monitor"
 )
 
-$RepoPath = "d:\AStest\funpay-bot-repo"
+$RepoPath = $PSScriptRoot
 $ErrorActionPreference = "Stop"
 
 Write-Host "=== Перепривязка GitHub ===" -ForegroundColor Cyan

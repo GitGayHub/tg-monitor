@@ -1,6 +1,6 @@
-﻿"""
-settings_handlers.py � ????????????? ???? ???????? ???? ????? inline-?????? ? Telegram.
-????????? ????????? ???????, PVE-???????, ?????? ? ????????? ????? ?? ????.
+"""
+settings_handlers.py — Интерактивное меню настроек бота через inline-кнопки в Telegram.
+Позволяет управлять скинами, PVE-словами, ценами и фильтрами прямо из чата.
 """
 import logging
 import math
@@ -17,7 +17,7 @@ from history import get_price_history, record_price_snapshot, get_price_summary,
 
 logger = logging.getLogger(__name__)
 
-# ????????? ??? ConversationHandler (???? ??????)
+# Состояния для ConversationHandler (ввод данных)
 INPUT_SKIN_PRICE, INPUT_SKIN_KEYWORDS, INPUT_NEW_SKIN_ID, INPUT_NEW_SKIN_PRICE, INPUT_NEW_SKIN_KEYWORDS = range(5)
 INPUT_PVE_KEYWORD, INPUT_EXCLUDE_KEYWORD = range(5, 7)
 INPUT_MAX_PRICE, INPUT_PVE_BONUS, INPUT_CHECK_INTERVAL, INPUT_DELAY_MIN, INPUT_DELAY_MAX = range(7, 12)
@@ -27,16 +27,16 @@ INPUT_RECHECK_ED_PRICE = 15
 INPUT_CONFIRMED_PVE_PRICE = 16
 INPUT_BANNED_LINK = 17
 
-ITEMS_PER_PAGE = 8  # ????????? ?? ???????? (??? ?????????)
+ITEMS_PER_PAGE = 8  # Элементов на странице (для пагинации)
 
 
 def _get_chat_id_from_context(context):
-    """???????? chat_id ???? (??? ???????? ???????????)."""
+    """Получает chat_id бота (для проверки авторизации)."""
     return context.bot_data.get('authorized_chat_id')
 
 
 def _check_auth(update, context):
-    """????????? ??????????? ????????????."""
+    """Проверяет авторизацию пользователя."""
     authorized = _get_chat_id_from_context(context)
     if authorized and str(update.effective_chat.id) != str(authorized):
         return False
@@ -57,7 +57,7 @@ def _set_input_return(context, callback_data=None, label=None, extra_buttons=Non
         context.user_data.pop('input_return_extra_buttons', None)
 
 
-def _pop_input_return_markup(context, fallback_callback="set:main", fallback_label="?? ? ????"):
+def _pop_input_return_markup(context, fallback_callback="set:main", fallback_label="🔙 В меню"):
     callback_data = context.user_data.pop('input_return_callback', None)
     label = context.user_data.pop('input_return_label', None)
     extra_buttons = context.user_data.pop('input_return_extra_buttons', None)
@@ -70,11 +70,11 @@ def _pop_input_return_markup(context, fallback_callback="set:main", fallback_lab
         for extra_label, extra_callback in extra_buttons:
             keyboard.append([InlineKeyboardButton(extra_label, callback_data=extra_callback)])
     if callback_data != "set:main":
-        keyboard.append([InlineKeyboardButton("?? ??????? ????", callback_data="set:main")])
+        keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
     return InlineKeyboardMarkup(keyboard)
 
 
-def _get_input_return_markup(context, fallback_callback="set:main", fallback_label="?? ?????"):
+def _get_input_return_markup(context, fallback_callback="set:main", fallback_label="🔙 Назад"):
     callback_data = context.user_data.get('input_return_callback') or fallback_callback
     label = context.user_data.get('input_return_label') or fallback_label
     extra_buttons = context.user_data.get('input_return_extra_buttons') or []
@@ -82,7 +82,7 @@ def _get_input_return_markup(context, fallback_callback="set:main", fallback_lab
     for extra_label, extra_callback in extra_buttons:
         keyboard.append([InlineKeyboardButton(extra_label, callback_data=extra_callback)])
     if callback_data != "set:main":
-        keyboard.append([InlineKeyboardButton("?? ??????? ????", callback_data="set:main")])
+        keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -118,43 +118,43 @@ def _make_progress_bar(done, total, width=12):
     done = max(0, min(done, total))
     pct = int(done / total * 100)
     filled = min(width, int(round(done / total * width)))
-    return ('?' * filled) + ('?' * (width - filled)), pct
+    return ('▰' * filled) + ('▱' * (width - filled)), pct
 
 def _skin_emoji(skin_id):
     sid = skin_id.lower()
     mapping = {
-        'black_knight': '???',
-        'cobalt_snowfoot': '??',
-        'dark_skully': '??',
-        'dark_vertex': '??',
-        'double_helix': '??',
-        'eon': '?',
-        'florin': '??',
-        'floss': '??',
-        'freediver': '??',
-        'huntmaster_saber': '??',
-        'neo_versa': '??',
-        'rogue_spider_knight': '???',
-        'royale_bomber': '??',
-        'sparkle_specialist': '??',
-        'stealth_reflex': '??',
-        'surf_strider': '??',
-        'thrilldiver': '??',
-        'twitch_prime': '??',
-        'wildcat': '??',
+        'black_knight': '🛡️',
+        'cobalt_snowfoot': '❄️',
+        'dark_skully': '💀',
+        'dark_vertex': '🌌',
+        'double_helix': '🧬',
+        'eon': '⚡',
+        'florin': '🪙',
+        'floss': '💃',
+        'freediver': '🤿',
+        'huntmaster_saber': '🐯',
+        'neo_versa': '🚀',
+        'rogue_spider_knight': '🕷️',
+        'royale_bomber': '✈️',
+        'sparkle_specialist': '🎇',
+        'stealth_reflex': '🥷',
+        'surf_strider': '🏄',
+        'thrilldiver': '🌊',
+        'twitch_prime': '👑',
+        'wildcat': '🐆',
     }
-    return mapping.get(sid, '??')
+    return mapping.get(sid, '🎮')
 
 
 def _confirmed_pve_title():
-    return "?? ?????. PVE"
+    return "🛡 Подтв. PVE"
 
 
 def _check_control_markup(include_home=True):
     keyboard = []
     if include_home:
-        keyboard.append([InlineKeyboardButton("?? ??????? ????", callback_data="set:main")])
-    keyboard.append([InlineKeyboardButton("? ?????????? ??????? ????????", callback_data="set:checkstop")])
+        keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
+    keyboard.append([InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -164,30 +164,30 @@ def _build_settings_main_text(config):
     enabled = sum(1 for s in skins.values() if s.get('enabled', True))
     pve_req = sum(1 for s in skins.values() if s.get('require_pve', False))
     return (
-        "?? <b>?????? ????????</b>\n\n"
-        f"?? ??????: {enabled}/{len(skins)} | ?? ???????: {len(editions)}\n"
-        f"?? ? PVE: {pve_req}/{len(skins)}\n"
-        f"?? ????????: {len(config.get_exclude_keywords())}\n\n"
-        "???????? ??????:"
+        "⚙️ <b>Панель настроек</b>\n\n"
+        f"🎮 Скинов: {enabled}/{len(skins)} | 🏆 Изданий: {len(editions)}\n"
+        f"🧟 С PVE: {pve_req}/{len(skins)}\n"
+        f"🚫 Фильтров: {len(config.get_exclude_keywords())}\n\n"
+        "Выберите раздел:"
     )
 
 
 def _build_settings_main_markup(context):
     keyboard = [
-        [InlineKeyboardButton("?? ??????", callback_data="set:skins:menu"),
-         InlineKeyboardButton("?? ???????", callback_data="set:filters:menu")],
-        [InlineKeyboardButton("??? ???? ? ???????", callback_data="set:prices:menu"),
-         InlineKeyboardButton("?? ????????", callback_data="set:check:menu")],
-        [InlineKeyboardButton("?? ??????", callback_data="set:status"),
-         InlineKeyboardButton("?? ??????????", callback_data="set:stats")],
+        [InlineKeyboardButton("📋 Список", callback_data="set:skins:menu"),
+         InlineKeyboardButton("🚫 Фильтры", callback_data="set:filters:menu")],
+        [InlineKeyboardButton("🏷️ Цены и таймеры", callback_data="set:prices:menu"),
+         InlineKeyboardButton("🔎 Проверка", callback_data="set:check:menu")],
+        [InlineKeyboardButton("📊 Статус", callback_data="set:status"),
+         InlineKeyboardButton("📈 Статистика", callback_data="set:stats")],
     ]
     if _is_check_running(context):
-        keyboard.append([InlineKeyboardButton("? ?????????? ??????? ????????", callback_data="set:checkstop")])
+        keyboard.append([InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
     keyboard.append([
-        InlineKeyboardButton("?? ?????????????", callback_data="set:sync"),
-        InlineKeyboardButton("? ?????????? ????", callback_data="set:stop"),
+        InlineKeyboardButton("☁️ Синхронизация", callback_data="set:sync"),
+        InlineKeyboardButton("⏹ Остановить бота", callback_data="set:stop"),
     ])
-    keyboard.append([InlineKeyboardButton("? ???????", callback_data="set:close")])
+    keyboard.append([InlineKeyboardButton("❌ Закрыть", callback_data="set:close")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -196,10 +196,10 @@ def _history_item_meta(context, item_type, item_id):
     if item_type == 'skin':
         return config.get_skin(item_id) or {}, f"{_skin_emoji(item_id)} {item_id.replace('_', ' ').title()}"
     if item_type == 'edition':
-        return config.get_edition(item_id) or {}, f"?? {item_id.replace('_', ' ').title()}"
+        return config.get_edition(item_id) or {}, f"🏆 {item_id.replace('_', ' ').title()}"
     if item_type == 'pve':
         if item_id == 'unconfirmed':
-            return {}, "?? ???????. PVE"
+            return {}, "🔓 Неподтв. PVE"
         return {'price': config.confirmed_pve_price}, _confirmed_pve_title()
     return {}, item_id
 
@@ -253,7 +253,7 @@ async def _run_minprice_search_with_watchdog(context, label, search_coro_factory
         except asyncio.TimeoutError:
             elapsed = int(time.monotonic() - started)
             if elapsed >= timeout_seconds:
-                logger.warning(f"?? ???. ?????: ????-??? ???? '{label}' ????? {elapsed}?")
+                logger.warning(f"⏱️ Мин. прайс: тайм-аут шага '{label}' после {elapsed}с")
                 task.cancel()
                 return []
             if heartbeat_callback:
@@ -262,7 +262,7 @@ async def _run_minprice_search_with_watchdog(context, label, search_coro_factory
                 except Exception:
                     pass
         except Exception as e:
-            logger.error(f"?????? ???. ?????? ??? '{label}': {e}")
+            logger.error(f"Ошибка мин. прайса для '{label}': {e}")
             return []
 
 
@@ -274,52 +274,52 @@ async def _show_price_history(query, context, item_type, item_id, mode='all', pa
     page = max(0, min(page, total_pages - 1))
     page_items = history[page * per_page:(page + 1) * per_page]
     mode_label = {
-        'all': '??? ????????',
-        'any': '??? ??????? PVE',
-        'pve': '?????? ? PVE',
-        'confirmed': '?????????????? PVE',
-        'unconfirmed': '???????????????? PVE',
+        'all': 'все варианты',
+        'any': 'без фильтра PVE',
+        'pve': 'только с PVE',
+        'confirmed': 'подтверждённый PVE',
+        'unconfirmed': 'неподтверждённый PVE',
     }.get(mode, mode)
 
-    text = f"?? <b>??????? ???</b> ({page + 1}/{total_pages})\n\n{title}\n?? ?????: {mode_label}\n\n"
+    text = f"📈 <b>История цен</b> ({page + 1}/{total_pages})\n\n{title}\n🔎 Режим: {mode_label}\n\n"
     if not page_items:
-        text += "??????? ???? ??????.\n??????? ????????? ???. ???? ??? ???? ???????."
+        text += "История пока пустая.\nСначала запустите мин. цену для этой позиции."
     else:
         for snapshot in page_items:
             date_label = html.escape(snapshot['recorded_at'].split(' ', 1)[0])
             if snapshot.get('offers'):
                 top_offer = snapshot['offers'][0]
                 price_markup = _format_log_offer_v2(top_offer)
-                text += f"?? <b>{date_label}</b> � {price_markup}\n"
+                text += f"🕒 <b>{date_label}</b> — {price_markup}\n"
             else:
-                text += f"?? <b>{date_label}</b> � �\n"
-            text += "??????????????\n\n"
+                text += f"🕒 <b>{date_label}</b> — —\n"
+            text += "━━━━━━━━━━━━━━\n\n"
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("?", callback_data=f"set:hist:{item_type}:{item_id}:{mode}:{page - 1}:{back_token}"))
+        nav.append(InlineKeyboardButton("◀", callback_data=f"set:hist:{item_type}:{item_id}:{mode}:{page - 1}:{back_token}"))
     nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="set:noop"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("?", callback_data=f"set:hist:{item_type}:{item_id}:{mode}:{page + 1}:{back_token}"))
+        nav.append(InlineKeyboardButton("▶", callback_data=f"set:hist:{item_type}:{item_id}:{mode}:{page + 1}:{back_token}"))
 
     keyboard = []
     if nav:
         keyboard.append(nav)
-    keyboard.append([InlineKeyboardButton("?? ????????", callback_data=f"set:hist:{item_type}:{item_id}:{mode}:{page}:{back_token}")])
-    keyboard.append([InlineKeyboardButton("?? ?????", callback_data=_history_back_callback(back_token, item_id=item_id, mode=mode))])
-    keyboard.append([InlineKeyboardButton("?? ??????? ????", callback_data="set:main")])
+    keyboard.append([InlineKeyboardButton("🔄 Обновить", callback_data=f"set:hist:{item_type}:{item_id}:{mode}:{page}:{back_token}")])
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=_history_back_callback(back_token, item_id=item_id, mode=mode))])
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
     await query.edit_message_text(text.strip(), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
 
 async def _show_skins_menu(query, context):
     text = (
-        "?? <b>??????</b>\n\n"
-        "???????? ??????:"
+        "📋 <b>Список</b>\n\n"
+        "Выберите раздел:"
     )
     keyboard = [
-        [InlineKeyboardButton("?? ?????", callback_data="set:skins:list:0")],
-        [InlineKeyboardButton("?? PVE", callback_data="set:skins:pvelist:0")],
-        [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+        [InlineKeyboardButton("🎮 Скины", callback_data="set:skins:list:0")],
+        [InlineKeyboardButton("🧟 PVE", callback_data="set:skins:pvelist:0")],
+        [InlineKeyboardButton("🔙 Главное меню", callback_data="set:main")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
@@ -327,17 +327,17 @@ async def _show_skins_menu(query, context):
 def _main_reply_keyboard():
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton("?? ?????????"), KeyboardButton("?? ????????")],
-            [KeyboardButton("? ????")],
+            [KeyboardButton("⚙️ Настройки"), KeyboardButton("🔎 Проверка")],
+            [KeyboardButton("⏹ Стоп")],
         ],
         resize_keyboard=True,
         is_persistent=True,
     )
 
 async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """??????? /settings � ????????? ??????? ???? ????????."""
+    """Команда /settings — открывает главное меню настроек."""
     if not _check_auth(update, context):
-        await update.message.reply_text("? ?? ?? ????????????. ???????? /start")
+        await update.message.reply_text("❌ Вы не авторизованы. Напишите /start")
         return
 
     config = context.bot_data['config']
@@ -346,14 +346,14 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _show_main_menu(query, context):
-    """?????????? ??????? ???? ????? edit_message."""
+    """Показывает главное меню через edit_message."""
     config = context.bot_data['config']
     text = _build_settings_main_text(config)
     await query.edit_message_text(text, reply_markup=_build_settings_main_markup(context), parse_mode='HTML')
 
 
 async def _show_banned_list(query, context, page=0):
-    """?????? ?????????? ????? ? ??????????."""
+    """Список забаненных лотов с пагинацией."""
     banned_ids = sorted(_get_banned_ids(context))
     total = len(banned_ids)
     per_page = 6
@@ -363,43 +363,43 @@ async def _show_banned_list(query, context, page=0):
     end = min(start + per_page, total)
     page_items = banned_ids[start:end]
 
-    lines = [f"?? <b>?????????? ????</b> ({page + 1}/{total_pages})", ""]
+    lines = [f"🚷 <b>Забаненные лоты</b> ({page + 1}/{total_pages})", ""]
     if page_items:
-        lines.append(f"?????: {total}")
-        lines.append("??????? ?? ?, ????? ?????? ??? ?? ????:")
+        lines.append(f"Всего: {total}")
+        lines.append("Нажмите на ❌, чтобы убрать лот из бана:")
         lines.append("")
         for offer_id in page_items:
-            lines.append(f"� <a href='{_offer_url(offer_id)}'>??? {offer_id}</a>")
+            lines.append(f"• <a href='{_offer_url(offer_id)}'>Лот {offer_id}</a>")
     else:
-        lines.append("?????? ????.")
+        lines.append("Список пуст.")
 
     keyboard = []
     for offer_id in page_items:
-        keyboard.append([InlineKeyboardButton(f"? ?????? {offer_id}", callback_data=f"set:ban:rm:{offer_id}:{page}")])
+        keyboard.append([InlineKeyboardButton(f"❌ Убрать {offer_id}", callback_data=f"set:ban:rm:{offer_id}:{page}")])
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("??", callback_data=f"set:ban:list:{page - 1}"))
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"set:ban:list:{page - 1}"))
     nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="set:noop"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("??", callback_data=f"set:ban:list:{page + 1}"))
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"set:ban:list:{page + 1}"))
     if nav:
         keyboard.append(nav)
 
-    keyboard.append([InlineKeyboardButton("? ???????? ???????", callback_data="set:ban:add")])
+    keyboard.append([InlineKeyboardButton("➕ Добавить ссылкой", callback_data="set:ban:add")])
     if total:
-        keyboard.append([InlineKeyboardButton("?? ???????? ??????", callback_data="set:ban:clear")])
-    keyboard.append([InlineKeyboardButton("?? ???????", callback_data="set:filters:menu")])
+        keyboard.append([InlineKeyboardButton("🧹 Очистить список", callback_data="set:ban:clear")])
+    keyboard.append([InlineKeyboardButton("🔙 Фильтры", callback_data="set:filters:menu")])
 
     await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 # ==============================
-# ????? � ?????? ? ??????????
+# СКИНЫ — список с пагинацией
 # ==============================
 
 async def _show_skins_list(query, context, page=0):
-    """?????????? ?????? ?????? ? ??????????."""
+    """Показывает список скинов с пагинацией."""
     config = context.bot_data['config']
     context.user_data['skins_section'] = 'skins'
     context.user_data['skins_last_page'] = page
@@ -415,45 +415,45 @@ async def _show_skins_list(query, context, page=0):
     def _short_name(name, limit=28):
         if len(name) <= limit:
             return name
-        return name[:limit - 1] + "�"
+        return name[:limit - 1] + "…"
 
-    text = f"?? <b>?????</b> ({page + 1}/{total_pages})\n\n"
-    text += "???????? ????????? ????????. ???? ???????? ????????.\n"
+    text = f"📋 <b>Скины</b> ({page + 1}/{total_pages})\n\n"
+    text += "Название открывает карточку. Цена меняется отдельно.\n"
 
     keyboard = []
     for item_id in page_items:
         if item_id == 'pve:confirmed':
             enabled = config.confirmed_pve_enabled
-            icon = "?" if enabled else "?"
+            icon = "✅" if enabled else "⛔"
             keyboard.append([
                 InlineKeyboardButton(_confirmed_pve_title(), callback_data=f"set:skins:pvdetail:{page}"),
             ])
             keyboard.append([
-                InlineKeyboardButton(f"?? {config.confirmed_pve_price}?", callback_data=f"set:skins:pvprice:{page}"),
+                InlineKeyboardButton(f"💰 {config.confirmed_pve_price}₽", callback_data=f"set:skins:pvprice:{page}"),
                 InlineKeyboardButton(icon, callback_data=f"set:skins:pvtoggle:{page}"),
             ])
         else:
             sid = item_id
             skin = config.get_skin(sid)
-            icon = "?" if skin.get('enabled', True) else "?"
-            pve_icon = "?? PVE" if skin.get('require_pve', False) else "?? ???"
+            icon = "✅" if skin.get('enabled', True) else "⛔"
+            pve_icon = "🧟 PVE" if skin.get('require_pve', False) else "🔒 Без"
             name = sid.replace('_', ' ').title()
             price = skin.get('price', 0)
             keyboard.append([
                 InlineKeyboardButton(f"{_skin_emoji(sid)} {_short_name(name, 28)}", callback_data=f"set:skins:detail:{sid}:{page}"),
             ])
             keyboard.append([
-                InlineKeyboardButton(f"?? {price}?", callback_data=f"set:skins:price:{sid}:list:{page}"),
+                InlineKeyboardButton(f"💰 {price}₽", callback_data=f"set:skins:price:{sid}:list:{page}"),
                 InlineKeyboardButton(icon, callback_data=f"set:skins:toggle:{sid}:{page}"),
                 InlineKeyboardButton(pve_icon, callback_data=f"set:skins:pvereq:{sid}:{page}"),
-                InlineKeyboardButton("?? ???", callback_data=f"set:minprice:skin:{sid}:skinslist:{page}"),
+                InlineKeyboardButton("🔎 Мин", callback_data=f"set:minprice:skin:{sid}:skinslist:{page}"),
             ])
 
     all_skins = config.get_all_skins()
     all_enabled = bool(all_skins) and all(s.get('enabled', True) for s in all_skins.values())
     all_pve = bool(all_skins) and all(s.get('require_pve', False) for s in all_skins.values())
-    skins_all_btn = "? ??? ????" if all_enabled else "? ??? ???"
-    pve_all_btn = "?? PVE ????" if all_pve else "?? PVE ????"
+    skins_all_btn = "⛔ Все выкл" if all_enabled else "✅ Все вкл"
+    pve_all_btn = "🔒 PVE выкл" if all_pve else "🧟 PVE всем"
     keyboard.append([
         InlineKeyboardButton(skins_all_btn, callback_data=f"set:skins:alltoggle:{page}"),
         InlineKeyboardButton(pve_all_btn, callback_data=f"set:skins:pveall:{page}")
@@ -467,15 +467,15 @@ async def _show_skins_list(query, context, page=0):
         nav_buttons.append(InlineKeyboardButton(">", callback_data=f"set:skins:list:{page + 1}"))
     keyboard.append(nav_buttons)
 
-    keyboard.append([InlineKeyboardButton("? ???????? ????", callback_data="set:skins:add")])
-    keyboard.append([InlineKeyboardButton("?? ? ????????", callback_data="set:skins:menu")])
-    keyboard.append([InlineKeyboardButton("?? ??????? ????", callback_data="set:main")])
+    keyboard.append([InlineKeyboardButton("➕ Добавить скин", callback_data="set:skins:add")])
+    keyboard.append([InlineKeyboardButton("🔙 К разделам", callback_data="set:skins:menu")])
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_pve_positions_list(query, context, page=0):
-    """?????????? PVE-??????? ??????: ?????????????? PVE ? ???????."""
+    """Показывает PVE-позиции списка: подтверждённое PVE и издания."""
     config = context.bot_data['config']
     context.user_data['skins_section'] = 'pve'
     context.user_data['skins_last_page'] = page
@@ -490,32 +490,32 @@ async def _show_pve_positions_list(query, context, page=0):
     page_items = all_ids[start:end]
 
     def _short_name(name, limit=28):
-        return name if len(name) <= limit else name[:limit - 1] + "�"
+        return name if len(name) <= limit else name[:limit - 1] + "…"
 
-    text = f"?? <b>PVE</b> ({page + 1}/{total_pages})\n\n"
-    text += "????? ?????? PVE-??????? ??????.\n"
+    text = f"🧟 <b>PVE</b> ({page + 1}/{total_pages})\n\n"
+    text += "Здесь только PVE-позиции списка.\n"
 
     keyboard = []
     for item_id in page_items:
         if item_id == 'pve:confirmed':
             enabled = config.confirmed_pve_enabled
-            icon = "?" if enabled else "?"
+            icon = "✅" if enabled else "⛔"
             keyboard.append([InlineKeyboardButton(_confirmed_pve_title(), callback_data=f"set:skins:pvdetail:{page}")])
             keyboard.append([
-                InlineKeyboardButton(f"?? {config.confirmed_pve_price}?", callback_data=f"set:skins:pvprice:{page}"),
+                InlineKeyboardButton(f"💰 {config.confirmed_pve_price}₽", callback_data=f"set:skins:pvprice:{page}"),
                 InlineKeyboardButton(icon, callback_data=f"set:skins:pvtoggle:{page}"),
-                InlineKeyboardButton("?? ???", callback_data=f"set:minprice:pveconfirmed:pvlist:{page}"),
+                InlineKeyboardButton("🔎 Мин", callback_data=f"set:minprice:pveconfirmed:pvlist:{page}"),
             ])
         else:
             eid = item_id[3:]
             ed = editions.get(eid, {})
-            icon = "?" if ed.get('enabled', True) else "?"
+            icon = "✅" if ed.get('enabled', True) else "⛔"
             name = eid.replace('_', ' ').title()
-            keyboard.append([InlineKeyboardButton(f"?? {_short_name(name, 28)}", callback_data=f"set:skins:edkw:{eid}")])
+            keyboard.append([InlineKeyboardButton(f"🏆 {_short_name(name, 28)}", callback_data=f"set:skins:edkw:{eid}")])
             keyboard.append([
-                InlineKeyboardButton(f"?? {ed.get('price', 0)}?", callback_data=f"set:skins:edprice:{eid}:{page}"),
+                InlineKeyboardButton(f"💰 {ed.get('price', 0)}₽", callback_data=f"set:skins:edprice:{eid}:{page}"),
                 InlineKeyboardButton(icon, callback_data=f"set:skins:edtoggle:{eid}:{page}"),
-                InlineKeyboardButton("?? ???", callback_data=f"set:minprice:ed:{eid}:pvlist:{page}"),
+                InlineKeyboardButton("🔎 Мин", callback_data=f"set:minprice:ed:{eid}:pvlist:{page}"),
             ])
 
     nav_buttons = []
@@ -525,116 +525,116 @@ async def _show_pve_positions_list(query, context, page=0):
     if page < total_pages - 1:
         nav_buttons.append(InlineKeyboardButton(">", callback_data=f"set:skins:pvelist:{page + 1}"))
     keyboard.append(nav_buttons)
-    keyboard.append([InlineKeyboardButton("?? ? ????????", callback_data="set:skins:menu")])
-    keyboard.append([InlineKeyboardButton("?? ??????? ????", callback_data="set:main")])
+    keyboard.append([InlineKeyboardButton("🔙 К разделам", callback_data="set:skins:menu")])
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_skin_detail(query, context, skin_id, page=0):
-    """?????????? ???????? ?????: ??????, ???? ? ???????? ?????."""
+    """Показывает карточку скина: статус, цену и ключевые слова."""
     config = context.bot_data['config']
     skin = config.get_skin(skin_id)
     if not skin:
-        await query.answer("???? ?? ??????")
+        await query.answer("Скин не найден")
         return
     context.user_data['skins_last_page'] = page
 
-    icon = "? ???????" if skin.get('enabled', True) else "? ????????"
-    pve_icon = "? ?????? ? PVE" if skin.get('require_pve', False) else "? PVE ?? ??????????"
+    icon = "✅ включен" if skin.get('enabled', True) else "⛔ выключен"
+    pve_icon = "✅ только с PVE" if skin.get('require_pve', False) else "❌ PVE не обязателен"
     name = skin_id.replace('_', ' ').title()
     keywords = ', '.join(skin.get('keywords', []))
 
     text = (
         f"{_skin_emoji(skin_id)} <b>{name}</b>\n\n"
-        f"??????: {icon}\n"
-        f"?? ????: {skin.get('price', 0)}?\n"
+        f"Статус: {icon}\n"
+        f"💰 Цена: {skin.get('price', 0)}₽\n"
         f"PVE: {pve_icon}\n"
-        f"?? ???????? ?????:\n<i>{keywords}</i>"
+        f"✏️ Ключевые слова:\n<i>{keywords}</i>"
     )
 
     keyboard = [
-        [InlineKeyboardButton("?/? ???/????", callback_data=f"set:skins:toggle:{skin_id}:d"),
-         InlineKeyboardButton("?? ????", callback_data=f"set:skins:price:{skin_id}:detail:{page}")],
+        [InlineKeyboardButton("✅/⛔ Вкл/выкл", callback_data=f"set:skins:toggle:{skin_id}:d"),
+         InlineKeyboardButton("💰 Цена", callback_data=f"set:skins:price:{skin_id}:detail:{page}")],
         [InlineKeyboardButton(pve_icon, callback_data=f"set:skins:pvereq:{skin_id}:d")],
-        [InlineKeyboardButton("?? ??????? ???", callback_data=f"set:hist:skin:{skin_id}:all:0:sd")],
-        [InlineKeyboardButton("?? ????. ?????", callback_data=f"set:skins:kw:{skin_id}")],
-        [InlineKeyboardButton("?? ???????", callback_data=f"set:skins:del:{skin_id}")],
-        [InlineKeyboardButton("?? ? ??????", callback_data=f"set:skins:list:{page}")],
+        [InlineKeyboardButton("📈 История цен", callback_data=f"set:hist:skin:{skin_id}:all:0:sd")],
+        [InlineKeyboardButton("✏️ Ключ. слова", callback_data=f"set:skins:kw:{skin_id}")],
+        [InlineKeyboardButton("🗑 Удалить", callback_data=f"set:skins:del:{skin_id}")],
+        [InlineKeyboardButton("🔙 К списку", callback_data=f"set:skins:list:{page}")],
     ]
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 async def _show_skin_keywords(query, context, skin_id):
-    """?????????? ?????? ???????? ???? ?????."""
+    """Показывает список ключевых слов скина."""
     config = context.bot_data['config']
     skin = config.get_skin(skin_id)
     if not skin:
-        await query.answer("???? ?? ??????")
+        await query.answer("Скин не найден")
         return
 
     name = skin_id.replace('_', ' ').title()
     keywords = skin.get('keywords', [])
 
     text = (
-        f"?? <b>???????? ?????: {name}</b>\n\n"
-        f"?????: {len(keywords)}\n"
-        f"??????? ?, ????? ??????? ?????:\n"
+        f"📝 <b>Ключевые слова: {name}</b>\n\n"
+        f"Всего: {len(keywords)}\n"
+        f"Нажмите ❌, чтобы удалить слово:\n"
     )
 
     keyboard = []
     for i, kw in enumerate(keywords):
         row = [InlineKeyboardButton(f"{i+1}. {kw}", callback_data="set:noop")]
         if len(keywords) > 1:
-            row.append(InlineKeyboardButton("?", callback_data=f"set:skins:kwdel:{skin_id}:{i}"))
+            row.append(InlineKeyboardButton("❌", callback_data=f"set:skins:kwdel:{skin_id}:{i}"))
         keyboard.append(row)
 
-    keyboard.append([InlineKeyboardButton("? ???????? ?????", callback_data=f"set:skins:kwadd:{skin_id}")])
-    keyboard.append([InlineKeyboardButton("?? ? ??????", callback_data="set:skins:list:0")])
+    keyboard.append([InlineKeyboardButton("➕ Добавить слово", callback_data=f"set:skins:kwadd:{skin_id}")])
+    keyboard.append([InlineKeyboardButton("🔙 К списку", callback_data="set:skins:list:0")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 # ==============================
-# PVE ????
+# PVE МЕНЮ
 # ==============================
 
 async def _show_pve_menu(query, context):
-    """???? PVE-????????."""
+    """Меню PVE-настроек."""
     config = context.bot_data['config']
 
     text = (
-        "?? <b>PVE / Save the World</b>\n\n"
-        f"? ?????????????? ????: {len(config.get_confirmed_pve())}\n"
-        f"? ???????????????? ????: {len(config.get_unconfirmed_pve())}\n"
-        f"? ????-??????????: {len(config.get_new_pve())}\n"
-        f"?? PVE ?????: {config.pve_bonus}?\n\n"
-        "?????????????? ?????? ??????.\n"
-        "???????????????? ???????????? ?????? ? /recheck ++pve."
+        "🎯 <b>PVE / Save the World</b>\n\n"
+        f"✅ Подтверждённых слов: {len(config.get_confirmed_pve())}\n"
+        f"❓ Неподтверждённых слов: {len(config.get_unconfirmed_pve())}\n"
+        f"⛔ Слов-исключений: {len(config.get_new_pve())}\n"
+        f"💰 PVE бонус: {config.pve_bonus}₽\n\n"
+        "Подтверждённые ищутся всегда.\n"
+        "Неподтверждённые используются только в /recheck ++pve."
     )
 
     keyboard = [
-        [InlineKeyboardButton(f"? ?????. ????? ({len(config.get_confirmed_pve())})",
+        [InlineKeyboardButton(f"✅ Подтв. слова ({len(config.get_confirmed_pve())})",
                               callback_data="set:pve:conf:0")],
-        [InlineKeyboardButton(f"? ???????. ????? ({len(config.get_unconfirmed_pve())})",
+        [InlineKeyboardButton(f"❓ Неподтв. слова ({len(config.get_unconfirmed_pve())})",
                               callback_data="set:pve:unconf:0")],
-        [InlineKeyboardButton(f"?? PVE ?????: {config.pve_bonus}?",
+        [InlineKeyboardButton(f"💰 PVE бонус: {config.pve_bonus}₽",
                               callback_data="set:pve:bonus")],
-        [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_pve_keywords(query, context, pve_type, page=0):
-    """?????? PVE-???? ? ??????????."""
+    """Список PVE-слов с пагинацией."""
     config = context.bot_data['config']
 
     if pve_type == 'conf':
         keywords = config.get_confirmed_pve()
-        title = "? ?????????????? PVE-?????"
+        title = "✅ Подтверждённые PVE-слова"
     else:
         keywords = config.get_unconfirmed_pve()
-        title = "? ???????????????? PVE-?????"
+        title = "❓ Неподтверждённые PVE-слова"
 
     total = len(keywords)
     per_page = 8
@@ -643,62 +643,62 @@ async def _show_pve_keywords(query, context, pve_type, page=0):
     start = page * per_page
     end = min(start + per_page, total)
 
-    text = f"?? <b>{title}</b> ({page + 1}/{total_pages})\n\n"
-    text += "???????, ????? ???????:\n"
+    text = f"🎯 <b>{title}</b> ({page + 1}/{total_pages})\n\n"
+    text += "Нажмите, чтобы удалить:\n"
 
     keyboard = []
     for rel_idx, kw in enumerate(keywords[start:end]):
         keyboard.append([InlineKeyboardButton(
-            f"??? {kw}", callback_data=f"set:pve:rm:{pve_type}:{start + rel_idx}:{page}"
+            f"🗑️ {kw}", callback_data=f"set:pve:rm:{pve_type}:{start + rel_idx}:{page}"
         )])
 
-    # ?????????
+    # Пагинация
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("??", callback_data=f"set:pve:{pve_type}:{page - 1}"))
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"set:pve:{pve_type}:{page - 1}"))
     nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="set:noop"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("??", callback_data=f"set:pve:{pve_type}:{page + 1}"))
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"set:pve:{pve_type}:{page + 1}"))
     if nav:
         keyboard.append(nav)
 
-    keyboard.append([InlineKeyboardButton("? ???????? ?????", callback_data=f"set:pve:add:{pve_type}")])
-    keyboard.append([InlineKeyboardButton("?? ???????", callback_data="set:filters:menu")])
+    keyboard.append([InlineKeyboardButton("➕ Добавить слово", callback_data=f"set:pve:add:{pve_type}")])
+    keyboard.append([InlineKeyboardButton("🔙 Фильтры", callback_data="set:filters:menu")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 # ==============================
-# ???? ? ???????
+# ЦЕНЫ И ТАЙМЕРЫ
 # ==============================
 
 async def _show_prices_menu(query, context):
-    """???? ??? ? ????????."""
+    """Меню цен и таймеров."""
     config = context.bot_data['config']
 
     text = (
-        "?? <b>???? ? ???????</b>\n\n"
-        "???????, ????? ????????:"
+        "💰 <b>Цены и таймеры</b>\n\n"
+        "Нажмите, чтобы изменить:"
     )
 
     keyboard = [
-        [InlineKeyboardButton(f"? ????????: {config.check_interval} ???", callback_data="set:num:interval")],
+        [InlineKeyboardButton(f"⏱ Интервал: {config.check_interval} сек", callback_data="set:num:interval")],
         [InlineKeyboardButton(
-            f"? ????????: {config.request_delay_min}-{config.request_delay_max} ???",
+            f"⏳ Задержка: {config.request_delay_min}-{config.request_delay_max} сек",
             callback_data="set:num:delay"
         )],
-        [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 # ==============================
-# ??????? ??????????
+# ФИЛЬТРЫ ИСКЛЮЧЕНИЙ
 # ==============================
 
 async def _show_filters_list(query, context, page=0):
-    """?????? ????-?????????? ? ??????????."""
+    """Список фраз-исключений с пагинацией."""
     config = context.bot_data['config']
     keywords = config.get_exclude_keywords()
 
@@ -710,41 +710,41 @@ async def _show_filters_list(query, context, page=0):
     end = min(start + per_page, total)
 
     text = (
-        f"?? <b>???????-??????????</b> ({page + 1}/{total_pages})\n\n"
-        f"?????: {total} ????\n"
-        "???????, ????? ???????:"
+        f"🚫 <b>Фильтры-исключения</b> ({page + 1}/{total_pages})\n\n"
+        f"Всего: {total} фраз\n"
+        "Нажмите, чтобы удалить:"
     )
 
     keyboard = []
     for i, kw in enumerate(keywords[start:end]):
         display = kw[:35] + "..." if len(kw) > 35 else kw
         keyboard.append([InlineKeyboardButton(
-            f"??? {display}", callback_data=f"set:filt:rm:{start + i}:{page}"
+            f"🗑️ {display}", callback_data=f"set:filt:rm:{start + i}:{page}"
         )])
 
-    # ?????????
+    # Пагинация
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("??", callback_data=f"set:filters:list:{page - 1}"))
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"set:filters:list:{page - 1}"))
     nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="set:noop"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("??", callback_data=f"set:filters:list:{page + 1}"))
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"set:filters:list:{page + 1}"))
     if nav:
         keyboard.append(nav)
 
-    keyboard.append([InlineKeyboardButton("? ???????? ?????", callback_data="set:filt:add")])
-    keyboard.append([InlineKeyboardButton("?? ???????? ? ?????????", callback_data="set:filt:reset")])
-    keyboard.append([InlineKeyboardButton("?? ???????", callback_data="set:filters:menu")])
+    keyboard.append([InlineKeyboardButton("➕ Добавить фразу", callback_data="set:filt:add")])
+    keyboard.append([InlineKeyboardButton("🔄 Сбросить к дефолтным", callback_data="set:filt:reset")])
+    keyboard.append([InlineKeyboardButton("🔙 Фильтры", callback_data="set:filters:menu")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 # ==============================
-# ??????
+# СТАТУС
 # ==============================
 
 async def _show_status(query, context):
-    """?????????? ??????? ?????? ????."""
+    """Показывает текущий статус бота."""
     config = context.bot_data['config']
     skins = config.get_all_skins()
     enabled = sum(1 for s in skins.values() if s.get('enabled', True))
@@ -754,53 +754,53 @@ async def _show_status(query, context):
     progress = context.bot_data.get('current_check_progress') or {}
     state = _resolve_status_state(config, mode_info, progress)
 
-    running_now = '??????????????' if state['mode'] == 'standard' else state['running_label']
+    running_now = 'Автомониторинг' if state['mode'] == 'standard' else state['running_label']
     text = (
-        "?? <b>?????? ????</b>\n\n"
-        f"?? ??????????????: {state['auto_mode_label']}\n"
-        f"?? ??????? ??????: {running_now}\n"
+        "📊 <b>Статус бота</b>\n\n"
+        f"🔍 Автомониторинг: {state['auto_mode_label']}\n"
+        f"⚙️ Запущен сейчас: {running_now}\n"
     )
 
     if state['mode'] != 'standard':
         if state['target_label']:
-            text += f"?? ????: {state['target_label']}\n"
+            text += f"🧩 Цель: {state['target_label']}\n"
         if progress:
             bar, pct = _make_progress_bar(state['done'], state['total'])
             text += (
-                f"?? ????: {state['stage']}\n"
+                f"📍 Этап: {state['stage']}\n"
                 f"{bar} {pct}%\n"
-                f"?? ????????: {state['done']}/{state['total']}\n"
-                f"? ??????????: {state['sent']}\n"
+                f"📦 Прогресс: {state['done']}/{state['total']}\n"
+                f"✅ Отправлено: {state['sent']}\n"
             )
         text += "\n"
 
     text += (
-        f"?? ?????? ???????: {enabled}/{len(skins)}\n"
-        f"?? PVE-???? (?????.): {len(config.get_confirmed_pve())}\n"
-        f"? PVE-???? (???????.): {len(config.get_unconfirmed_pve())}\n"
-        f"?? ????????: {len(config.get_exclude_keywords())}\n"
-        f"?? ????. ????: {config.max_price}?\n"
-        f"?? PVE ?????: {config.pve_bonus}?\n"
-        f"? ????????: {config.check_interval} ???\n"
-        f"? ????????: {config.request_delay_min}-{config.request_delay_max} ???\n\n"
-        f"?? ???????????: {seen_count} ???????\n"
-        f"?? ? ???-?????: {banned_count} ?????\n"
+        f"🎮 Скинов активно: {enabled}/{len(skins)}\n"
+        f"🎯 PVE-слов (подтв.): {len(config.get_confirmed_pve())}\n"
+        f"❓ PVE-слов (неподтв.): {len(config.get_unconfirmed_pve())}\n"
+        f"🚫 Фильтров: {len(config.get_exclude_keywords())}\n"
+        f"💰 Макс. цена: {config.max_price}₽\n"
+        f"🎯 PVE бонус: {config.pve_bonus}₽\n"
+        f"⏱ Интервал: {config.check_interval} сек\n"
+        f"⏳ Задержка: {config.request_delay_min}-{config.request_delay_max} сек\n\n"
+        f"👁 Просмотрено: {seen_count} товаров\n"
+        f"🚷 В бан-листе: {banned_count} лотов\n"
     )
 
-    keyboard = [[InlineKeyboardButton("?? ??????? ????", callback_data="set:main")]]
+    keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 def _price_link(price_txt, href):
     """Format price as hyperlink if href available."""
-    safe = html.escape(price_txt or '�')
+    safe = html.escape(price_txt or '—')
     if href:
         return f"<a href='{html.escape(href, quote=True)}'>{safe}</a>"
     return safe
 
 
 async def _show_stats(query, context):
-    """??????????????? ???????? ???: ??????????? ?? ?????, 2 ?????? ?? ??????."""
+    """Минималистичная страница цен: группировка по скину, 2 кнопки на каждый."""
     from collections import OrderedDict
     summary = get_price_summary()
     prices = summary.get('latest_prices', [])
@@ -827,7 +827,7 @@ async def _show_stats(query, context):
         key = f"{it}:{ii}"
         if key not in items:
             if it == 'pve':
-                name = 'STW' if ii == 'confirmed' else '???????. PVE'
+                name = 'STW' if ii == 'confirmed' else 'Неподтв. PVE'
             else:
                 name = row.get('item_name') or ii or '?'
             items[key] = {
@@ -839,12 +839,12 @@ async def _show_stats(query, context):
         raw_src = row.get('source', 'minprice')
         src = 'auto' if raw_src == 'auto' else 'minprice'
         entry = {
-            'price_text': row.get('price_text') or '�',
+            'price_text': row.get('price_text') or '—',
             'href': row.get('href'),
             'recorded_at': row.get('recorded_at', ''),
             'source': src,
         }
-        # Normalize 'all' ? 'any' (legacy minprice used 'all' for editions)
+        # Normalize 'all' → 'any' (legacy minprice used 'all' for editions)
         slot = 'pve' if 'pve' in mode else 'any'
         existing = items[key][slot]
         if existing is not None:
@@ -865,7 +865,7 @@ async def _show_stats(query, context):
             best = a or p
             if best: sources.add(best.get('source', 'minprice'))
 
-    # Sort items: skins alphabetically ? STW ? Super Deluxe ? Limited ? Ultimate
+    # Sort items: skins alphabetically → STW → Super Deluxe → Limited → Ultimate
     _edition_order = {'super_deluxe': 1, 'limited': 2, 'ultimate': 3}
     def _sort_key(item):
         it, ii = item['it'], item['ii']
@@ -878,13 +878,13 @@ async def _show_stats(query, context):
         return (2, 0)
     sorted_items = sorted(items.values(), key=_sort_key)
 
-    text = "?? <b>????????? ????:</b>\n\n"
+    text = "💰 <b>Последние цены:</b>\n\n"
     single_source = len(sources) == 1
 
     # Only show source line when all items share the same source
     if single_source:
-        src_name = '?? ??????????????' if 'auto' in sources else '?? ???. ?????'
-        text += f"<i>????????: {src_name}</i>\n\n"
+        src_name = '📡 Автомониторинг' if 'auto' in sources else '🔍 Мин. прайс'
+        text += f"<i>Источник: {src_name}</i>\n\n"
 
     for item in sorted_items:
         name = html.escape(item['name'])
@@ -895,28 +895,28 @@ async def _show_stats(query, context):
         else:
             # Mixed sources: show per-item emoji so user knows where each came from
             src = (a or p or {}).get('source', 'minprice')
-            se = '?? ' if src == 'minprice' else '?? '
+            se = '🔍 ' if src == 'minprice' else '📡 '
         is_skin = item['it'] == 'skin'
         if is_skin:
             same = a and p and a.get('href') and a['href'] == p['href']
-            a_display = '�' if (not a or same) else _price_link(a['price_text'], a['href'])
-            p_display = _price_link(p['price_text'], p['href']) if p else '�'
+            a_display = '—' if (not a or same) else _price_link(a['price_text'], a['href'])
+            p_display = _price_link(p['price_text'], p['href']) if p else '—'
             text += f"{se}<b>{name}</b>: {a_display} / {p_display}\n"
         else:
             best = a or p
-            price = _price_link(best['price_text'], best['href']) if best else '�'
+            price = _price_link(best['price_text'], best['href']) if best else '—'
             text += f"{se}<b>{name}</b>: {price}\n"
 
     keyboard = [
-        [InlineKeyboardButton("?? ?????????? ?? ?????", callback_data="set:stats:histmenu")],
-        [InlineKeyboardButton("?? ????? ??????????", callback_data="set:stats:reset")],
-        [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+        [InlineKeyboardButton("📊 Статистика по скину", callback_data="set:stats:histmenu")],
+        [InlineKeyboardButton("🗑 Сброс статистики", callback_data="set:stats:reset")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
 
 async def _show_stats_info(query, context, item_type, item_id):
-    """Popup ? ????? ? ?????????? ??? ??? ??????????? ?????."""
+    """Popup с датой и источником цен для конкретного скина."""
     summary = get_price_summary()
     lines = []
     name = item_id.replace('_', ' ').title()
@@ -925,11 +925,11 @@ async def _show_stats_info(query, context, item_type, item_id):
             name = row.get('item_name') or name
             mode = (row.get('mode') or '').lower()
             src = row.get('source', 'minprice')
-            src_label = '???.?????' if src == 'minprice' else '??????????????'
+            src_label = 'мин.прайс' if src == 'minprice' else 'автомониторинг'
             date = row.get('recorded_at', '?')
-            mode_label = '??? PVE' if 'pve' not in mode else '? PVE'
-            lines.append(f"{mode_label}: {src_label} � {date}")
-    alert = f"{name}\n" + "\n".join(lines) if lines else "??? ??????"
+            mode_label = 'Без PVE' if 'pve' not in mode else 'С PVE'
+            lines.append(f"{mode_label}: {src_label} — {date}")
+    alert = f"{name}\n" + "\n".join(lines) if lines else "Нет данных"
     await query.answer(alert, show_alert=True)
 
 
@@ -945,7 +945,7 @@ def _normalize_stats_items(prices):
             ii = 'unconfirmed' if 'unconfirmed' in mode or raw_ii == 'unconfirmed' else 'confirmed'
             if ii == 'unconfirmed':
                 continue
-            name = '?????. PVE'
+            name = 'Подтв. PVE'
         else:
             ii = raw_ii
             name = row.get('item_name') or raw_ii or '?'
@@ -958,16 +958,16 @@ def _normalize_stats_items(prices):
 
 
 async def _show_stats_top3_menu(query, context):
-    """???? ?????? ????? ??? ???-3."""
+    """Меню выбора скина для топ-3."""
     summary = get_price_summary()
     items = _normalize_stats_items(summary.get('latest_prices', []))
-    keyboard = [[InlineKeyboardButton(f"? {x['name']}", callback_data=f"set:stats:top3:{x['it']}:{x['ii']}")] for x in items]
-    keyboard.append([InlineKeyboardButton("?? ?????", callback_data="set:stats")])
-    await query.edit_message_text("? <b>???????? ???????:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    keyboard = [[InlineKeyboardButton(f"⭐ {x['name']}", callback_data=f"set:stats:top3:{x['it']}:{x['ii']}")] for x in items]
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="set:stats")])
+    await query.edit_message_text("⭐ <b>Выберите позицию:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_stats_top3_item(query, context, item_type, item_id):
-    """???-3 ???? ??? ?????? ?????."""
+    """Топ-3 цены для одного скина."""
     summary = get_price_summary()
     item_name = item_id
     modes_found = []
@@ -976,43 +976,43 @@ async def _show_stats_top3_item(query, context, item_type, item_id):
             item_name = row.get('item_name') or item_id
             modes_found.append(row.get('mode') or 'any')
 
-    text = f"? <b>{html.escape(item_name)}</b> � ???-3\n\n"
+    text = f"⭐ <b>{html.escape(item_name)}</b> — топ-3\n\n"
     for mode in (modes_found or ['any']):
         top3 = get_latest_top3(item_type, item_id, mode=mode)
         if not top3:
             continue
-        mode_label = '?? ? PVE' if 'pve' in mode.lower() else '?? ??? PVE'
+        mode_label = '🧟 С PVE' if 'pve' in mode.lower() else '🔒 Без PVE'
         if item_type != 'skin':
             mode_label = ''
         if mode_label:
             text += f"<b>{mode_label}:</b>\n"
         for i, o in enumerate(top3, 1):
-            p_link = _price_link(o.get('price_text') or '�', o.get('href'))
+            p_link = _price_link(o.get('price_text') or '—', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
-            text += f"  {i}. {p_link} � {seller}\n"
+            text += f"  {i}. {p_link} — {seller}\n"
         text += "\n"
 
     if not any(get_latest_top3(item_type, item_id, m) for m in (modes_found or ['any'])):
-        text += "??? ??????.\n"
+        text += "Нет данных.\n"
 
     keyboard = [
-        [InlineKeyboardButton("?? ?????", callback_data="set:stats:items")],
-        [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:stats:items")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
 
 async def _show_stats_hist_menu(query, context):
-    """???? ?????? ????? ??? ????????? ???????."""
+    """Меню выбора скина для просмотра истории."""
     summary = get_price_summary()
     items = _normalize_stats_items(summary.get('latest_prices', []))
-    keyboard = [[InlineKeyboardButton(f"?? {x['name']}", callback_data=f"set:stats:hist:{x['it']}:{x['ii']}")] for x in items]
-    keyboard.append([InlineKeyboardButton("?? ?????", callback_data="set:stats")])
-    await query.edit_message_text("?? <b>???????? ???????:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    keyboard = [[InlineKeyboardButton(f"📜 {x['name']}", callback_data=f"set:stats:hist:{x['it']}:{x['ii']}")] for x in items]
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="set:stats")])
+    await query.edit_message_text("📜 <b>Выберите позицию:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_stats_item_history(query, context, item_type, item_id):
-    """?????????? ?????????? ??????????? ??? ??????????? ?????/PVE."""
+    """Показывает уникальные предложения для конкретного скина/PVE."""
     offers = get_item_offers_unique(item_type, item_id, limit=80)
     item_name = offers[0].get('item_name', item_id) if offers else item_id
 
@@ -1028,47 +1028,47 @@ async def _show_stats_item_history(query, context, item_type, item_id):
             mode = (row.get('mode') or '').lower()
             raw_src = row.get('source', 'minprice')
             src = 'auto' if raw_src == 'auto' else 'minprice'
-            src_label = '???.?????' if src == 'minprice' else '????'
+            src_label = 'мин.прайс' if src == 'minprice' else 'авто'
             date = row.get('recorded_at', '?')
-            mode_icon = '??' if 'pve' in mode else '??'
-            info_lines.append(f"{mode_icon} {src_label} � {date}")
+            mode_icon = '🧟' if 'pve' in mode else '🔒'
+            info_lines.append(f"{mode_icon} {src_label} — {date}")
 
-    text = f"? <b>{html.escape(item_name)}</b>\n"
+    text = f"⭐ <b>{html.escape(item_name)}</b>\n"
     if info_lines:
         text += "\n".join(info_lines) + "\n"
     if top3:
-        text += "\n?? <b>???-3 ??????:</b>\n"
+        text += "\n🏆 <b>Топ-3 сейчас:</b>\n"
         for i, o in enumerate(top3, 1):
-            p_link = _price_link(o.get('price_text') or '�', o.get('href'))
+            p_link = _price_link(o.get('price_text') or '—', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
-            text += f"  {i}. {p_link} � {seller}\n"
+            text += f"  {i}. {p_link} — {seller}\n"
 
     if any_offers:
-        text += "\n?? <b>??? PVE:</b>\n"
+        text += "\n🔒 <b>Без PVE:</b>\n"
         for i, o in enumerate(any_offers[:7], 1):
-            price_display = _price_link(o.get('price_text') or '�', o.get('href'))
+            price_display = _price_link(o.get('price_text') or '—', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
             date = o.get('recorded_at', '')
-            text += f"  {i}. {price_display} � {seller} <i>({date})</i>\n"
+            text += f"  {i}. {price_display} — {seller} <i>({date})</i>\n"
         if len(any_offers) > 7:
-            text += f"  <i>...??? {len(any_offers) - 7}</i>\n"
+            text += f"  <i>...ещё {len(any_offers) - 7}</i>\n"
 
     if pve_offers:
-        text += "\n?? <b>? PVE:</b>\n"
+        text += "\n🧟 <b>С PVE:</b>\n"
         for i, o in enumerate(pve_offers[:7], 1):
-            price_display = _price_link(o.get('price_text') or '�', o.get('href'))
+            price_display = _price_link(o.get('price_text') or '—', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
             date = o.get('recorded_at', '')
-            text += f"  {i}. {price_display} � {seller} <i>({date})</i>\n"
+            text += f"  {i}. {price_display} — {seller} <i>({date})</i>\n"
         if len(pve_offers) > 7:
-            text += f"  <i>...??? {len(pve_offers) - 7}</i>\n"
+            text += f"  <i>...ещё {len(pve_offers) - 7}</i>\n"
 
     if not any_offers and not pve_offers:
-        text += "\n??? ?????? ?? ????????? ????????."
+        text += "\nНет данных за последние проверки."
 
     keyboard = [
-        [InlineKeyboardButton("?? ?????", callback_data="set:stats")],
-        [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:stats")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
@@ -1076,21 +1076,21 @@ async def _show_stats_item_history(query, context, item_type, item_id):
 async def _show_red_flags(query, context):
     flags = get_red_flags(limit=30)
     if not flags:
-        text = "?? <b>??????? ?????</b>\n\n???? ?????? ?? ???????."
+        text = "🚩 <b>Красные флаги</b>\n\nПока ничего не поймано."
     else:
-        text = f"?? <b>??????? ?????</b> (????????? {len(flags)}):\n\n"
+        text = f"🚩 <b>Красные флаги</b> (последние {len(flags)}):\n\n"
         for f in flags:
-            price_display = _price_link(f.get('price_text') or '�', f.get('href'))
+            price_display = _price_link(f.get('price_text') or '—', f.get('href'))
             seller = html.escape(f.get('seller') or '?')
             reason = html.escape(f.get('reason') or '?')
             date = f.get('recorded_at', '')
             name = html.escape(f.get('item_name') or '?')
-            text += f"? {price_display} � {seller} <i>({date})</i>\n"
+            text += f"❌ {price_display} — {seller} <i>({date})</i>\n"
             text += f"   <code>{name[:60]}</code>\n"
-            text += f"   ???????: <i>{reason}</i>\n\n"
+            text += f"   причина: <i>{reason}</i>\n\n"
     keyboard = [
-        [InlineKeyboardButton("?? ???????? ?????", callback_data="set:stats:redflags:clear")],
-        [InlineKeyboardButton("?? ?????", callback_data="set:stats")],
+        [InlineKeyboardButton("🗑 Очистить флаги", callback_data="set:stats:redflags:clear")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:stats")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
 
@@ -1101,22 +1101,22 @@ async def _show_confirmed_pve_detail(query, context, page=0):
     keywords = config.get_confirmed_pve()
     text = (
         f"{_confirmed_pve_title()}\n\n"
-        f"??????: {'? ???????' if config.confirmed_pve_enabled else '? ????????'}\n"
-        f"?? ????: {config.confirmed_pve_price}?\n"
-        f"?? ???? ?????????????: {len(keywords)}\n\n"
-        "???? ???????? ? ?????????????? PVE ??? ????????? ??????? ??????."
+        f"Статус: {'✅ включен' if config.confirmed_pve_enabled else '⛔ выключен'}\n"
+        f"💰 Цена: {config.confirmed_pve_price}₽\n"
+        f"🧩 Слов подтверждения: {len(keywords)}\n\n"
+        "Ищет аккаунты с подтверждённым PVE как отдельную позицию списка."
     )
     keyboard = [
-        [InlineKeyboardButton("?/? ???/????", callback_data=f"set:skins:pvtoggle:d:{page}")],
-        [InlineKeyboardButton("?? ????", callback_data=f"set:skins:pvprice:detail:{page}")],
-        [InlineKeyboardButton("?? ??????? ???", callback_data="set:hist:pve:confirmed:confirmed:0:pd")],
-        [InlineKeyboardButton("?? ? PVE", callback_data=f"set:skins:pvelist:{page}")],
+        [InlineKeyboardButton("✅/⛔ Вкл/выкл", callback_data=f"set:skins:pvtoggle:d:{page}")],
+        [InlineKeyboardButton("💰 Цена", callback_data=f"set:skins:pvprice:detail:{page}")],
+        [InlineKeyboardButton("📈 История цен", callback_data="set:hist:pve:confirmed:confirmed:0:pd")],
+        [InlineKeyboardButton("🔙 К PVE", callback_data=f"set:skins:pvelist:{page}")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 # ==============================
-# ????????
+# ПРОВЕРКА
 # ==============================
 
 def _get_check_overview(config):
@@ -1141,38 +1141,38 @@ async def _show_check_menu(query, context):
     if running and progress:
         bar, pct = _make_progress_bar(progress.get('done', 0), max(progress.get('total', 1), 1))
         status_text = (
-            f"?? ?????? ??????????? ????????:\n"
-            f"?? ????: {progress.get('stage', '??????????')}\n"
+            f"⚠️ Сейчас выполняется проверка:\n"
+            f"📍 Этап: {progress.get('stage', 'Подготовка')}\n"
             f"{bar} {pct}%\n"
-            f"?? ????????: {progress.get('done', 0)}/{max(progress.get('total', 1), 1)}\n"
-            f"?? ??????: {progress.get('current', '...')}\n"
-            f"? ??????????: {progress.get('sent', 0)}\n\n"
+            f"📦 Прогресс: {progress.get('done', 0)}/{max(progress.get('total', 1), 1)}\n"
+            f"🔎 Сейчас: {progress.get('current', '...')}\n"
+            f"✅ Отправлено: {progress.get('sent', 0)}\n\n"
         )
     elif running:
-        status_text = "?? ?????? ??? ??????????? ????????.\n\n"
+        status_text = "⚠️ Сейчас уже выполняется проверка.\n\n"
     else:
         status_text = ""
     text = (
-        "?? <b>????????</b>\n\n"
+        "🔎 <b>Проверка</b>\n\n"
         f"{status_text}"
-        f"?? ?????? ?? ??????: {info['skins_enabled']}/{info['skins_total']}\n"
-        f"?? ? ????. PVE: {info['pve_required']}\n"
-        f"?? ??????? ???????: {info['editions_enabled']}\n\n"
-        "???????? ????????:"
+        f"🎮 Скинов по списку: {info['skins_enabled']}/{info['skins_total']}\n"
+        f"🧟 С обяз. PVE: {info['pve_required']}\n"
+        f"🏆 Изданий активно: {info['editions_enabled']}\n\n"
+        "Выберите действие:"
     )
     keyboard = [
-        [InlineKeyboardButton("?? ?????? ????????????", callback_data="set:check:full")],
-        [InlineKeyboardButton("?? ???. ????", callback_data="set:check:minprice")],
+        [InlineKeyboardButton("📋 Полная перепроверка", callback_data="set:check:full")],
+        [InlineKeyboardButton("💰 Мин. цена", callback_data="set:check:minprice")],
     ]
     if running:
-        keyboard.append([InlineKeyboardButton("? ?????????? ??????? ????????", callback_data="set:checkstop")])
-    keyboard.append([InlineKeyboardButton("?? ??????? ????", callback_data="set:main")])
+        keyboard.append([InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_check_menu_as_new_message(update, context):
     if not _check_auth(update, context):
-        await update.message.reply_text("? ?? ?? ????????????. ???????? /start")
+        await update.message.reply_text("❌ Вы не авторизованы. Напишите /start")
         return
 
     config = context.bot_data['config']
@@ -1182,73 +1182,73 @@ async def _show_check_menu_as_new_message(update, context):
     if running and progress:
         bar, pct = _make_progress_bar(progress.get('done', 0), max(progress.get('total', 1), 1))
         status_text = (
-            f"?? ?????? ??????????? ????????:\n"
-            f"?? ????: {progress.get('stage', '??????????')}\n"
+            f"⚠️ Сейчас выполняется проверка:\n"
+            f"📍 Этап: {progress.get('stage', 'Подготовка')}\n"
             f"{bar} {pct}%\n"
-            f"?? ????????: {progress.get('done', 0)}/{max(progress.get('total', 1), 1)}\n"
-            f"?? ??????: {progress.get('current', '...')}\n"
-            f"? ??????????: {progress.get('sent', 0)}\n\n"
+            f"📦 Прогресс: {progress.get('done', 0)}/{max(progress.get('total', 1), 1)}\n"
+            f"🔎 Сейчас: {progress.get('current', '...')}\n"
+            f"✅ Отправлено: {progress.get('sent', 0)}\n\n"
         )
     elif running:
-        status_text = "?? ?????? ??? ??????????? ????????.\n\n"
+        status_text = "⚠️ Сейчас уже выполняется проверка.\n\n"
     else:
         status_text = ""
     text = (
-        "?? <b>????????</b>\n\n"
+        "🔎 <b>Проверка</b>\n\n"
         f"{status_text}"
-        f"?? ?????? ?? ??????: {info['skins_enabled']}/{info['skins_total']}\n"
-        f"?? ? ????. PVE: {info['pve_required']}\n"
-        f"?? ??????? ???????: {info['editions_enabled']}\n\n"
-        "???????? ????????:"
+        f"🎮 Скинов по списку: {info['skins_enabled']}/{info['skins_total']}\n"
+        f"🧟 С обяз. PVE: {info['pve_required']}\n"
+        f"🏆 Изданий активно: {info['editions_enabled']}\n\n"
+        "Выберите действие:"
     )
     keyboard = [
-        [InlineKeyboardButton("?? ?????? ????????????", callback_data="set:check:full")],
-        [InlineKeyboardButton("?? ???. ????", callback_data="set:check:minprice")],
+        [InlineKeyboardButton("📋 Полная перепроверка", callback_data="set:check:full")],
+        [InlineKeyboardButton("💰 Мин. цена", callback_data="set:check:minprice")],
     ]
     if running:
-        keyboard.append([InlineKeyboardButton("? ?????????? ??????? ????????", callback_data="set:checkstop")])
-    keyboard.append([InlineKeyboardButton("?? ??????? ????", callback_data="set:main")])
+        keyboard.append([InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_standard_check_menu(query, context):
     text = (
-        "?? <b>??????????? ????????</b>\n\n"
-        "?????????? ??????? ?????? ? ??????????? ????.\n\n"
-        "???????? ??????:"
+        "📋 <b>Стандартная проверка</b>\n\n"
+        "Использует текущий список и сохранённые цены.\n\n"
+        "Выберите раздел:"
     )
     keyboard = [
-        [InlineKeyboardButton("?? ?????", callback_data="set:check:stdskins")],
-        [InlineKeyboardButton("?? PVE", callback_data="set:check:stdpve")],
-        [InlineKeyboardButton("?? ?????", callback_data="set:check:menu")],
+        [InlineKeyboardButton("🎮 Скины", callback_data="set:check:stdskins")],
+        [InlineKeyboardButton("🧟 PVE", callback_data="set:check:stdpve")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:check:menu")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_standard_check_skins_menu(query, context):
     text = (
-        "?? <b>??????????? ????????: ?????</b>\n\n"
-        "?????????? ???? ???? ?? ???????? ?????? ??????.\n"
-        "????????? ?????????? ????? ?? ??????."
+        "🎮 <b>Стандартная проверка: скины</b>\n\n"
+        "Подходящие ищет лоты по текущему списку скинов.\n"
+        "Минималки показывает рынок по скинам."
     )
     keyboard = [
-        [InlineKeyboardButton("? ??????????", callback_data="set:check:stdskins:recheck")],
-        [InlineKeyboardButton("?? ?????????", callback_data="set:check:stdskins:minprice")],
-        [InlineKeyboardButton("?? ?????", callback_data="set:check:standard")],
+        [InlineKeyboardButton("✅ Подходящие", callback_data="set:check:stdskins:recheck")],
+        [InlineKeyboardButton("💰 Минималки", callback_data="set:check:stdskins:minprice")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:check:standard")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_standard_check_pve_menu(query, context):
     text = (
-        "?? <b>??????????? ????????: PVE</b>\n\n"
-        "???????? ????????? PVE-???????:"
+        "🧟 <b>Стандартная проверка: PVE</b>\n\n"
+        "Выберите отдельную PVE-позицию:"
     )
     keyboard = [
         [InlineKeyboardButton(_confirmed_pve_title(), callback_data="set:check:stdpve:confirmed")],
-        [InlineKeyboardButton("?? ???????", callback_data="set:check:stdpve:editions")],
-        [InlineKeyboardButton("?? ???????. PVE", callback_data="set:check:stdpve:unconfirmed")],
-        [InlineKeyboardButton("?? ?????", callback_data="set:check:standard")],
+        [InlineKeyboardButton("🏆 Издания", callback_data="set:check:stdpve:editions")],
+        [InlineKeyboardButton("🔓 Неподтв. PVE", callback_data="set:check:stdpve:unconfirmed")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:check:standard")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
@@ -1256,17 +1256,17 @@ async def _show_standard_check_pve_menu(query, context):
 async def _show_standard_check_item_menu(query, context, item_key):
     title = {
         'confirmed': _confirmed_pve_title(),
-        'editions': "?? ???????",
-        'unconfirmed': "?? ???????. PVE",
-    }.get(item_key, "?? ????????")
-    text = f"{title}\n\n???????? ????????:"
+        'editions': "🏆 Издания",
+        'unconfirmed': "🔓 Неподтв. PVE",
+    }.get(item_key, "🔎 Проверка")
+    text = f"{title}\n\nВыберите действие:"
     keyboard = []
     if item_key != 'unconfirmed':
-        keyboard.append([InlineKeyboardButton("? ??????????", callback_data=f"set:check:stdpve:{item_key}:recheck")])
-        keyboard.append([InlineKeyboardButton("?? ?????????", callback_data=f"set:check:stdpve:{item_key}:minprice")])
+        keyboard.append([InlineKeyboardButton("✅ Подходящие", callback_data=f"set:check:stdpve:{item_key}:recheck")])
+        keyboard.append([InlineKeyboardButton("💰 Минималки", callback_data=f"set:check:stdpve:{item_key}:minprice")])
     else:
-        keyboard.append([InlineKeyboardButton("? ??????????", callback_data="set:check:stdpve:unconfirmed:recheck")])
-    keyboard.append([InlineKeyboardButton("?? ?????", callback_data="set:check:stdpve")])
+        keyboard.append([InlineKeyboardButton("✅ Подходящие", callback_data="set:check:stdpve:unconfirmed:recheck")])
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="set:check:stdpve")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
@@ -1277,11 +1277,11 @@ async def _show_minprice_section_menu(query, context, section='all', back_cb='se
     context.user_data['mp_back_cb'] = back_cb
     context.user_data['mp_custom_view'] = section
     if section == 'skins':
-        text = "?? <b>???. ????: ?????</b>"
+        text = "💰 <b>Мин. цена: скины</b>"
     elif section == 'pve':
-        text = "?? <b>???. ????: PVE</b>"
+        text = "💰 <b>Мин. цена: PVE</b>"
     else:
-        text = "?? <b>???. ????? ????</b>\n\n???????? ??????? ??? ?????? ??????????? ???? ?? FunPay:"
+        text = "💰 <b>Мін. прайс тест</b>\n\nВыберите позицию для поиска минимальной цены на FunPay:"
 
     keyboard = []
     if section in ('all', 'skins'):
@@ -1295,7 +1295,7 @@ async def _show_minprice_section_menu(query, context, section='all', back_cb='se
             select_row = []
             for sid in pair:
                 name = sid.replace('_', ' ').title()
-                sel_icon = "? ? ?????" if sid in selected else "? ? ?????"
+                sel_icon = "✅ В набор" if sid in selected else "⬜ В набор"
                 name_row.append(InlineKeyboardButton(f"{_skin_emoji(sid)} {name}", callback_data=f"set:minprice:skin:{sid}"))
                 select_row.append(InlineKeyboardButton(sel_icon, callback_data=f"set:minprice:csel:{sid}"))
             keyboard.append(name_row)
@@ -1307,28 +1307,28 @@ async def _show_minprice_section_menu(query, context, section='all', back_cb='se
         selected_unconfirmed_pve = context.user_data.get('mp_custom_unconfirmed_pve', False)
         keyboard.append([InlineKeyboardButton(_confirmed_pve_title(), callback_data="set:minprice:pveconfirmed")])
         keyboard.append([
-            InlineKeyboardButton("? ? ?????" if selected_confirmed_pve else "? ? ?????", callback_data="set:minprice:cpvepos")
+            InlineKeyboardButton("✅ В набор" if selected_confirmed_pve else "⬜ В набор", callback_data="set:minprice:cpvepos")
         ])
-        keyboard.append([InlineKeyboardButton("?? ???????. PVE", callback_data="set:minprice:pveunconfirmed")])
+        keyboard.append([InlineKeyboardButton("🔓 Неподтв. PVE", callback_data="set:minprice:pveunconfirmed")])
         keyboard.append([
-            InlineKeyboardButton("? ? ?????" if selected_unconfirmed_pve else "? ? ?????", callback_data="set:minprice:cpveunconfirmed")
+            InlineKeyboardButton("✅ В набор" if selected_unconfirmed_pve else "⬜ В набор", callback_data="set:minprice:cpveunconfirmed")
         ])
         for eid in ['super_deluxe', 'limited', 'ultimate']:
             if config.get_edition(eid):
-                keyboard.append([InlineKeyboardButton(f"?? {eid.replace('_', ' ').title()}", callback_data=f"set:minprice:ed:{eid}")])
+                keyboard.append([InlineKeyboardButton(f"🏆 {eid.replace('_', ' ').title()}", callback_data=f"set:minprice:ed:{eid}")])
                 keyboard.append([
-                    InlineKeyboardButton("? ? ?????" if eid in selected_eds else "? ? ?????", callback_data=f"set:minprice:cedsel:{eid}")
+                    InlineKeyboardButton("✅ В набор" if eid in selected_eds else "⬜ В набор", callback_data=f"set:minprice:cedsel:{eid}")
                 ])
 
     if section == 'all':
-        keyboard.append([InlineKeyboardButton("?? ?????? ?????", callback_data="set:minprice:custom")])
+        keyboard.append([InlineKeyboardButton("🔎 Кастом поиск", callback_data="set:minprice:custom")])
     elif section == 'skins':
         all_skin_ids = [sid for sid in sorted(config.get_all_skins().keys()) if config.get_skin(sid).get('enabled', True)]
         selected = context.user_data.get('mp_custom_skins', set())
         all_selected = bool(all_skin_ids) and all(sid in selected for sid in all_skin_ids)
         keyboard.append([
-            InlineKeyboardButton("? ?????? ???" if all_selected else "? ???????? ???", callback_data="set:minprice:cskinsall"),
-            InlineKeyboardButton("?? ? PVE", callback_data="set:check:minprice:pve"),
+            InlineKeyboardButton("⛔ Убрать все" if all_selected else "✅ Добавить все", callback_data="set:minprice:cskinsall"),
+            InlineKeyboardButton("🧟 К PVE", callback_data="set:check:minprice:pve"),
         ])
         total_selected = (
             len(context.user_data.get('mp_custom_skins', set())) +
@@ -1337,7 +1337,7 @@ async def _show_minprice_section_menu(query, context, section='all', back_cb='se
             (1 if context.user_data.get('mp_custom_unconfirmed_pve', False) else 0)
         )
         if total_selected:
-            keyboard.append([InlineKeyboardButton(f"?? ?????? ????? ({total_selected})", callback_data="set:minprice:crun")])
+            keyboard.append([InlineKeyboardButton(f"▶️ Искать набор ({total_selected})", callback_data="set:minprice:crun")])
     elif section == 'pve':
         selected_eds = context.user_data.get('mp_custom_editions', set())
         selected_confirmed_pve = context.user_data.get('mp_custom_confirmed_pve', config.confirmed_pve_enabled)
@@ -1351,15 +1351,15 @@ async def _show_minprice_section_menu(query, context, section='all', back_cb='se
             (1 if selected_unconfirmed_pve else 0)
         )
         keyboard.append([
-            InlineKeyboardButton("? ?????? ???" if all_selected else "? ???????? ???", callback_data="set:minprice:cpveallpos"),
-            InlineKeyboardButton("?? ? ??????", callback_data="set:check:minprice:skins"),
+            InlineKeyboardButton("⛔ Убрать все" if all_selected else "✅ Добавить все", callback_data="set:minprice:cpveallpos"),
+            InlineKeyboardButton("🎮 К скинам", callback_data="set:check:minprice:skins"),
         ])
         if total_selected:
-            keyboard.append([InlineKeyboardButton(f"?? ?????? ????? ({total_selected})", callback_data="set:minprice:crun")])
+            keyboard.append([InlineKeyboardButton(f"▶️ Искать набор ({total_selected})", callback_data="set:minprice:crun")])
 
     keyboard.append([
-        InlineKeyboardButton("?? ?????", callback_data=back_cb),
-        InlineKeyboardButton("?? ??????? ????", callback_data="set:main"),
+        InlineKeyboardButton("🔙 Назад", callback_data=back_cb),
+        InlineKeyboardButton("🏠 Главное меню", callback_data="set:main"),
     ])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
@@ -1403,12 +1403,12 @@ async def _start_full_recheck(query, context, config):
 
     bot_mode['mode'] = 'recheck'
     bot_mode['params'] = {
-        'display_mode': "????????????: ?? ??????",
-        'target_label': "?? ??????",
+        'display_mode': "Перепроверка: по списку",
+        'target_label': "По списку",
         'restore_mode': config.search_mode,
         'run_snapshot': build_snapshot_fn(
             config,
-            display_mode='?? ??????',
+            display_mode='По списку',
             bot_mode_key='recheck',
             search_mode='skins_pve',
             chat_id_value=chat_id,
@@ -1416,9 +1416,9 @@ async def _start_full_recheck(query, context, config):
     }
     bot_mode['started_at'] = time.time()
     await query.edit_message_text(
-        "?? <b>?????? ???????????? ????????!</b>\n"
-        "?? ?????: ?? ???????? ??????\n"
-        "?? ????? ?????? ????????? ?????...",
+        "📋 <b>Полная перепроверка запущена!</b>\n"
+        "🎯 Режим: по текущему списку\n"
+        "⚠️ Может занять несколько минут...",
         parse_mode='HTML',
         reply_markup=_check_control_markup()
     )
@@ -1433,11 +1433,11 @@ async def _show_recheck_menu(query, context):
 
 
 async def _show_minprice_menu(query, context):
-    """?????????? ???? ???. ????? ?????."""
+    """Показывает меню мін. прайс теста."""
     config = context.bot_data['config']
     text = (
-        "?? <b>???. ????? ????</b>\n\n"
-        "???????? ??????? ??? ?????? ??????????? ???? ?? FunPay:"
+        "💰 <b>Мін. прайс тест</b>\n\n"
+        "Выберите позицию для поиска минимальной цены на FunPay:"
     )
 
     keyboard = []
@@ -1458,27 +1458,27 @@ async def _show_minprice_menu(query, context):
         if not config.get_edition(eid):
             continue
         name = eid.replace('_', ' ').title()
-        keyboard.append([InlineKeyboardButton(f"?? {name}", callback_data=f"set:minprice:ed:{eid}")])
+        keyboard.append([InlineKeyboardButton(f"🏆 {name}", callback_data=f"set:minprice:ed:{eid}")])
 
-    keyboard.append([InlineKeyboardButton("?? ?????? ?????", callback_data="set:minprice:custom")])
+    keyboard.append([InlineKeyboardButton("🔎 Кастом поиск", callback_data="set:minprice:custom")])
     keyboard.append([
-        InlineKeyboardButton("?? ?????", callback_data="set:recheck:menu"),
-        InlineKeyboardButton("?? ??????? ????", callback_data="set:main"),
+        InlineKeyboardButton("🔙 Назад", callback_data="set:recheck:menu"),
+        InlineKeyboardButton("🏠 Главное меню", callback_data="set:main"),
     ])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 async def _show_minprice_menu_as_new_message(update, context):
-    """?????????? ???? ???. ????? ??? ????? ?????????."""
+    """Показывает меню мін. прайс как новое сообщение."""
     if not _check_auth(update, context):
-        await update.message.reply_text("? ?? ?? ????????????. ???????? /start")
+        await update.message.reply_text("❌ Вы не авторизованы. Напишите /start")
         return
 
     config = context.bot_data['config']
     text = (
-        "?? <b>???. ????? ????</b>\n\n"
-        "???????? ??????? ??? ?????? ??????????? ???? ?? FunPay:"
+        "💰 <b>Мін. прайс тест</b>\n\n"
+        "Выберите позицию для поиска минимальной цены на FunPay:"
     )
 
     keyboard = []
@@ -1499,12 +1499,12 @@ async def _show_minprice_menu_as_new_message(update, context):
         if not config.get_edition(eid):
             continue
         name = eid.replace('_', ' ').title()
-        keyboard.append([InlineKeyboardButton(f"?? {name}", callback_data=f"set:minprice:ed:{eid}")])
+        keyboard.append([InlineKeyboardButton(f"🏆 {name}", callback_data=f"set:minprice:ed:{eid}")])
 
-    keyboard.append([InlineKeyboardButton("?? ?????? ?????", callback_data="set:minprice:custom")])
+    keyboard.append([InlineKeyboardButton("🔎 Кастом поиск", callback_data="set:minprice:custom")])
     keyboard.append([
-        InlineKeyboardButton("?? ?????", callback_data="set:recheck:menu"),
-        InlineKeyboardButton("?? ??????? ????", callback_data="set:main"),
+        InlineKeyboardButton("🔙 Назад", callback_data="set:recheck:menu"),
+        InlineKeyboardButton("🏠 Главное меню", callback_data="set:main"),
     ])
 
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -1514,26 +1514,26 @@ async def _show_minprice_skin_mode(query, context, skin_id):
     config = context.bot_data['config']
     skin = config.get_skin(skin_id)
     if not skin:
-        await query.answer("???? ?? ??????", show_alert=True)
+        await query.answer("Скин не найден", show_alert=True)
         return
 
     name = skin_id.replace('_', ' ').title()
     default_pve = skin.get('require_pve', False)
-    note = "?? ????????? ? ????? ????? ??????? ?????? PVE." if default_pve else "?? ????????? PVE ??? ????? ????? ?? ??????????."
+    note = "По умолчанию у этого скина включён фильтр PVE." if default_pve else "По умолчанию PVE для этого скина не обязателен."
     text = (
         f"{_skin_emoji(skin_id)} <b>{name}</b>\n\n"
         f"{note}\n\n"
-        "???????? ????? ??????:"
+        "Выберите режим поиска:"
     )
     keyboard = [
-        [InlineKeyboardButton("?? ?????? ? PVE", callback_data=f"set:minprice:skin:{skin_id}:pve")],
-        [InlineKeyboardButton("?? ??? ??????? PVE", callback_data=f"set:minprice:skin:{skin_id}:any")],
-        [InlineKeyboardButton("?? ?????", callback_data="set:recheck:minprice"), InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+        [InlineKeyboardButton("🧟 Только с PVE", callback_data=f"set:minprice:skin:{skin_id}:pve")],
+        [InlineKeyboardButton("🔒 Без фильтра PVE", callback_data=f"set:minprice:skin:{skin_id}:any")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="set:recheck:minprice"), InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 async def _show_minprice_custom(query, context):
-    """?????????? ???? ?????????? ???. ????? ??????."""
+    """Показывает меню кастомного мін. прайс поиска."""
     config = context.bot_data['config']
     view = context.user_data.get('mp_custom_view', 'all')
     selected = context.user_data.get('mp_custom_skins', set())
@@ -1542,14 +1542,14 @@ async def _show_minprice_custom(query, context):
     skins = config.get_all_skins()
     editions = config.get_all_editions()
 
-    # ????????????? ??????? ???? ???
+    # Инициализация изданий если нет
     if 'mp_custom_editions' not in context.user_data:
         context.user_data['mp_custom_editions'] = set(editions.keys())
     selected_eds = context.user_data.get('mp_custom_editions', set())
     selected_confirmed_pve = context.user_data.get('mp_custom_confirmed_pve', config.confirmed_pve_enabled)
     context.user_data['mp_custom_confirmed_pve'] = selected_confirmed_pve
 
-    # ????????????? PVE ?? ??????? ???? ???
+    # Инициализация PVE из конфига если нет
     for sid in skins:
         if sid not in pve_map:
             pve_map[sid] = skins[sid].get('require_pve', False)
@@ -1561,33 +1561,33 @@ async def _show_minprice_custom(query, context):
         pve_count = sum(1 for sid in selected if pve_map.get(sid, False))
         total_items = len(selected)
         text = (
-            "?? <b>????????? ?????????: ?????</b>\n\n"
-            f"??????? ??????: {len(selected)}"
+            "💰 <b>Кастомные минималки: скины</b>\n\n"
+            f"Выбрано скинов: {len(selected)}"
         )
         if selected:
-            text += f" | ? PVE: {pve_count}/{len(selected)}"
-        text += "\n\n???????? ?????:"
+            text += f" | С PVE: {pve_count}/{len(selected)}"
+        text += "\n\nВыберите скины:"
         back_cb = "set:check:customskins"
     elif view == 'pve':
         selected = set()
         pve_count = 0
         total_items = len(selected_eds) + (1 if selected_confirmed_pve else 0)
         text = (
-            "?? <b>????????? ?????????: PVE</b>\n\n"
-            f"???????: {len(selected_eds)} ???. + {'1 PVE' if selected_confirmed_pve else '0 PVE'}\n\n"
-            "???????? PVE-???????:"
+            "💰 <b>Кастомные минималки: PVE</b>\n\n"
+            f"Выбрано: {len(selected_eds)} изд. + {'1 PVE' if selected_confirmed_pve else '0 PVE'}\n\n"
+            "Выберите PVE-позиции:"
         )
         back_cb = "set:check:custompve"
     else:
         pve_count = sum(1 for sid in selected if pve_map.get(sid, False))
         total_items = len(selected) + len(selected_eds) + (1 if selected_confirmed_pve else 0)
         text = (
-            "?? <b>?????? ???. ?????</b>\n\n"
-            f"???????: {total_items} ({len(selected)} ?????? + {len(selected_eds)} ???. + {'1 PVE' if selected_confirmed_pve else '0 PVE'})"
+            "🔎 <b>Кастом мін. прайс</b>\n\n"
+            f"Выбрано: {total_items} ({len(selected)} скинов + {len(selected_eds)} изд. + {'1 PVE' if selected_confirmed_pve else '0 PVE'})"
         )
         if selected:
-            text += f" | ? PVE: {pve_count}/{len(selected)}"
-        text += "\n\n???????? ????? ? PVE:"
+            text += f" | С PVE: {pve_count}/{len(selected)}"
+        text += "\n\nВыберите скины и PVE:"
         back_cb = "set:check:custom"
 
     keyboard = []
@@ -1596,8 +1596,8 @@ async def _show_minprice_custom(query, context):
             name = sid.replace('_', ' ').title()
             if len(name) > 10:
                 name = name[:9] + '.'
-            sel_icon = "?" if sid in selected else "?"
-            pve_icon = "?? PVE" if pve_map.get(sid, False) else "?? ???"
+            sel_icon = "✅" if sid in selected else "⬜"
+            pve_icon = "🧟 PVE" if pve_map.get(sid, False) else "🔒 Без"
             keyboard.append([
                 InlineKeyboardButton(f"{sel_icon} {_skin_emoji(sid)} {name}", callback_data=f"set:minprice:csel:{sid}"),
                 InlineKeyboardButton(pve_icon, callback_data=f"set:minprice:cpve:{sid}"),
@@ -1606,7 +1606,7 @@ async def _show_minprice_custom(query, context):
     if view in ('all', 'pve'):
         keyboard.append([
             InlineKeyboardButton(
-                f"{'?' if selected_confirmed_pve else '?'} {_confirmed_pve_title()}",
+                f"{'✅' if selected_confirmed_pve else '⬜'} {_confirmed_pve_title()}",
                 callback_data="set:minprice:cpvepos"
             ),
         ])
@@ -1617,32 +1617,32 @@ async def _show_minprice_custom(query, context):
             if eid not in editions:
                 continue
             name = eid.replace('_', ' ').title()
-            sel_icon = "?" if eid in selected_eds else "?"
+            sel_icon = "✅" if eid in selected_eds else "⬜"
             keyboard.append([
-                InlineKeyboardButton(f"{sel_icon} ?? {name}", callback_data=f"set:minprice:cedsel:{eid}"),
+                InlineKeyboardButton(f"{sel_icon} 🏆 {name}", callback_data=f"set:minprice:cedsel:{eid}"),
             ])
 
     if view in ('all', 'skins'):
         all_skin_ids = set(skins.keys())
         all_skins_selected = selected == all_skin_ids and len(all_skin_ids) > 0
         keyboard.append([
-            InlineKeyboardButton("?? ????? ?????" if all_skins_selected else "?? ??? ?????", callback_data="set:minprice:cskinsall"),
-            InlineKeyboardButton("?? ???????? ???", callback_data="set:minprice:csnone"),
+            InlineKeyboardButton("🧹 Снять скины" if all_skins_selected else "🎮 Все скины", callback_data="set:minprice:cskinsall"),
+            InlineKeyboardButton("🧹 Очистить всё", callback_data="set:minprice:csnone"),
         ])
         keyboard.append([
-            InlineKeyboardButton("?? ??? PVE", callback_data="set:minprice:cpveall"),
-            InlineKeyboardButton("?? ??? PVE", callback_data="set:minprice:cpvenone"),
+            InlineKeyboardButton("🧟 Все PVE", callback_data="set:minprice:cpveall"),
+            InlineKeyboardButton("🔒 Без PVE", callback_data="set:minprice:cpvenone"),
         ])
     else:
         keyboard.append([
-            InlineKeyboardButton("?? ???????? ???", callback_data="set:minprice:csnone"),
+            InlineKeyboardButton("🧹 Очистить всё", callback_data="set:minprice:csnone"),
         ])
 
-    # ??????
+    # Запуск
     if total_items > 0:
-        keyboard.append([InlineKeyboardButton(f"?? ?????? ({total_items} ???????)", callback_data="set:minprice:crun")])
+        keyboard.append([InlineKeyboardButton(f"🔎 Искать ({total_items} позиций)", callback_data="set:minprice:crun")])
 
-    keyboard.append([InlineKeyboardButton("?? ?????", callback_data=back_cb), InlineKeyboardButton("?? ??????? ????", callback_data="set:main")])
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=back_cb), InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
@@ -1660,7 +1660,7 @@ async def _launch_minprice_bundle_run(query, context, config):
     bot_mode = context.bot_data.get('bot_mode', {})
     total_items = len(selected) + len(selected_eds) + (1 if selected_confirmed_pve else 0) + (1 if selected_unconfirmed_pve else 0)
     if total_items == 0:
-        await query.answer("???????? ???? ?? ???? ???????", show_alert=True)
+        await query.answer("Выберите хотя бы одну позицию", show_alert=True)
         return
 
     chat_id = query.message.chat_id
@@ -1669,32 +1669,32 @@ async def _launch_minprice_bundle_run(query, context, config):
     editions = config.get_all_editions()
     total_steps = (len(selected) * 2) + len(selected_eds) + (1 if selected_confirmed_pve else 0) + (1 if selected_unconfirmed_pve else 0)
     await query.edit_message_text(
-        f"?? <b>????????? ???. ?????</b>\n\n"
-        f"?? ??????: {len(selected)} | ?? ???????: {len(selected_eds)} | ?? ?????. PVE: {'??' if selected_confirmed_pve else '???'} | ?? ???????. PVE: {'??' if selected_unconfirmed_pve else '???'}\n\n"
+        f"💰 <b>Кастомный мін. прайс</b>\n\n"
+        f"🎮 Скинов: {len(selected)} | 🏆 Изданий: {len(selected_eds)} | 🛡 Подтв. PVE: {'да' if selected_confirmed_pve else 'нет'} | 🔓 Неподтв. PVE: {'да' if selected_unconfirmed_pve else 'нет'}\n\n"
         f"{_make_progress_bar(0, max(total_steps, 1))[0]} 0%\n"
-        f"?? ?????????: 0/{total_items}\n"
-        f"?? ????????????? ?????...",
+        f"📦 Проверено: 0/{total_items}\n"
+        f"🧭 Подготавливаю поиск...",
         parse_mode='HTML',
         reply_markup=_check_control_markup()
     )
 
     target_bits = []
     if selected:
-        target_bits.append(f"?????: {len(selected)}")
+        target_bits.append(f"скины: {len(selected)}")
     if selected_eds:
-        target_bits.append(f"???????: {len(selected_eds)}")
+        target_bits.append(f"издания: {len(selected_eds)}")
     if selected_confirmed_pve:
-        target_bits.append("?????. PVE")
+        target_bits.append("подтв. PVE")
     if selected_unconfirmed_pve:
-        target_bits.append("???????. PVE")
+        target_bits.append("неподтв. PVE")
     bot_mode['mode'] = 'pricetest'
     bot_mode['params'] = {
         'display_mode': (
-            '???. ?????: all'
+            'Мин. прайс: all'
             if view == 'all' else
-            ('???. ?????: ????????? PVE' if view == 'pve' else '???. ?????: ????????? ?????')
+            ('Мин. прайс: кастомный PVE' if view == 'pve' else 'Мин. прайс: кастомный скины')
         ),
-        'target_label': ", ".join(target_bits) if target_bits else '????????? ?????',
+        'target_label': ", ".join(target_bits) if target_bits else 'кастомный набор',
         'restore_mode': config.search_mode,
     }
     bot_mode['started_at'] = time.time()
@@ -1715,11 +1715,11 @@ async def _launch_minprice_bundle_run(query, context, config):
                     chat_id=chat_id,
                     message_id=progress_message_id,
                     text=(
-                        f"?? <b>????????? ???. ?????</b>\n\n"
-                        f"?? ??????: {len(selected)} | ?? ???????: {len(selected_eds)} | ?? ?????. PVE: {'??' if selected_confirmed_pve else '???'} | ?? ???????. PVE: {'??' if selected_unconfirmed_pve else '???'}\n\n"
+                        f"💰 <b>Кастомный мін. прайс</b>\n\n"
+                        f"🎮 Скинов: {len(selected)} | 🏆 Изданий: {len(selected_eds)} | 🛡 Подтв. PVE: {'да' if selected_confirmed_pve else 'нет'} | 🔓 Неподтв. PVE: {'да' if selected_unconfirmed_pve else 'нет'}\n\n"
                         f"{bar} {pct}%\n"
-                        f"?? ?????????: {done}/{total_items}\n"
-                        f"?? ??????: <b>{current_label}</b>"
+                        f"📦 Проверено: {done}/{total_items}\n"
+                        f"🔎 Сейчас: <b>{current_label}</b>"
                     ),
                     parse_mode='HTML',
                     reply_markup=_check_control_markup()
@@ -1732,13 +1732,13 @@ async def _launch_minprice_bundle_run(query, context, config):
                 context,
                 label,
                 lambda: search_min_price(keywords, require_pve=require_pve),
-                heartbeat_callback=lambda elapsed: _update_progress(f"{label} ({elapsed}?)")
+                heartbeat_callback=lambda elapsed: _update_progress(f"{label} ({elapsed}с)")
             )
 
         async def _send_skin_partial_result(label, any_results, pve_results, item_id):
             text = _build_skin_minprice_text(label, any_results, pve_results, done=done, total=total_items, expanded=False)
             markup = InlineKeyboardMarkup([[
-                InlineKeyboardButton("?? ???????? ???", callback_data=f"set:minprice:show3:skin:{item_id}")
+                InlineKeyboardButton("📋 Показать ещё", callback_data=f"set:minprice:show3:skin:{item_id}")
             ]])
             try:
                 await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
@@ -1748,7 +1748,7 @@ async def _launch_minprice_bundle_run(query, context, config):
         async def _send_simple_partial_result(label, results, cache_type, cache_id):
             text = _build_simple_minprice_text(label, results, done=done, total=total_items, expanded=False)
             markup = InlineKeyboardMarkup([[
-                InlineKeyboardButton("?? ???????? ???", callback_data=f"set:minprice:show3:{cache_type}:{cache_id}")
+                InlineKeyboardButton("📋 Показать ещё", callback_data=f"set:minprice:show3:{cache_type}:{cache_id}")
             ]])
             try:
                 await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
@@ -1763,11 +1763,11 @@ async def _launch_minprice_bundle_run(query, context, config):
             await context.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=progress_message_id,
-                text="? <b>????????? ???. ????? ??????????</b>",
+                text="⏹ <b>Кастомный мін. прайс остановлен</b>",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("?? ? ??????", callback_data="set:check:minprice")],
-                    [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+                    [InlineKeyboardButton("🔙 К выбору", callback_data="set:check:minprice")],
+                    [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
                 ])
             )
 
@@ -1779,24 +1779,24 @@ async def _launch_minprice_bundle_run(query, context, config):
             if not skin:
                 continue
             name = sid.replace('_', ' ').title()
-            await _update_progress(f"?? {name} � ??? PVE")
-            any_results = await _search_step(f"?? {name} � ??? PVE", skin.get('keywords', [sid]), require_pve=False)
+            await _update_progress(f"🎮 {name} • без PVE")
+            any_results = await _search_step(f"🎮 {name} • без PVE", skin.get('keywords', [sid]), require_pve=False)
             step_done += 1
-            await _update_progress(f"?? {name} � ? PVE")
-            pve_results = await _search_step(f"?? {name} � ? PVE", skin.get('keywords', [sid]), require_pve=True)
+            await _update_progress(f"🎮 {name} • с PVE")
+            pve_results = await _search_step(f"🎮 {name} • с PVE", skin.get('keywords', [sid]), require_pve=True)
             step_done += 1
             done += 1
-            await _update_progress(f"?? {name}")
+            await _update_progress(f"🎮 {name}")
             any_best = any_results[0] if any_results else None
             pve_best = pve_results[0] if pve_results else None
             no_any = _same_min_offer(any_best, pve_best) or not any_results
-            any_markup = "�" if no_any else _format_log_offer_v2(any_best)
+            any_markup = "—" if no_any else _format_log_offer_v2(any_best)
             pve_markup = _format_log_offer_v2(pve_best)
             record_price_snapshot('skin', sid, name, 'any', any_results, source='custom_minprice')
             record_price_snapshot('skin', sid, name, 'pve', pve_results, source='custom_minprice')
-            _cache_minprice_top3(context, 'skin', sid, f"?? {name}", any_results=any_results, pve_results=pve_results)
-            summary_data.append(('skin', f"?? {name}", any_markup, pve_markup))
-            await _send_skin_partial_result(f"?? {name}", any_results, pve_results, sid)
+            _cache_minprice_top3(context, 'skin', sid, f"🎮 {name}", any_results=any_results, pve_results=pve_results)
+            summary_data.append(('skin', f"🎮 {name}", any_markup, pve_markup))
+            await _send_skin_partial_result(f"🎮 {name}", any_results, pve_results, sid)
 
         if selected_confirmed_pve:
             if context.bot_data.get('cancel_current_check'):
@@ -1818,17 +1818,17 @@ async def _launch_minprice_bundle_run(query, context, config):
             if context.bot_data.get('cancel_current_check'):
                 await _stop_bundle()
                 return
-            await _update_progress("?? ???????. PVE")
-            results = await _search_step("?? ???????. PVE", config.get_unconfirmed_pve(), require_pve=False)
+            await _update_progress("🔓 Неподтв. PVE")
+            results = await _search_step("🔓 Неподтв. PVE", config.get_unconfirmed_pve(), require_pve=False)
             step_done += 1
             done += 1
-            await _update_progress("?? ???????. PVE")
+            await _update_progress("🔓 Неподтв. PVE")
             best_offer = results[0] if results else None
             price_markup = _format_log_offer_v2(best_offer)
-            record_price_snapshot('pve', 'unconfirmed', "???????. PVE", 'unconfirmed', results, source='custom_minprice')
-            _cache_minprice_top3(context, 'pveunconfirmed', 'unconfirmed', "?? ???????. PVE", any_results=results)
-            summary_data.append(('simple', "?? ???????. PVE", price_markup, ''))
-            await _send_simple_partial_result("?? ???????. PVE", results, 'pveunconfirmed', 'unconfirmed')
+            record_price_snapshot('pve', 'unconfirmed', "Неподтв. PVE", 'unconfirmed', results, source='custom_minprice')
+            _cache_minprice_top3(context, 'pveunconfirmed', 'unconfirmed', "🔓 Неподтв. PVE", any_results=results)
+            summary_data.append(('simple', "🔓 Неподтв. PVE", price_markup, ''))
+            await _send_simple_partial_result("🔓 Неподтв. PVE", results, 'pveunconfirmed', 'unconfirmed')
 
         for eid in ['super_deluxe', 'limited', 'ultimate']:
             if context.bot_data.get('cancel_current_check'):
@@ -1840,35 +1840,35 @@ async def _launch_minprice_bundle_run(query, context, config):
             if not ed:
                 continue
             name = eid.replace('_', ' ').title()
-            await _update_progress(f"?? {name}")
-            results = await _search_step(f"?? {name}", ed.get('keywords', [eid]), require_pve=False)
+            await _update_progress(f"🏆 {name}")
+            results = await _search_step(f"🏆 {name}", ed.get('keywords', [eid]), require_pve=False)
             step_done += 1
             done += 1
-            await _update_progress(f"?? {name}")
+            await _update_progress(f"🏆 {name}")
             best_offer = results[0] if results else None
             price_markup = _format_log_offer_v2(best_offer)
             record_price_snapshot('edition', eid, name, 'any', results, source='custom_minprice')
-            _cache_minprice_top3(context, 'ed', eid, f"?? {name}", any_results=results)
-            summary_data.append(('simple', f"?? {name}", price_markup, ''))
-            await _send_simple_partial_result(f"?? {name}", results, 'ed', eid)
+            _cache_minprice_top3(context, 'ed', eid, f"🏆 {name}", any_results=results)
+            summary_data.append(('simple', f"🏆 {name}", price_markup, ''))
+            await _send_simple_partial_result(f"🏆 {name}", results, 'ed', eid)
 
-        summary = "?? <b>?????? ???. ???:</b>\n\n"
+        summary = "📊 <b>Сводка мін. цен:</b>\n\n"
         for item_kind, label, first_markup, second_markup in summary_data:
             if item_kind == 'skin':
                 summary += (
                     f"{label}\n"
-                    f"?? ??? PVE: <b>{first_markup}</b>\n"
-                    f"?? ? PVE: <b>{second_markup}</b>\n\n"
+                    f"🔒 Без PVE: <b>{first_markup}</b>\n"
+                    f"🧟 С PVE: <b>{second_markup}</b>\n\n"
                 )
             else:
-                summary += f"{label} � <b>{first_markup}</b>\n"
+                summary += f"{label} — <b>{first_markup}</b>\n"
         bar, pct = _make_progress_bar(step_done, max(total_steps, 1))
         keyboard = [
-            [InlineKeyboardButton("?? ?????????", callback_data="set:minprice:crun")],
-            [InlineKeyboardButton("?? ? ??????", callback_data="set:check:minprice")],
-            [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+            [InlineKeyboardButton("🔄 Повторить", callback_data="set:minprice:crun")],
+            [InlineKeyboardButton("🔙 К выбору", callback_data="set:check:minprice")],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
         ]
-        final_text = f"{summary}\n{bar} {pct}%\n? ????????? {done} ???????."
+        final_text = f"{summary}\n{bar} {pct}%\n✅ Проверено {done} позиций."
         try:
             await context.bot.edit_message_text(chat_id=chat_id, message_id=progress_message_id, text=final_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         except Exception:
@@ -1917,16 +1917,16 @@ def _get_last_recheck_result(context, run_id=None, chat_id=None):
 def _build_recheck_result_text(result):
     return (
         f"{result['title']}\n"
-        f"?? ?????????? {result['sent_count']} ?????????? ???????????."
+        f"📨 Отправлено {result['sent_count']} подходящих предложений."
     )
 
 
 def _build_recheck_result_markup(result):
     run_id = result['run_id']
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("?? ?????????? ???", callback_data=f"set:recheck:showlog:{run_id}:0")],
-        [InlineKeyboardButton("?? ?????????", callback_data=f"set:recheck:repeat:{run_id}")],
-        [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+        [InlineKeyboardButton("📋 Посмотреть лог", callback_data=f"set:recheck:showlog:{run_id}:0")],
+        [InlineKeyboardButton("🔄 Повторить", callback_data=f"set:recheck:repeat:{run_id}")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ])
 
 
@@ -1951,26 +1951,26 @@ async def _send_recheck_result_message(chat_id, context, sent_count, snapshot, t
 def _build_recheck_log_progress_text(result, done, total, current):
     bar, pct = _make_progress_bar(done, total)
     return (
-        "?? <b>??????? ??? ????????????</b>\n\n"
-        f"?? ?????: {result['snapshot'].get('display_mode', '????????????')}\n"
+        "📋 <b>Готовлю лог перепроверки</b>\n\n"
+        f"🔄 Режим: {result['snapshot'].get('display_mode', 'Перепроверка')}\n"
         f"{bar} {pct}%\n"
-        f"?? ????????: {done}/{max(total, 1)}\n"
-        f"?? ??????: {current}"
+        f"📦 Прогресс: {done}/{max(total, 1)}\n"
+        f"🔎 Сейчас: {current}"
     )
  
  
 def _search_mode_label(mode_key):
-    return '?? ??????'
+    return 'По списку'
 
 
 def _running_mode_label(mode_key):
     return {
-        'standard': '??????????????',
-        'recheck': '????????????',
-        'recheck_pve': '????????????',
-        'recheck_premium': '????????????',
-        'pricetest': '???. ?????',
-    }.get(mode_key, mode_key or '??????????????')
+        'standard': 'Автомониторинг',
+        'recheck': 'Перепроверка',
+        'recheck_pve': 'Перепроверка',
+        'recheck_premium': 'Перепроверка',
+        'pricetest': 'Мин. прайс',
+    }.get(mode_key, mode_key or 'Автомониторинг')
 
 
 def _resolve_status_state(config, bot_mode, progress):
@@ -1985,23 +1985,23 @@ def _resolve_status_state(config, bot_mode, progress):
         'auto_mode_label': auto_mode_label,
         'running_label': running_label,
         'target_label': target_label,
-        'stage': progress.get('stage') or "??????????",
+        'stage': progress.get('stage') or "Подготовка",
         'done': progress.get('done', 0),
         'total': max(progress.get('total', 1), 1),
         'sent': progress.get('sent', 0),
-        'current': progress.get('current') or "???????? ??????",
+        'current': progress.get('current') or "Ожидание данных",
     }
 
 
 async def _show_recheck_log(query, context, run_id, page=0, refresh=False):
     result = _get_last_recheck_result(context, run_id=run_id, chat_id=query.message.chat_id)
     if not result:
-        await query.edit_message_text("? ??? ??? ??????????.")
+        await query.edit_message_text("❌ Лог уже недоступен.")
         return
 
     build_log_fn = context.bot_data.get('build_recheck_log')
     if not build_log_fn:
-        await query.edit_message_text("? ????????? ???? ?? ??????.")
+        await query.edit_message_text("❌ Генератор лога не найден.")
         return
 
     if refresh or result.get('log_items') is None:
@@ -2029,8 +2029,8 @@ async def _show_recheck_log(query, context, run_id, page=0, refresh=False):
 
 def _format_log_offer_v2(offer):
     if not offer:
-        return "�"
-    price_text = html.escape(offer.get('price_text') or "�")
+        return "—"
+    price_text = html.escape(offer.get('price_text') or "—")
     href = offer.get('href')
     if href:
         return f"<a href='{html.escape(href, quote=True)}'>{price_text}</a>"
@@ -2038,7 +2038,7 @@ def _format_log_offer_v2(offer):
 
 
 def _same_min_offer(a, b):
-    """True if two offers are effectively the same (same price ? no separate '??? PVE' offer)."""
+    """True if two offers are effectively the same (same price → no separate 'без PVE' offer)."""
     if not a or not b:
         return False
     ap, bp = a.get('price'), b.get('price')
@@ -2051,54 +2051,54 @@ def _same_min_offer(a, b):
 
 
 def _build_skin_minprice_text(name, any_results, pve_results, done=None, total=None, expanded=False):
-    """Build skin minprice message. If any_best == pve_best ? dash for '??? PVE'."""
+    """Build skin minprice message. If any_best == pve_best → dash for 'без PVE'."""
     any_best = any_results[0] if any_results else None
     pve_best = pve_results[0] if pve_results else None
     no_any = _same_min_offer(any_best, pve_best) or not any_results
 
-    lines = [f"?? <b>{name}</b>"]
+    lines = [f"💰 <b>{name}</b>"]
     if expanded:
         lines.append("")
-        lines.append("?? <b>??? PVE:</b>")
+        lines.append("🔒 <b>Без PVE:</b>")
         if no_any:
-            lines.append("�")
+            lines.append("—")
         else:
             for idx, offer in enumerate(any_results[:3], start=1):
                 lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
         lines.append("")
-        lines.append("?? <b>? PVE:</b>")
+        lines.append("🧟 <b>С PVE:</b>")
         if pve_results:
             for idx, offer in enumerate(pve_results[:3], start=1):
                 lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
         else:
-            lines.append("�")
+            lines.append("—")
     else:
-        any_display = "�" if no_any else _format_log_offer_v2(any_best)
+        any_display = "—" if no_any else _format_log_offer_v2(any_best)
         pve_display = _format_log_offer_v2(pve_best)
-        lines.append(f"?? ??? PVE: <b>{any_display}</b>")
-        lines.append(f"?? ? PVE: <b>{pve_display}</b>")
+        lines.append(f"🔒 Без PVE: <b>{any_display}</b>")
+        lines.append(f"🧟 С PVE: <b>{pve_display}</b>")
 
     if done is not None and total is not None:
-        lines.append(f"?? ??????: {done}/{total}")
+        lines.append(f"📦 Готово: {done}/{total}")
     return "\n".join(lines)
 
 
 def _build_simple_minprice_text(label, results, done=None, total=None, expanded=False):
     """Build simple (non-skin) minprice message."""
-    lines = [f"?? <b>{label}</b>"]
+    lines = [f"💰 <b>{label}</b>"]
     if expanded:
         lines.append("")
-        lines.append("?? <b>????????:</b>")
+        lines.append("📉 <b>Варианты:</b>")
         if results:
             for idx, offer in enumerate(results[:3], start=1):
                 lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
         else:
-            lines.append("�")
+            lines.append("—")
     else:
         price_markup = _format_log_offer_v2(results[0] if results else None)
-        lines.append(f"?? ???. ????: <b>{price_markup}</b>")
+        lines.append(f"📉 Мин. цена: <b>{price_markup}</b>")
     if done is not None and total is not None:
-        lines.append(f"?? ??????: {done}/{total}")
+        lines.append(f"📦 Готово: {done}/{total}")
     return "\n".join(lines)
 
 
@@ -2116,15 +2116,15 @@ def _cache_minprice_top3(context, item_type, item_id, name, any_results=None, pv
 def _render_top3_block(title, offers):
     lines = [f"{title}"]
     if not offers:
-        lines.append("�")
+        lines.append("—")
         return "\n".join(lines)
     for idx, offer in enumerate(offers[:3], start=1):
         price_markup = _format_log_offer_v2(offer)
         seller = html.escape(offer.get('seller') or "?")
-        matched_kw = html.escape(offer.get('matched_kw') or "�")
+        matched_kw = html.escape(offer.get('matched_kw') or "—")
         lines.append(f"{idx}. {price_markup}")
-        lines.append(f"?? {seller}")
-        lines.append(f"?? {matched_kw}")
+        lines.append(f"👤 {seller}")
+        lines.append(f"🧩 {matched_kw}")
     return "\n".join(lines)
 
 
@@ -2132,7 +2132,7 @@ async def _send_minprice_top3(query, context, item_type, item_id):
     cache = context.user_data.get('minprice_top3_cache', {})
     payload = cache.get(f"{item_type}:{item_id}")
     if not payload:
-        await query.answer("??????? ????????? ???. ???? ??? ???? ???????", show_alert=True)
+        await query.answer("Сначала запустите мін. цену для этой позиции", show_alert=True)
         return
 
     name = payload.get('name') or item_id
@@ -2163,58 +2163,58 @@ def _build_recheck_log_page_v2(result, page=0):
     page_items = items[start:start + ITEMS_PER_PAGE]
 
     text = (
-        f"?? <b>??? ????????????</b> ({page + 1}/{total_pages})\n\n"
-        f"?? ?????: {result['snapshot'].get('display_mode', '????????????')}\n"
-        f"?? ??????????: {result['sent_count']}\n\n"
+        f"📋 <b>Лог перепроверки</b> ({page + 1}/{total_pages})\n\n"
+        f"🔄 Режим: {result['snapshot'].get('display_mode', 'Перепроверка')}\n"
+        f"📨 Отправлено: {result['sent_count']}\n\n"
     )
 
     if not page_items:
-        text += "? ??? ????."
+        text += "❌ Лог пуст."
     else:
         for item in page_items:
-            title_icon = "??" if item['type'] == 'edition' else ("??" if item['type'] == 'pve' else _skin_emoji(item['id']))
-            any_label = "?? ???????" if item['type'] == 'edition' else "?? ??? PVE"
+            title_icon = "🏆" if item['type'] == 'edition' else ("🧟" if item['type'] == 'pve' else _skin_emoji(item['id']))
+            any_label = "📉 Найдено" if item['type'] == 'edition' else "🔒 Без PVE"
             text += (
                 f"{title_icon} <b>{html.escape(item['name'])}</b>\n"
-                f"?? <b>???? ???:</b> {item.get('my_price_text', item.get('limit_text', '�'))}\n"
+                f"💰 <b>Цена моя:</b> {item.get('my_price_text', item.get('limit_text', '—'))}\n"
                 f"{any_label}: {_format_log_offer_v2(item.get('any_offer'))}\n"
             )
             if item['type'] != 'edition':
-                text += f"?? ? PVE: {_format_log_offer_v2(item.get('pve_offer'))}\n"
+                text += f"🧟 С PVE: {_format_log_offer_v2(item.get('pve_offer'))}\n"
             text += (
-                f"?? <b>???????:</b> {html.escape(item.get('reason_text', item.get('status', '�')))}\n"
-                "??????????????\n\n"
+                f"📌 <b>Причина:</b> {html.escape(item.get('reason_text', item.get('status', '—')))}\n"
+                "━━━━━━━━━━━━━━\n\n"
             )
 
     nav = []
     run_id = result['run_id']
     if page > 0:
-        nav.append(InlineKeyboardButton("?", callback_data=f"set:recheck:showlog:{run_id}:{page - 1}"))
+        nav.append(InlineKeyboardButton("◀", callback_data=f"set:recheck:showlog:{run_id}:{page - 1}"))
     nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="set:noop"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("?", callback_data=f"set:recheck:showlog:{run_id}:{page + 1}"))
+        nav.append(InlineKeyboardButton("▶", callback_data=f"set:recheck:showlog:{run_id}:{page + 1}"))
 
     keyboard = []
     if nav:
         keyboard.append(nav)
-    keyboard.append([InlineKeyboardButton("?? ???????? ?????", callback_data=f"set:recheck:refreshlog:{run_id}:{page}")])
-    keyboard.append([InlineKeyboardButton("?? ? ?????", callback_data=f"set:recheck:summary:{run_id}")])
-    keyboard.append([InlineKeyboardButton("?? ??????? ????", callback_data="set:main")])
+    keyboard.append([InlineKeyboardButton("🔄 Обновить экран", callback_data=f"set:recheck:refreshlog:{run_id}:{page}")])
+    keyboard.append([InlineKeyboardButton("🔙 К итогу", callback_data=f"set:recheck:summary:{run_id}")])
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")])
     return text.strip(), InlineKeyboardMarkup(keyboard)
 
 
 def _build_recheck_start_text(snapshot):
-    display_mode = snapshot.get('display_mode', '????????????')
+    display_mode = snapshot.get('display_mode', 'Перепроверка')
     if snapshot.get('bot_mode_key') == 'pricetest':
         return (
-            "?? <b>???. ????? ???? ??????? ????????!</b>\n\n"
-            f"?? ?????: {display_mode}\n"
-            "?? ????? ?????? ????????? ?????..."
+            "🧪 <b>Мин. прайс тест запущен повторно!</b>\n\n"
+            f"🎯 Режим: {display_mode}\n"
+            "⚠️ Может занять несколько минут..."
         )
     return (
-        "?? <b>???????????? ????????!</b>\n"
-        f"?? ?????: {display_mode}\n"
-        "?? ????? ?????? ????????? ?????..."
+        "🔄 <b>Перепроверка запущена!</b>\n"
+        f"🎯 Режим: {display_mode}\n"
+        "⚠️ Может занять несколько минут..."
     )
 
 
@@ -2250,7 +2250,7 @@ async def _repeat_recheck_from_result(query, context, result):
 
     new_snapshot = build_snapshot_fn(
         config,
-        display_mode=snapshot.get('display_mode', '????????????'),
+        display_mode=snapshot.get('display_mode', 'Перепроверка'),
         bot_mode_key=snapshot.get('bot_mode_key', 'recheck'),
         search_mode=snapshot.get('search_mode', config.search_mode),
         include_unconfirmed_pve=snapshot.get('include_unconfirmed_pve', False),
@@ -2265,7 +2265,7 @@ async def _repeat_recheck_from_result(query, context, result):
     )
 
     params = {
-        'display_mode': snapshot.get('display_mode', '????????????'),
+        'display_mode': snapshot.get('display_mode', 'Перепроверка'),
         'restore_mode': restore_mode,
         'restore_skins': restore_skins,
         'restore_editions': restore_editions,
@@ -2290,7 +2290,7 @@ async def _repeat_recheck_from_result(query, context, result):
 
 
 async def _run_recheck_task(chat_id, context, process_fn, **kwargs):
-    """??????? ?????? recheck (????? asyncio.create_task)."""
+    """Фоновая задача recheck (через asyncio.create_task)."""
     bot_mode = context.bot_data.get('bot_mode', {})
     try:
         sent_count = await process_fn(context=context, **kwargs)
@@ -2305,17 +2305,17 @@ async def _run_recheck_task(chat_id, context, process_fn, **kwargs):
             bot_mode['started_at'] = None
             await context.bot.send_message(
                 chat_id=chat_id,
-                text="? ??????? ???????? ??????????? ?????????????."
+                text="⏹ Текущая проверка остановлена принудительно."
             )
             return
         snapshot = bot_mode.get('params', {}).get('run_snapshot')
         sent_position_ids = sorted(context.bot_data.pop('current_check_sent_positions', set()))
-        # ??????????????? ????? ?????? ???? ??? ??????? ??? recheck
+        # Восстанавливаем режим поиска если был изменён для recheck
         config = context.bot_data['config']
         restore_mode = bot_mode.get('params', {}).get('restore_mode')
         if restore_mode:
             config.search_mode = restore_mode
-        # ??????????????? ????? ???? ???? ???????? ??? ?????????? recheck
+        # Восстанавливаем скины если были изменены для кастомного recheck
         restore_skins = bot_mode.get('params', {}).get('restore_skins')
         if restore_skins:
             for sid, data in restore_skins.items():
@@ -2327,7 +2327,7 @@ async def _run_recheck_task(chat_id, context, process_fn, **kwargs):
                     else:
                         skin['enabled'] = data
             config.save()
-        # ??????????????? ???????
+        # Восстанавливаем издания
         restore_editions = bot_mode.get('params', {}).get('restore_editions')
         if restore_editions:
             for eid, data in restore_editions.items():
@@ -2340,13 +2340,13 @@ async def _run_recheck_task(chat_id, context, process_fn, **kwargs):
         if restore_confirmed_pve:
             config.confirmed_pve_enabled = restore_confirmed_pve.get('enabled', True)
             config.confirmed_pve_price = restore_confirmed_pve.get('price', config.confirmed_pve_price)
-        # ?????????? ?????
+        # Сбрасываем режим
         bot_mode['mode'] = 'standard'
         bot_mode['params'] = {}
         bot_mode['started_at'] = None
         if snapshot:
             snapshot['sent_position_ids'] = sent_position_ids
-            title = "? ???. ????? ???? ????????!" if snapshot.get('bot_mode_key') == 'pricetest' else "? ???????????? ?????????!"
+            title = "✅ Мин. прайс тест завершён!" if snapshot.get('bot_mode_key') == 'pricetest' else "✅ Перепроверка завершена!"
             await _send_recheck_result_message(
                 chat_id=chat_id,
                 context=context,
@@ -2357,16 +2357,16 @@ async def _run_recheck_task(chat_id, context, process_fn, **kwargs):
         else:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"? ???????????? ?????????!\n?? ?????????? {sent_count} ?????????? ???????????."
+                text=f"✅ Перепроверка завершена!\n📨 Отправлено {sent_count} подходящих предложений."
             )
     except Exception as e:
-        # ??????????????? ????? ?????? ??? ?????? ????
+        # Восстанавливаем режим поиска при ошибке тоже
         config = context.bot_data['config']
         context.bot_data.pop('current_check_sent_positions', None)
         restore_mode = bot_mode.get('params', {}).get('restore_mode')
         if restore_mode:
             config.search_mode = restore_mode
-        # ??????????????? ????? ??? ?????? ????
+        # Восстанавливаем скины при ошибке тоже
         restore_skins = bot_mode.get('params', {}).get('restore_skins')
         if restore_skins:
             for sid, data in restore_skins.items():
@@ -2378,7 +2378,7 @@ async def _run_recheck_task(chat_id, context, process_fn, **kwargs):
                     else:
                         skin['enabled'] = data
             config.save()
-        # ??????????????? ??????? ??? ?????? ????
+        # Восстанавливаем издания при ошибке тоже
         restore_editions = bot_mode.get('params', {}).get('restore_editions')
         if restore_editions:
             for eid, data in restore_editions.items():
@@ -2394,11 +2394,11 @@ async def _run_recheck_task(chat_id, context, process_fn, **kwargs):
         bot_mode['mode'] = 'standard'
         bot_mode['params'] = {}
         bot_mode['started_at'] = None
-        logger.error(f"?????? recheck: {e}")
+        logger.error(f"Ошибка recheck: {e}")
         try:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"? ?????? ??? recheck: {e}"
+                text=f"❌ Ошибка при recheck: {e}"
             )
         except:
             pass
@@ -2408,24 +2408,24 @@ def _get_current_check_status(context):
     bot_mode = context.bot_data.get('bot_mode', {}) or {}
     progress = context.bot_data.get('current_check_progress') or {}
     state = _resolve_status_state(config, bot_mode, progress)
-    running_now = '??????????????' if state['mode'] == 'standard' else state['running_label']
+    running_now = 'Автомониторинг' if state['mode'] == 'standard' else state['running_label']
     bar, pct = _make_progress_bar(state['done'], state['total'])
 
-    target_line = f"?? ????: {state['target_label']}\n" if state['target_label'] else ''
+    target_line = f"🧩 Цель: {state['target_label']}\n" if state['target_label'] else ''
     text = (
-        "? <b>?????? ??? ???? ????????</b>\n\n"
-        f"?? ??????????????: {state['auto_mode_label']}\n"
-        f"?? ??????? ??????: {running_now}\n"
+        "⏳ <b>Сейчас уже идёт проверка</b>\n\n"
+        f"🔍 Автомониторинг: {state['auto_mode_label']}\n"
+        f"⚙️ Запущен сейчас: {running_now}\n"
         f"{target_line}"
-        f"?? ????: {state['stage']}\n"
+        f"📍 Этап: {state['stage']}\n"
         f"{bar} {pct}%\n"
-        f"?? ????????: {state['done']}/{state['total']}\n"
-        f"?? ??????: {state['current']}\n"
-        f"? ??????????: {state['sent']}"
+        f"📦 Прогресс: {state['done']}/{state['total']}\n"
+        f"🔎 Сейчас: {state['current']}\n"
+        f"✅ Отправлено: {state['sent']}"
     )
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
-        [InlineKeyboardButton("? ????????? ?????????????", callback_data="set:checkstop")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
+        [InlineKeyboardButton("⏹ Завершить принудительно", callback_data="set:checkstop")],
     ])
     return text, keyboard
 
@@ -2449,11 +2449,11 @@ async def _show_recheck_menu_as_new_message(update, context):
 
 
 # ==============================
-# ???????? ?????? CALLBACK
+# ОСНОВНОЙ РОУТЕР CALLBACK
 # ==============================
 
 async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """?????? ??? ???? callback_data, ???????????? ? 'set:'."""
+    """Роутер для всех callback_data, начинающихся с 'set:'."""
     query = update.callback_query
 
     if query.data and query.data.startswith("set:stats:info:"):
@@ -2462,40 +2462,40 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             if len(parts) >= 5:
                 await _show_stats_info(query, context, parts[3], ":".join(parts[4:]))
                 return
-        await query.answer("? ?? ????????????", show_alert=True)
+        await query.answer("❌ Не авторизованы", show_alert=True)
         return
 
     await query.answer()
 
     if not _check_auth(update, context):
-        await query.answer("? ?? ????????????", show_alert=True)
+        await query.answer("❌ Не авторизованы", show_alert=True)
         return
 
     data = query.data
     config = context.bot_data['config']
     parts = data.split(':')
 
-    # === ????????? ===
+    # === Навигация ===
     if data == "set:main":
         await _show_main_menu(query, context)
 
     elif data == "set:close":
-        await query.edit_message_text("? ????????? ???????.")
+        await query.edit_message_text("✅ Настройки закрыты.")
 
     elif data == "set:stop":
         keyboard = [
-            [InlineKeyboardButton("? ??, ??????????", callback_data="set:stop:confirm")],
-            [InlineKeyboardButton("?? ???, ??????????", callback_data="set:stop:cancel")],
+            [InlineKeyboardButton("✅ Да, остановить", callback_data="set:stop:confirm")],
+            [InlineKeyboardButton("🔙 Нет, продолжить", callback_data="set:stop:cancel")],
         ]
         await query.edit_message_text(
-            "? <b>????????? ???????</b>\n"
-            "??????? ?????? ????? ???????????.",
+            "⏹ <b>Закончить сейчас?</b>\n"
+            "Текущая работа будет остановлена.",
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
     elif data == "set:stop:confirm":
-        await query.edit_message_text("? <b>????????? ????...</b>", parse_mode='HTML')
+        await query.edit_message_text("⏹ <b>Остановка бота...</b>", parse_mode='HTML')
         import os
         asyncio.get_event_loop().call_later(1, lambda: os._exit(0))
 
@@ -2508,26 +2508,26 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         progress = context.bot_data.get('current_check_progress') or {}
         mode_key = bot_mode.get('mode', 'standard')
         mode_labels = {
-            'standard': '??????????????',
-            'pricetest': '???. ?????',
-            'recheck': '?????? ????????????',
-            'recheck_pve': '???????????? (???????. PVE)',
+            'standard': 'Автомониторинг',
+            'pricetest': 'Мин. прайс',
+            'recheck': 'Полная перепроверка',
+            'recheck_pve': 'Перепроверка (неподтв. PVE)',
         }
         label = mode_labels.get(mode_key, mode_key)
-        target = (bot_mode.get('params') or {}).get('target_label') or progress.get('stage') or '�'
+        target = (bot_mode.get('params') or {}).get('target_label') or progress.get('stage') or '—'
         info_text = (
-            "?? <b>?????????? ??????? ?????????</b>\n\n"
-            f"?? ????????: <b>{label}</b>\n"
-            f"?? ????: {target}\n"
-            f"?? ????????: {progress.get('done', 0)}/{max(progress.get('total', 1), 1)}\n\n"
-            "?? ????????"
+            "⚠️ <b>Остановить текущую проверку?</b>\n\n"
+            f"⚙️ Запущено: <b>{label}</b>\n"
+            f"🎯 Цель: {target}\n"
+            f"📦 Прогресс: {progress.get('done', 0)}/{max(progress.get('total', 1), 1)}\n\n"
+            "Вы уверены?"
         )
         await query.edit_message_text(
             info_text,
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("? ??, ??????????", callback_data="set:checkstop:confirm")],
-                [InlineKeyboardButton("?? ??????", callback_data="set:checkstop:cancel")],
+                [InlineKeyboardButton("✅ Да, остановить", callback_data="set:checkstop:confirm")],
+                [InlineKeyboardButton("↩️ Отмена", callback_data="set:checkstop:cancel")],
             ])
         )
 
@@ -2535,11 +2535,11 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         context.bot_data.pop('checkstop_pending', None)
         context.bot_data['cancel_current_check'] = True
         await query.edit_message_text(
-            "? <b>???????????? ??????? ????????...</b>\n"
-            "??? ?????????? ????? ???????? ????.",
+            "⏹ <b>Останавливаю текущую проверку...</b>\n"
+            "Она завершится после текущего шага.",
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")]
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")]
             ])
         )
 
@@ -2585,22 +2585,22 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
     elif data == "set:stats:redflags:clear":
         clear_red_flags()
-        await query.answer("? ????? ???????")
+        await query.answer("✅ Флаги очищены")
         await _show_red_flags(query, context)
 
     elif data == "set:stats:reset":
         keyboard = [
-            [InlineKeyboardButton("? ??, ??????? ???", callback_data="set:stats:reset:confirm")],
-            [InlineKeyboardButton("?? ??????", callback_data="set:stats")],
+            [InlineKeyboardButton("✅ Да, удалить всё", callback_data="set:stats:reset:confirm")],
+            [InlineKeyboardButton("🔙 Отмена", callback_data="set:stats")],
         ]
         await query.edit_message_text(
-            "?? <b>????? ??????????</b>\n\n??? ??????? ??? ????? ???????. ???????????",
+            "🗑 <b>Сброс статистики</b>\n\nВся история цен будет удалена. Продолжить?",
             reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML'
         )
 
     elif data == "set:stats:reset:confirm":
         clear_all_price_history()
-        await query.answer("? ?????????? ???????")
+        await query.answer("✅ Статистика очищена")
         await _show_stats(query, context)
 
     elif data.startswith("set:stats:hist:"):
@@ -2613,17 +2613,17 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
     elif data == "set:sync":
         sync_fn = context.bot_data.get('sync_fn')
         if sync_fn:
-            await query.edit_message_text("?? ????????????? config.json ? GitHub...")
+            await query.edit_message_text("🔄 Синхронизирую config.json с GitHub...")
             try:
                 result = await asyncio.to_thread(sync_fn)
                 if result:
-                    await query.edit_message_text("? config.json ??????? ???????? ? GitHub!")
+                    await query.edit_message_text("✅ config.json успешно загружен в GitHub!")
                 else:
-                    await query.edit_message_text("?? config.json ?? ?????????, ??? ?? ?????.")
+                    await query.edit_message_text("ℹ️ config.json не изменился, пуш не нужен.")
             except Exception as e:
-                await query.edit_message_text(f"? ?????? ?????????????: {e}")
+                await query.edit_message_text(f"❌ Ошибка синхронизации: {e}")
         else:
-            await query.edit_message_text("? GitHub ?? ????????: ??? GITHUB_TOKEN/GITHUB_REPO.")
+            await query.edit_message_text("❌ GitHub не настроен: нет GITHUB_TOKEN/GITHUB_REPO.")
 
     # === Unified Check ===
     elif parts[1] == 'check':
@@ -2650,14 +2650,14 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 await _launch_minprice_bundle_run(query, context, config)
             else:
                 text = (
-                    "?? <b>???. ????</b>\n\n"
-                    "???????? ??????:"
+                    "💰 <b>Мин. цена</b>\n\n"
+                    "Выберите раздел:"
                 )
                 keyboard = [
-                    [InlineKeyboardButton("?? ?????", callback_data="set:check:minprice:skins")],
-                    [InlineKeyboardButton("?? PVE", callback_data="set:check:minprice:pve")],
-                    [InlineKeyboardButton("?? All", callback_data="set:check:minprice:all")],
-                    [InlineKeyboardButton("?? ?????", callback_data="set:check:menu")],
+                    [InlineKeyboardButton("🎮 Скины", callback_data="set:check:minprice:skins")],
+                    [InlineKeyboardButton("🧟 PVE", callback_data="set:check:minprice:pve")],
+                    [InlineKeyboardButton("🌐 All", callback_data="set:check:minprice:all")],
+                    [InlineKeyboardButton("🔙 Назад", callback_data="set:check:menu")],
                 ]
                 await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         elif action == 'standard':
@@ -2669,7 +2669,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                     await _show_current_check_status(query, context)
                     return
                 if not any(s.get('enabled', True) for s in config.get_all_skins().values()):
-                    await query.answer("? ???????? ???? ?? ???? ???? ? ??????", show_alert=True)
+                    await query.answer("❌ Включите хотя бы один скин в списке", show_alert=True)
                     return
                 _seed_standard_skin_recheck(context, config)
                 await _launch_custom_recheck(query, context, config, pve_price=None, from_callback=True)
@@ -2691,7 +2691,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                     await _show_current_check_status(query, context)
                     return
                 if not any(ed.get('enabled', True) for ed in config.get_all_editions().values()):
-                    await query.answer("? ???????? ???? ?? ???? ??????? ? ??????", show_alert=True)
+                    await query.answer("❌ Включите хотя бы одно издание в списке", show_alert=True)
                     return
                 _seed_standard_editions_recheck(context, config)
                 await _launch_custom_recheck(query, context, config, pve_price=None, from_callback=True)
@@ -2701,13 +2701,13 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                     return
                 context.user_data['input_state'] = INPUT_RECHECK_PVE
                 context.user_data['recheck_direct_unconfirmed_pve'] = True
-                _set_input_return(context, 'set:check:stdpve', '?? ?????')
+                _set_input_return(context, 'set:check:stdpve', '🔙 Назад')
                 await query.edit_message_text(
-                    "?? <b>???????. PVE</b>\n\n"
-                    "????? ?????? ????? ?????????? PVE (???/stw/pve) ??? ???????? ? ??????.\n\n"
-                    "??????? <b>????. ????</b> (?) ??? ??????? ?????? ????:",
+                    "🔓 <b>Неподтв. PVE</b>\n\n"
+                    "Будет искать любые упоминания PVE (пве/stw/pve) без привязки к скинам.\n\n"
+                    "Введите <b>макс. цену</b> (₽) или нажмите кнопку ниже:",
                     parse_mode='HTML',
-                    reply_markup=_get_input_return_markup(context, 'set:check:stdpve', '?? ?????')
+                    reply_markup=_get_input_return_markup(context, 'set:check:stdpve', '🔙 Назад')
                 )
             elif item in ('confirmed', 'editions') and subaction == 'minprice':
                 await _show_minprice_section_menu(query, context, section='pve', back_cb='set:check:stdpve')
@@ -2744,7 +2744,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             run_id = parts[3] if len(parts) > 3 else ''
             result = _get_last_recheck_result(context, run_id=run_id, chat_id=query.message.chat_id)
             if not result:
-                await query.edit_message_text("? ???? ???????????? ??? ??????????.")
+                await query.edit_message_text("❌ Итог перепроверки уже недоступен.")
                 return
             await query.edit_message_text(
                 _build_recheck_result_text(result),
@@ -2756,7 +2756,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             run_id = parts[3] if len(parts) > 3 else ''
             result = _get_last_recheck_result(context, run_id=run_id, chat_id=query.message.chat_id)
             if not result:
-                await query.edit_message_text("? ?????? ??? ??????????.")
+                await query.edit_message_text("❌ Повтор уже недоступен.")
                 return
             await _repeat_recheck_from_result(query, context, result)
 
@@ -2766,7 +2766,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         elif action == 'minprice':
             await _show_minprice_menu(query, context)
 
-    # === ????????????? ?????? ===
+    # === Переключатели списка ===
     elif parts[1] == 'minprice':
         item_type = parts[2] if len(parts) > 2 else ''
         item_id = parts[3] if len(parts) > 3 else ''
@@ -2822,10 +2822,10 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             selected = context.user_data.get('mp_custom_skins', set())
             if selected == all_skins:
                 context.user_data['mp_custom_skins'] = set()
-                await query.answer("?? ??? ????? ?????")
+                await query.answer("🧹 Все скины сняты")
             else:
                 context.user_data['mp_custom_skins'] = set(all_skins)
-                await query.answer("? ??????? ??? ?????")
+                await query.answer("✅ Выбраны все скины")
             _save_minprice_selection(context)
             if view in ('skins', 'pve'):
                 await _show_minprice_section_menu(query, context, section=view, back_cb=context.user_data.get('mp_back_cb', 'set:check:menu'))
@@ -2838,7 +2838,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             context.user_data['mp_custom_editions'] = set(config.get_all_editions().keys())
             context.user_data['mp_custom_confirmed_pve'] = True
             _save_minprice_selection(context)
-            await query.answer("? ??????? ??? ???????")
+            await query.answer("✅ Выбраны все позиции")
             await _show_minprice_custom(query, context)
             return
 
@@ -2854,7 +2854,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 context.user_data['mp_custom_editions'] = set()
                 context.user_data['mp_custom_confirmed_pve'] = False
             _save_minprice_selection(context)
-            await query.answer("? ????? ??????")
+            await query.answer("⬜ Выбор очищен")
             if view in ('skins', 'pve'):
                 await _show_minprice_section_menu(query, context, section=view, back_cb=context.user_data.get('mp_back_cb', 'set:check:menu'))
             else:
@@ -2917,12 +2917,12 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 context.user_data['mp_custom_confirmed_pve'] = False
                 context.user_data['mp_custom_unconfirmed_pve'] = False
                 context.user_data['mp_custom_editions'] = set()
-                await query.answer("? ??? PVE-??????? ??????")
+                await query.answer("⛔ Все PVE-позиции убраны")
             else:
                 context.user_data['mp_custom_confirmed_pve'] = True
                 context.user_data['mp_custom_unconfirmed_pve'] = True
                 context.user_data['mp_custom_editions'] = set(edition_ids)
-                await query.answer("? ??? PVE-??????? ?????????")
+                await query.answer("✅ Все PVE-позиции добавлены")
             _save_minprice_selection(context)
             view = context.user_data.get('mp_custom_view', 'all')
             if view in ('skins', 'pve'):
@@ -2948,7 +2948,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         elif item_type == 'pveconfirmed':
             item_id = 'confirmed'
             all_keywords = config.get_confirmed_pve()
-            name = "?????. PVE"
+            name = "Подтв. PVE"
             require_pve = False
             dual_mode = False
             history_item_type = 'pve'
@@ -2956,7 +2956,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         elif item_type == 'pveunconfirmed':
             item_id = 'unconfirmed'
             all_keywords = config.get_unconfirmed_pve()
-            name = "???????. PVE"
+            name = "Неподтв. PVE"
             require_pve = False
             dual_mode = False
             history_item_type = 'pve'
@@ -2965,7 +2965,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         elif item_type == 'skin':
             skin = config.get_skin(item_id)
             if not skin:
-                await query.answer("???? ?? ??????", show_alert=True)
+                await query.answer("Скин не найден", show_alert=True)
                 return
             all_keywords = skin.get('keywords', [item_id])
             name = item_id.replace('_', ' ').title()
@@ -2976,7 +2976,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         elif item_type == 'ed':
             edition = config.get_edition(item_id)
             if not edition:
-                await query.answer("??????? ?? ???????", show_alert=True)
+                await query.answer("Издание не найдено", show_alert=True)
                 return
             all_keywords = edition.get('keywords', [item_id])
             name = item_id.replace('_', ' ').title()
@@ -2989,7 +2989,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
         kw_list = ', '.join(all_keywords[:4])
         if len(all_keywords) > 4:
-            kw_list += f" +??? {len(all_keywords) - 4}"
+            kw_list += f" +ещё {len(all_keywords) - 4}"
         origin_kind = parts[4] if len(parts) > 4 else ''
         origin_page = parts[5] if len(parts) > 5 else ''
         if _is_check_running(context):
@@ -2998,18 +2998,18 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         bot_mode = context.bot_data.get('bot_mode', {})
         bot_mode['mode'] = 'pricetest'
         bot_mode['params'] = {
-            'display_mode': f"???. ?????: {name}",
+            'display_mode': f"Мин. прайс: {name}",
             'target_label': name,
             'restore_mode': config.search_mode,
         }
         bot_mode['started_at'] = time.time()
         total_steps = 2 if dual_mode else 1
         await query.edit_message_text(
-            f"?? <b>???. ?????: {name}</b>\n\n"
-            f"?? ???????? ?????: {kw_list}\n\n"
+            f"💰 <b>Мін. прайс: {name}</b>\n\n"
+            f"🧩 Ключевые слова: {kw_list}\n\n"
             f"{_make_progress_bar(0, total_steps)[0]} 0%\n"
-            f"?? ????????: 0/{total_steps}\n"
-            f"?? ??????: ??????????",
+            f"🔎 Проверяю: 0/{total_steps}\n"
+            f"🧭 Сейчас: подготовка",
             parse_mode='HTML',
             reply_markup=_check_control_markup()
         )
@@ -3023,11 +3023,11 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             bar, pct = _make_progress_bar(done_steps, total_steps)
             try:
                 await msg.edit_text(
-                    f"?? <b>???. ?????: {name}</b>\n\n"
-                    f"?? ???????? ?????: {kw_list}\n\n"
+                    f"💰 <b>Мін. прайс: {name}</b>\n\n"
+                    f"🧩 Ключевые слова: {kw_list}\n\n"
                     f"{bar} {pct}%\n"
-                    f"?? ????????: {done_steps}/{total_steps}\n"
-                    f"?? ??????: {current_label}",
+                    f"🔎 Проверяю: {done_steps}/{total_steps}\n"
+                    f"🧭 Сейчас: {current_label}",
                     parse_mode='HTML',
                     reply_markup=_check_control_markup()
                 )
@@ -3040,11 +3040,11 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             bot_mode['params'] = {}
             bot_mode['started_at'] = None
             await msg.edit_text(
-                f"? <b>???. ????? ??????????</b>\n\n{name}",
+                f"⏹ <b>Мин. прайс остановлен</b>\n\n{name}",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("?? ?????", callback_data="set:check:minprice:pve" if item_type in ('pveconfirmed', 'pveunconfirmed', 'ed') else "set:check:minprice:skins")],
-                    [InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+                    [InlineKeyboardButton("🔙 Назад", callback_data="set:check:minprice:pve" if item_type in ('pveconfirmed', 'pveunconfirmed', 'ed') else "set:check:minprice:skins")],
+                    [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
                 ])
             )
 
@@ -3054,20 +3054,20 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
         any_results = await _run_minprice_search_with_watchdog(
             context,
-            f"{name} � ??? PVE",
+            f"{name} • без PVE",
             lambda: search_min_price(all_keywords, require_pve=False),
-            heartbeat_callback=lambda elapsed: _edit_single_progress(0, f"??? PVE ({elapsed}?)")
+            heartbeat_callback=lambda elapsed: _edit_single_progress(0, f"без PVE ({elapsed}с)")
         )
         if dual_mode:
-            await _edit_single_progress(1, "? PVE")
+            await _edit_single_progress(1, "с PVE")
             if context.bot_data.get('cancel_current_check'):
                 await _stop_single()
                 return
             pve_results = await _run_minprice_search_with_watchdog(
                 context,
-                f"{name} � ? PVE",
+                f"{name} • с PVE",
                 lambda: search_min_price(all_keywords, require_pve=True),
-                heartbeat_callback=lambda elapsed: _edit_single_progress(1, f"? PVE ({elapsed}?)")
+                heartbeat_callback=lambda elapsed: _edit_single_progress(1, f"с PVE ({elapsed}с)")
             )
         else:
             pve_results = []
@@ -3079,25 +3079,25 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             any_best = any_results[0] if any_results else None
             pve_best = pve_results[0] if pve_results else None
             no_any = _same_min_offer(any_best, pve_best) or not any_results
-            any_markup = "�" if no_any else _format_log_offer_v2(any_best)
+            any_markup = "—" if no_any else _format_log_offer_v2(any_best)
             pve_markup = _format_log_offer_v2(pve_best)
             text = (
-                f"?? <b>???. ?????: {name}</b>\n\n"
-                f"?? ??? PVE: <b>{any_markup}</b>\n"
-                f"?? ? PVE: <b>{pve_markup}</b>"
+                f"💰 <b>Мін. прайс: {name}</b>\n\n"
+                f"🔒 Без PVE: <b>{any_markup}</b>\n"
+                f"🧟 С PVE: <b>{pve_markup}</b>"
             )
-            history_button = InlineKeyboardButton("?? ??????? ???", callback_data=f"set:hist:skin:{item_id}:all:0:ms")
-            show3_button = InlineKeyboardButton("?? ???????? ???", callback_data=f"set:minprice:show3:skin:{item_id}")
+            history_button = InlineKeyboardButton("📈 История цен", callback_data=f"set:hist:skin:{item_id}:all:0:ms")
+            show3_button = InlineKeyboardButton("📋 Показать ещё", callback_data=f"set:minprice:show3:skin:{item_id}")
         else:
             record_price_snapshot(history_item_type, item_id, name, history_mode, any_results, source='single_minprice')
             _cache_minprice_top3(context, item_type, item_id, name, any_results=any_results, pve_results=[])
             price_markup = _format_log_offer_v2(any_results[0] if any_results else None)
             text = (
-                f"?? <b>???. ?????: {name}</b>\n\n"
-                f"?? ???. ????: <b>{price_markup}</b>"
+                f"💰 <b>Мін. прайс: {name}</b>\n\n"
+                f"📉 Мин. цена: <b>{price_markup}</b>"
             )
-            history_button = InlineKeyboardButton("?? ??????? ???", callback_data=f"set:hist:{history_item_type}:{item_id}:{history_mode}:0:mp")
-            show3_button = InlineKeyboardButton("?? ???????? ???", callback_data=f"set:minprice:show3:{item_type}:{item_id}")
+            history_button = InlineKeyboardButton("📈 История цен", callback_data=f"set:hist:{history_item_type}:{item_id}:{history_mode}:0:mp")
+            show3_button = InlineKeyboardButton("📋 Показать ещё", callback_data=f"set:minprice:show3:{item_type}:{item_id}")
 
         repeat_cb = (
             "set:minprice:pveconfirmed" if item_type == 'pveconfirmed' else
@@ -3121,10 +3121,10 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         else:
             back_cb = "set:check:minprice:pve" if item_type in ('pveconfirmed', 'pveunconfirmed', 'ed') else "set:check:minprice:skins"
         keyboard = [
-            [InlineKeyboardButton("?? ?????????", callback_data=repeat_cb)],
+            [InlineKeyboardButton("🔄 Повторить", callback_data=repeat_cb)],
             [show3_button],
             [history_button],
-            [InlineKeyboardButton("?? ?????", callback_data=back_cb), InlineKeyboardButton("?? ??????? ????", callback_data="set:main")],
+            [InlineKeyboardButton("🔙 Назад", callback_data=back_cb), InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
         bot_mode['mode'] = 'standard'
@@ -3153,8 +3153,8 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             ret_marker = parts[3] if len(parts) > 3 else '0'
             config.confirmed_pve_enabled = not config.confirmed_pve_enabled
             await query.answer(
-                f"{'?' if config.confirmed_pve_enabled else '?'} {_confirmed_pve_title()}: "
-                f"{'???????' if config.confirmed_pve_enabled else '????????'}"
+                f"{'✅' if config.confirmed_pve_enabled else '⛔'} {_confirmed_pve_title()}: "
+                f"{'включен' if config.confirmed_pve_enabled else 'выключен'}"
             )
             if ret_marker == 'd':
                 detail_page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else context.user_data.get('skins_last_page', 0)
@@ -3171,18 +3171,18 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 _set_input_return(
                     context,
                     f"set:skins:pvdetail:{detail_page}",
-                    f"?? ????? ? {_confirmed_pve_title()}",
-                    extra_buttons=[("?? ? PVE", f"set:skins:pvelist:{detail_page}")]
+                    f"🔙 Назад к {_confirmed_pve_title()}",
+                    extra_buttons=[("🧟 К PVE", f"set:skins:pvelist:{detail_page}")]
                 )
             else:
                 ret_page = int(ret_marker) if ret_marker.isdigit() else 0
-                _set_input_return(context, f"set:skins:pvelist:{ret_page}", "?? ? PVE")
+                _set_input_return(context, f"set:skins:pvelist:{ret_page}", "🔙 К PVE")
             await query.edit_message_text(
-                f"?? <b>??????? ????? ???? ??? {_confirmed_pve_title()}</b>\n\n"
-                f"???????: {config.confirmed_pve_price}?\n"
-                f"????????? ????? ??? ??????? ?????? ????:",
+                f"💸 <b>Введите новую цену для {_confirmed_pve_title()}</b>\n\n"
+                f"Текущая: {config.confirmed_pve_price}₽\n"
+                f"Отправьте число или нажмите кнопку ниже:",
                 parse_mode='HTML',
-                reply_markup=_get_input_return_markup(context, "set:skins:pvelist:0", "?? ? PVE")
+                reply_markup=_get_input_return_markup(context, "set:skins:pvelist:0", "🔙 К PVE")
             )
 
         elif action == 'toggle':
@@ -3190,7 +3190,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             new_state = config.toggle_skin(skin_id)
             if new_state is not None:
                 name = skin_id.replace('_', ' ').title()
-                await query.answer(f"{'?' if new_state else '?'} {name}: {'???????' if new_state else '????????'}")
+                await query.answer(f"{'✅' if new_state else '⛔'} {name}: {'включён' if new_state else 'выключен'}")
             if len(parts) > 4 and parts[4] == 'd':
                 await _show_skin_detail(query, context, skin_id, context.user_data.get('skins_last_page', 0))
             else:
@@ -3206,7 +3206,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             new_state = config.toggle_skin_pve(skin_id)
             if new_state is not None:
                 name = skin_id.replace('_', ' ').title()
-                await query.answer(f"{'??' if new_state else '??'} {name}: {'?????? PVE' if new_state else '??? ??????? PVE'}")
+                await query.answer(f"{'🧟' if new_state else '🔒'} {name}: {'только PVE' if new_state else 'без фильтра PVE'}")
             if ret_marker == 'd':
                 await _show_skin_detail(query, context, skin_id, context.user_data.get('skins_last_page', 0))
             else:
@@ -3219,7 +3219,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             for sid in all_skins:
                 all_skins[sid]['require_pve'] = new_val
             config.save()
-            await query.answer("? ??? ???? ??????? PVE" if new_val else "?? ??? ???? ???????? PVE")
+            await query.answer("✅ Для всех включён PVE" if new_val else "🔒 Для всех отключён PVE")
             await _show_skins_list(query, context, ret_page)
 
         elif action == 'alltoggle':
@@ -3229,7 +3229,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             for sid in all_skins:
                 all_skins[sid]['enabled'] = new_val
             config.save()
-            await query.answer("? ??? ????? ????????" if new_val else "? ??? ????? ?????????")
+            await query.answer("✅ Все скины включены" if new_val else "⛔ Все скины выключены")
             await _show_skins_list(query, context, ret_page)
 
         elif action == 'edtoggle':
@@ -3239,7 +3239,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 ed['enabled'] = not ed.get('enabled', True)
                 config.save()
                 name = eid.replace('_', ' ').title()
-                await query.answer(f"{'?' if ed['enabled'] else '?'} {name}: {'????????' if ed['enabled'] else '?????????'}")
+                await query.answer(f"{'✅' if ed['enabled'] else '⛔'} {name}: {'включено' if ed['enabled'] else 'выключено'}")
             await _show_pve_positions_list(query, context, int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0)
 
         elif action == 'edprice':
@@ -3247,33 +3247,33 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             ret_page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
             context.user_data['editing_edition_id'] = eid
             context.user_data['input_state'] = INPUT_RECHECK_ED_PRICE
-            _set_input_return(context, f"set:skins:pvelist:{ret_page}", "?? ? PVE")
+            _set_input_return(context, f"set:skins:pvelist:{ret_page}", "🔙 К PVE")
             ed = config.get_edition(eid) or {}
             name = eid.replace('_', ' ').title()
             await query.edit_message_text(
-                f"?? <b>??????? ????? ???? ??? {name}</b>\n\n???????: {ed.get('price', 0)}?\n????????? ????? ??? ??????? ?????? ????:",
+                f"💸 <b>Введите новую цену для {name}</b>\n\nТекущая: {ed.get('price', 0)}₽\nОтправьте число или нажмите кнопку ниже:",
                 parse_mode='HTML',
-                reply_markup=_get_input_return_markup(context, f"set:skins:pvelist:{ret_page}", "?? ? PVE")
+                reply_markup=_get_input_return_markup(context, f"set:skins:pvelist:{ret_page}", "🔙 К PVE")
             )
 
         elif action == 'edkw':
             eid = parts[3]
             ed = config.get_edition(eid)
             if not ed:
-                await query.answer("??????? ?? ???????")
+                await query.answer("Издание не найдено")
                 return
             name = eid.replace('_', ' ').title()
             keywords = ed.get('keywords', [])
-            text = f"?? <b>???????? ?????: ?? {name}</b>\n\n?????: {len(keywords)}"
+            text = f"✏️ <b>Ключевые слова: 🏆 {name}</b>\n\nВсего: {len(keywords)}"
             keyboard = []
             for i, kw in enumerate(keywords):
                 row = [InlineKeyboardButton(f"{i + 1}. {kw}", callback_data='set:noop')]
                 if len(keywords) > 1:
-                    row.append(InlineKeyboardButton("??", callback_data=f"set:skins:edkwdel:{eid}:{i}"))
+                    row.append(InlineKeyboardButton("🗑", callback_data=f"set:skins:edkwdel:{eid}:{i}"))
                 keyboard.append(row)
-            keyboard.append([InlineKeyboardButton("?? ??????? ???", callback_data=f"set:hist:edition:{eid}:all:0:ek")])
-            keyboard.append([InlineKeyboardButton("? ???????? ?????", callback_data=f"set:skins:edkwadd:{eid}")])
-            keyboard.append([InlineKeyboardButton("?? ? PVE", callback_data='set:skins:pvelist:0'), InlineKeyboardButton("?? ??????? ????", callback_data='set:main')])
+            keyboard.append([InlineKeyboardButton("📈 История цен", callback_data=f"set:hist:edition:{eid}:all:0:ek")])
+            keyboard.append([InlineKeyboardButton("➕ Добавить слово", callback_data=f"set:skins:edkwadd:{eid}")])
+            keyboard.append([InlineKeyboardButton("🔙 К PVE", callback_data='set:skins:pvelist:0'), InlineKeyboardButton("🏠 Главное меню", callback_data='set:main')])
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
         elif action == 'edkwdel':
@@ -3285,9 +3285,9 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 if 0 <= kw_index < len(keywords) and len(keywords) > 1:
                     removed = keywords.pop(kw_index)
                     config.save()
-                    await query.answer(f"?? ???????: {removed}")
+                    await query.answer(f"🗑 Удалено: {removed}")
                 else:
-                    await query.answer("?????? ??????? ????????? ?????", show_alert=True)
+                    await query.answer("Нельзя удалить последнее слово", show_alert=True)
             await handle_settings_callback(update, context)
             return
 
@@ -3296,12 +3296,12 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             context.user_data['editing_edition_id'] = eid
             context.user_data['editing_skin_id'] = f'ed:{eid}'
             context.user_data['input_state'] = INPUT_SKIN_KEYWORDS
-            _set_input_return(context, f"set:skins:edkw:{eid}", "?? ? ?????? ???????")
+            _set_input_return(context, f"set:skins:edkw:{eid}", "🔙 К словам издания")
             name = eid.replace('_', ' ').title()
             await query.edit_message_text(
-                f"?? <b>???????? ????? ??? ??????? {name}</b>\n\n????????? ????? ????? ??? ??????? ?????? ????:",
+                f"✏️ <b>Добавить слово для издания {name}</b>\n\nОтправьте новое слово или нажмите кнопку ниже:",
                 parse_mode='HTML',
-                reply_markup=_get_input_return_markup(context, f"set:skins:edkw:{eid}", "?? ? ?????? ???????")
+                reply_markup=_get_input_return_markup(context, f"set:skins:edkw:{eid}", "🔙 К словам издания")
             )
 
         elif action == 'price':
@@ -3317,17 +3317,17 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 _set_input_return(
                     context,
                     f"set:skins:detail:{skin_id}:{detail_page}",
-                    f"?? ????? ? {name}",
-                    extra_buttons=[("?? ? ??????", list_cb)]
+                    f"🔙 Назад к {name}",
+                    extra_buttons=[("📋 К списку", list_cb)]
                 )
-                back_cb, back_label = f"set:skins:detail:{skin_id}:{detail_page}", f"?? ????? ? {name}"
+                back_cb, back_label = f"set:skins:detail:{skin_id}:{detail_page}", f"🔙 Назад к {name}"
             else:
                 ret_page = int(parts[5]) if len(parts) > 5 and parts[4] == 'list' and parts[5].isdigit() else 0
                 context.user_data['skins_last_page'] = ret_page
-                _set_input_return(context, f"set:skins:list:{ret_page}", "?? ? ??????")
-                back_cb, back_label = f"set:skins:list:{ret_page}", "?? ? ??????"
+                _set_input_return(context, f"set:skins:list:{ret_page}", "🔙 К списку")
+                back_cb, back_label = f"set:skins:list:{ret_page}", "🔙 К списку"
             await query.edit_message_text(
-                f"?? <b>??????? ????? ???? ??? {name}</b>\n\n???????: {skin.get('price', 0)}?\n????????? ????? ??? ??????? ?????? ????:",
+                f"💸 <b>Введите новую цену для {name}</b>\n\nТекущая: {skin.get('price', 0)}₽\nОтправьте число или нажмите кнопку ниже:",
                 parse_mode='HTML',
                 reply_markup=_get_input_return_markup(context, back_cb, back_label)
             )
@@ -3339,46 +3339,46 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             skin_id = parts[3]
             removed = config.remove_skin_keyword(skin_id, int(parts[4]) if len(parts) > 4 else -1)
             if removed:
-                await query.answer(f"?? ???????: {removed}")
+                await query.answer(f"🗑 Удалено: {removed}")
             else:
-                await query.answer("?????? ??????? ????????? ?????", show_alert=True)
+                await query.answer("Нельзя удалить последнее слово", show_alert=True)
             await _show_skin_keywords(query, context, skin_id)
 
         elif action == 'kwadd':
             skin_id = parts[3]
             context.user_data['editing_skin_id'] = skin_id
             context.user_data['input_state'] = INPUT_SKIN_KEYWORDS
-            _set_input_return(context, f"set:skins:kw:{skin_id}", "?? ? ?????? ?????")
+            _set_input_return(context, f"set:skins:kw:{skin_id}", "🔙 К словам скина")
             name = skin_id.replace('_', ' ').title()
             await query.edit_message_text(
-                f"?? <b>???????? ???????? ????? ? {name}</b>\n\n????????? ????? ????? ??? ??????? ?????? ????:",
+                f"✏️ <b>Добавить ключевое слово в {name}</b>\n\nОтправьте новое слово или нажмите кнопку ниже:",
                 parse_mode='HTML',
-                reply_markup=_get_input_return_markup(context, f"set:skins:kw:{skin_id}", "?? ? ?????? ?????")
+                reply_markup=_get_input_return_markup(context, f"set:skins:kw:{skin_id}", "🔙 К словам скина")
             )
 
         elif action == 'del':
             skin_id = parts[3]
             name = skin_id.replace('_', ' ').title()
-            keyboard = [[InlineKeyboardButton("?? ??, ???????", callback_data=f"set:skins:delok:{skin_id}"), InlineKeyboardButton("?? ???", callback_data=f"set:skins:detail:{skin_id}")]]
-            await query.edit_message_text(f"?? <b>??????? {name}?</b>\n\n??? ???????? ??????????.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+            keyboard = [[InlineKeyboardButton("🗑 Да, удалить", callback_data=f"set:skins:delok:{skin_id}"), InlineKeyboardButton("🔙 Нет", callback_data=f"set:skins:detail:{skin_id}")]]
+            await query.edit_message_text(f"🗑 <b>Удалить {name}?</b>\n\nЭто действие необратимо.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
         elif action == 'delok':
             skin_id = parts[3]
             name = skin_id.replace('_', ' ').title()
             if config.delete_skin(skin_id):
-                await query.answer(f"?? {name} ??????", show_alert=True)
+                await query.answer(f"🗑 {name} удалён", show_alert=True)
             await _show_skins_list(query, context, 0)
 
         elif action == 'add':
             context.user_data['input_state'] = INPUT_NEW_SKIN_ID
-            _set_input_return(context, 'set:skins:list:0', '?? ? ??????')
+            _set_input_return(context, 'set:skins:list:0', '🔙 К списку')
             await query.edit_message_text(
-                "? <b>?????????? ?????? ?????</b>\n\n"
-                "??? 1/3: ????????? <b>ID</b> ????? (eng, ????? _, ??? ????????)\n"
-                "??????: <code>galaxy_scout</code>\n\n"
-                "??? ??????? ?????? ????:",
+                "➕ <b>Добавление нового скина</b>\n\n"
+                "Шаг 1/3: отправьте <b>ID</b> скина (eng, можно _, без пробелов)\n"
+                "Пример: <code>galaxy_scout</code>\n\n"
+                "Или нажмите кнопку ниже:",
                 parse_mode='HTML',
-                reply_markup=_get_input_return_markup(context, 'set:skins:list:0', '?? ? ??????')
+                reply_markup=_get_input_return_markup(context, 'set:skins:list:0', '🔙 К списку')
             )
 
     # === PVE ===
@@ -3400,21 +3400,21 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                     config.remove_confirmed_pve(kw)
                 else:
                     config.remove_unconfirmed_pve(kw)
-                await query.answer(f"???????: {kw}")
+                await query.answer(f"Удалено: {kw}")
             await _show_pve_keywords(query, context, pve_type, page)
         elif action == 'add':
             pve_type = parts[3] if len(parts) > 3 else 'conf'
             context.user_data['input_state'] = INPUT_PVE_KEYWORD
             context.user_data['pve_type'] = pve_type
-            label = '??????????????' if pve_type == 'conf' else '????????????????'
+            label = 'подтвержденное' if pve_type == 'conf' else 'неподтвержденное'
             await query.edit_message_text(
-                f"? <b>???????? {label} PVE-?????</b>\n\n????????? ????? ??? /cancel:",
+                f"➕ <b>Добавить {label} PVE-слово</b>\n\nОтправьте слово или /cancel:",
                 parse_mode='HTML'
             )
         elif action == 'bonus':
             context.user_data['input_state'] = INPUT_PVE_BONUS
-            _set_input_return(context, 'set:pve:menu', '?? ? PVE')
-            await query.edit_message_text(f"?? <b>PVE ?????</b>\n\n???????: {config.pve_bonus}?\n\n????????? ????? ???????? ??? /cancel:", parse_mode='HTML')
+            _set_input_return(context, 'set:pve:menu', '🔙 К PVE')
+            await query.edit_message_text(f"💸 <b>PVE бонус</b>\n\nТекущий: {config.pve_bonus}₽\n\nОтправьте новое значение или /cancel:", parse_mode='HTML')
 
     # === Prices ===
     elif parts[1] == 'prices':
@@ -3426,29 +3426,29 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         param = parts[2]
         if param == 'max_price':
             context.user_data['input_state'] = INPUT_MAX_PRICE
-            _set_input_return(context, 'set:prices:menu', '?? ? ?????')
-            await query.edit_message_text(f"?? <b>????. ????</b>\n\n???????: {config.max_price}?\n\n????????? ????? ??? /cancel:", parse_mode='HTML')
+            _set_input_return(context, 'set:prices:menu', '🔙 К ценам')
+            await query.edit_message_text(f"💸 <b>Макс. цена</b>\n\nТекущая: {config.max_price}₽\n\nОтправьте число или /cancel:", parse_mode='HTML')
         elif param == 'confirmed_pve_price':
             context.user_data['input_state'] = INPUT_CONFIRMED_PVE_PRICE
-            _set_input_return(context, 'set:prices:menu', '?? ? ?????')
+            _set_input_return(context, 'set:prices:menu', '🔙 К ценам')
             await query.edit_message_text(
-                f"?? <b>???? ??? ??????????????? PVE</b>\n\n"
-                f"???????: {config.confirmed_pve_price}?\n\n"
-                "????????? ????? ??? /cancel:",
+                f"🛡 <b>Цена для подтверждённого PVE</b>\n\n"
+                f"Текущая: {config.confirmed_pve_price}₽\n\n"
+                "Отправьте число или /cancel:",
                 parse_mode='HTML'
             )
         elif param == 'pve_bonus':
             context.user_data['input_state'] = INPUT_PVE_BONUS
-            _set_input_return(context, 'set:prices:menu', '?? ? ?????')
-            await query.edit_message_text(f"?? <b>PVE ?????</b>\n\n???????: {config.pve_bonus}?\n\n????????? ????? ??? /cancel:", parse_mode='HTML')
+            _set_input_return(context, 'set:prices:menu', '🔙 К ценам')
+            await query.edit_message_text(f"💸 <b>PVE бонус</b>\n\nТекущий: {config.pve_bonus}₽\n\nОтправьте число или /cancel:", parse_mode='HTML')
         elif param == 'interval':
             context.user_data['input_state'] = INPUT_CHECK_INTERVAL
-            _set_input_return(context, 'set:prices:menu', '?? ? ?????')
-            await query.edit_message_text(f"? <b>???????? ????????</b>\n\n???????: {config.check_interval} ???\n\n????????? ????? ??? /cancel:", parse_mode='HTML')
+            _set_input_return(context, 'set:prices:menu', '🔙 К ценам')
+            await query.edit_message_text(f"⏱ <b>Интервал проверки</b>\n\nТекущий: {config.check_interval} сек\n\nОтправьте число или /cancel:", parse_mode='HTML')
         elif param == 'delay':
             context.user_data['input_state'] = INPUT_DELAY_MIN
-            _set_input_return(context, 'set:prices:menu', '?? ? ?????')
-            await query.edit_message_text(f"?? <b>???????? ????????</b>\n\n???????: {config.request_delay_min}-{config.request_delay_max} ???\n\n????????? ??????????? ???????? ??? /cancel:", parse_mode='HTML')
+            _set_input_return(context, 'set:prices:menu', '🔙 К ценам')
+            await query.edit_message_text(f"🐢 <b>Задержка запросов</b>\n\nТекущая: {config.request_delay_min}-{config.request_delay_max} сек\n\nОтправьте минимальную задержку или /cancel:", parse_mode='HTML')
 
     # === Filters ===
     elif parts[1] == 'filters':
@@ -3459,20 +3459,20 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             unconf_count = len(config.get_unconfirmed_pve())
             banned_count = len(_get_banned_ids(context))
             text = (
-                "?? <b>???????</b>\n\n"
-                f"?? ????? ??? ?????: {exclude_count}\n"
-                f"? PVE ?????.: {conf_count}\n"
-                f"? PVE ???????.: {unconf_count}\n\n"
-                "???????? ??????:"
+                "🚫 <b>Фильтры</b>\n\n"
+                f"📝 Фразы без почты: {exclude_count}\n"
+                f"✅ PVE подтв.: {conf_count}\n"
+                f"❓ PVE неподтв.: {unconf_count}\n\n"
+                "Выберите раздел:"
             )
             keyboard = [
-                [InlineKeyboardButton(f"?? ????? ??? ????? ({exclude_count})", callback_data='set:filters:list:0')],
-                [InlineKeyboardButton(f"? PVE ?????. ({conf_count})", callback_data='set:pve:conf:0')],
-                [InlineKeyboardButton(f"? PVE ???????. ({unconf_count})", callback_data='set:pve:unconf:0')],
-                [InlineKeyboardButton('?? ??????? ????', callback_data='set:main')],
+                [InlineKeyboardButton(f"📝 Фразы без почты ({exclude_count})", callback_data='set:filters:list:0')],
+                [InlineKeyboardButton(f"✅ PVE подтв. ({conf_count})", callback_data='set:pve:conf:0')],
+                [InlineKeyboardButton(f"❓ PVE неподтв. ({unconf_count})", callback_data='set:pve:unconf:0')],
+                [InlineKeyboardButton('🏠 Главное меню', callback_data='set:main')],
             ]
-            text += f"\n?? ?????????? ????: {banned_count}"
-            keyboard.insert(-1, [InlineKeyboardButton(f"?? ?????????? ({banned_count})", callback_data='set:ban:list:0')])
+            text += f"\n🚷 Забаненные лоты: {banned_count}"
+            keyboard.insert(-1, [InlineKeyboardButton(f"🚷 Забаненные ({banned_count})", callback_data='set:ban:list:0')])
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         elif action == 'list':
             page = int(parts[3]) if len(parts) > 3 else 0
@@ -3484,9 +3484,9 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             await _show_banned_list(query, context, page)
         elif action == 'add':
             context.user_data['input_state'] = INPUT_BANNED_LINK
-            _set_input_return(context, 'set:ban:list:0', '?? ? ???-?????')
+            _set_input_return(context, 'set:ban:list:0', '🔙 К бан-листу')
             await query.edit_message_text(
-                '?? <b>???????? ? ???</b>\n\n????????? ?????? ?? ??? ??? ID ????.\n\n??????:\n<code>https://funpay.com/lots/offer?id=65475872</code>\n\n??? /cancel',
+                '🚷 <b>Добавить в бан</b>\n\nОтправьте ссылку на лот или ID лота.\n\nПример:\n<code>https://funpay.com/lots/offer?id=65475872</code>\n\nИли /cancel',
                 parse_mode='HTML'
             )
         elif action == 'rm':
@@ -3496,14 +3496,14 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             if offer_id in banned_ids:
                 banned_ids.remove(offer_id)
                 _save_banned_ids(context)
-                await query.answer(f"????? ?? ????: {offer_id}")
+                await query.answer(f"Убран из бана: {offer_id}")
             else:
-                await query.answer("??? ??? ????? ?? ????")
+                await query.answer("Лот уже убран из бана")
             await _show_banned_list(query, context, page)
         elif action == 'clear':
             _get_banned_ids(context).clear()
             _save_banned_ids(context)
-            await query.answer("???-???? ??????")
+            await query.answer("Бан-лист очищен")
             await _show_banned_list(query, context, 0)
     elif parts[1] == 'filt':
         if parts[2] == 'rm':
@@ -3513,13 +3513,13 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             if 0 <= idx < len(keywords):
                 kw = keywords[idx]
                 config.remove_exclude_keyword(kw)
-                await query.answer(f"???????: {kw[:30]}")
+                await query.answer(f"Удалено: {kw[:30]}")
             await _show_filters_list(query, context, page)
         elif parts[2] == 'add':
             context.user_data['input_state'] = INPUT_EXCLUDE_KEYWORD
-            _set_input_return(context, 'set:filters:list:0', '?? ? ????????')
+            _set_input_return(context, 'set:filters:list:0', '🔙 К фильтрам')
             await query.edit_message_text(
-                '? <b>???????? ?????-??????</b>\n\n????????? ????? ??? /cancel:',
+                '➕ <b>Добавить фразу-фильтр</b>\n\nОтправьте фразу или /cancel:',
                 parse_mode='HTML'
             )
 
@@ -3529,7 +3529,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 # ==============================
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """???????????? ????????? ???? ???????????? ? ???? ????????."""
+    """Обрабатывает текстовый ввод пользователя в меню настроек."""
     if not _check_auth(update, context):
         return
 
@@ -3549,7 +3549,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop('new_skin_price', None)
         context.user_data.pop('recheck_rare_price', None)
         context.user_data.pop('recheck_direct_unconfirmed_pve', None)
-        await update.message.reply_text('?? ????????.', reply_markup=_pop_input_return_markup(context, 'set:main', '?? ?????'))
+        await update.message.reply_text('↩️ Отменено.', reply_markup=_pop_input_return_markup(context, 'set:main', '🔙 Назад'))
         return
 
     if state == INPUT_SKIN_PRICE:
@@ -3558,19 +3558,19 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if price <= 0:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????????????? ????? ??? /cancel:')
+            await update.message.reply_text('❌ Введите положительное число или /cancel:')
             return
         skin_id = context.user_data.get('editing_skin_id')
         name = skin_id.replace('_', ' ').title()
         config.set_skin_price(skin_id, price)
         context.user_data.pop('input_state', None)
         context.user_data.pop('editing_skin_id', None)
-        await update.message.reply_text(f'? ???? {name}: {price}?', reply_markup=_pop_input_return_markup(context, 'set:skins:list:0', '?? ? ??????'))
+        await update.message.reply_text(f'✅ Цена {name}: {price}₽', reply_markup=_pop_input_return_markup(context, 'set:skins:list:0', '🔙 К списку'))
 
     elif state == INPUT_SKIN_KEYWORDS:
         keyword = text.strip().lower()
         if not keyword:
-            await update.message.reply_text('? ??????? ????? ??? /cancel:')
+            await update.message.reply_text('❌ Введите слово или /cancel:')
             return
         skin_id = context.user_data.get('editing_skin_id')
         context.user_data.pop('input_state', None)
@@ -3581,19 +3581,19 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if ed and keyword not in ed.get('keywords', []):
                 ed.setdefault('keywords', []).append(keyword)
                 config.save()
-            await update.message.reply_text(f'? ????? ?????????: {keyword}', reply_markup=_pop_input_return_markup(context, f'set:skins:edkw:{eid}', '?? ? ?????? ???????'))
+            await update.message.reply_text(f'✅ Слово сохранено: {keyword}', reply_markup=_pop_input_return_markup(context, f'set:skins:edkw:{eid}', '🔙 К словам издания'))
         else:
             config.add_skin_keyword(skin_id, keyword)
-            await update.message.reply_text(f'? ????? ?????????: {keyword}', reply_markup=_pop_input_return_markup(context, f'set:skins:kw:{skin_id}', '?? ? ?????? ?????'))
+            await update.message.reply_text(f'✅ Слово сохранено: {keyword}', reply_markup=_pop_input_return_markup(context, f'set:skins:kw:{skin_id}', '🔙 К словам скина'))
 
     elif state == INPUT_NEW_SKIN_ID:
         skin_id = text.lower().replace(' ', '_')
         if config.get_skin(skin_id):
-            await update.message.reply_text('? ????? ID ??? ??????????. ??????? ?????? ??? /cancel:')
+            await update.message.reply_text('❌ Такой ID уже существует. Введите другой или /cancel:')
             return
         context.user_data['new_skin_id'] = skin_id
         context.user_data['input_state'] = INPUT_NEW_SKIN_PRICE
-        await update.message.reply_text(f'?? ID ????????: <code>{skin_id}</code>\n\n??? 2/3: ??????? ???? ? ?', parse_mode='HTML')
+        await update.message.reply_text(f'🆔 ID сохранён: <code>{skin_id}</code>\n\nШаг 2/3: введите цену в ₽', parse_mode='HTML')
 
     elif state == INPUT_NEW_SKIN_PRICE:
         try:
@@ -3601,16 +3601,16 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if price <= 0:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????????????? ????? ??? /cancel:')
+            await update.message.reply_text('❌ Введите положительное число или /cancel:')
             return
         context.user_data['new_skin_price'] = price
         context.user_data['input_state'] = INPUT_NEW_SKIN_KEYWORDS
-        await update.message.reply_text(f'?? ????: {price}?\n\n??? 3/3: ??????? ???????? ????? ????? ???????')
+        await update.message.reply_text(f'💸 Цена: {price}₽\n\nШаг 3/3: введите ключевые слова через запятую')
 
     elif state == INPUT_NEW_SKIN_KEYWORDS:
         keywords = [kw.strip() for kw in text.split(',') if kw.strip()]
         if not keywords:
-            await update.message.reply_text('? ??????? ???? ?? ???? ???????? ????? ??? /cancel:')
+            await update.message.reply_text('❌ Введите хотя бы одно ключевое слово или /cancel:')
             return
         skin_id = context.user_data.get('new_skin_id')
         price = context.user_data.get('new_skin_price')
@@ -3618,7 +3618,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop('input_state', None)
         context.user_data.pop('new_skin_id', None)
         context.user_data.pop('new_skin_price', None)
-        await update.message.reply_text('? ???? ????????.', reply_markup=_pop_input_return_markup(context, 'set:skins:list:0', '?? ? ??????'))
+        await update.message.reply_text('✅ Скин добавлен.', reply_markup=_pop_input_return_markup(context, 'set:skins:list:0', '🔙 К списку'))
 
     elif state == INPUT_PVE_KEYWORD:
         keyword = text.lower().strip()
@@ -3629,17 +3629,17 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             config.add_unconfirmed_pve(keyword)
         context.user_data.pop('input_state', None)
         context.user_data.pop('pve_type', None)
-        await update.message.reply_text(f'? PVE-????? ?????????: {keyword}', reply_markup=_pop_input_return_markup(context, 'set:pve:menu', '?? ? PVE'))
+        await update.message.reply_text(f'✅ PVE-слово сохранено: {keyword}', reply_markup=_pop_input_return_markup(context, 'set:pve:menu', '🔙 К PVE'))
 
     elif state == INPUT_EXCLUDE_KEYWORD:
         config.add_exclude_keyword(text)
         context.user_data.pop('input_state', None)
-        await update.message.reply_text(f'? ????? ?????????: {text}', reply_markup=_pop_input_return_markup(context, 'set:filters:list:0', '?? ? ????????'))
+        await update.message.reply_text(f'✅ Фраза добавлена: {text}', reply_markup=_pop_input_return_markup(context, 'set:filters:list:0', '🔙 К фильтрам'))
 
     elif state == INPUT_BANNED_LINK:
         offer_id = _extract_offer_id(text)
         if not offer_id:
-            await update.message.reply_text('? ????????? ?????? ?? ??? FunPay ??? ID. ??? /cancel:')
+            await update.message.reply_text('❌ Отправьте ссылку на лот FunPay или ID. Или /cancel:')
             return
         banned_ids = _get_banned_ids(context)
         already_banned = offer_id in banned_ids
@@ -3648,11 +3648,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop('input_state', None)
         await update.message.reply_text(
             (
-                f'?? ??? ???????? ? ???: {offer_id}'
+                f'🚫 Лот добавлен в бан: {offer_id}'
                 if not already_banned else
-                f'?? ??? ??? ??? ? ????: {offer_id}'
+                f'🚫 Лот уже был в бане: {offer_id}'
             ),
-            reply_markup=_pop_input_return_markup(context, 'set:ban:list:0', '?? ? ???-?????')
+            reply_markup=_pop_input_return_markup(context, 'set:ban:list:0', '🔙 К бан-листу')
         )
 
     elif state == INPUT_MAX_PRICE:
@@ -3661,11 +3661,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if val <= 0:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????????????? ????? ??? /cancel:')
+            await update.message.reply_text('❌ Введите положительное число или /cancel:')
             return
         config.max_price = val
         context.user_data.pop('input_state', None)
-        await update.message.reply_text(f'? ????. ????: {val}?', reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '?? ? ?????'))
+        await update.message.reply_text(f'✅ Макс. цена: {val}₽', reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '🔙 К ценам'))
 
     elif state == INPUT_CONFIRMED_PVE_PRICE:
         try:
@@ -3673,7 +3673,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if val <= 0:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????????????? ????? ??? /cancel:')
+            await update.message.reply_text('❌ Введите положительное число или /cancel:')
             return
         context.user_data.pop('input_state', None)
         if context.user_data.pop('editing_confirmed_pve_custom', None):
@@ -3685,15 +3685,15 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['recheck_confirmed_pve'] = rc_pve
             context.user_data['custom_recheck_mode'] = 'confirmed_pve'
             await update.message.reply_text(
-                f'? ???? {_confirmed_pve_title()}: {val}?',
-                reply_markup=_pop_input_return_markup(context, 'set:recheck:cmpve', '?? ?????')
+                f'✅ Цена {_confirmed_pve_title()}: {val}₽',
+                reply_markup=_pop_input_return_markup(context, 'set:recheck:cmpve', '🔙 Назад')
             )
         else:
             config.confirmed_pve_price = val
             context.user_data.pop('editing_confirmed_pve', None)
             await update.message.reply_text(
-                f'? ???? ??????????????? PVE: {val}?',
-                reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '?? ? ?????')
+                f'✅ Цена подтверждённого PVE: {val}₽',
+                reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '🔙 К ценам')
             )
 
     elif state == INPUT_PVE_BONUS:
@@ -3702,11 +3702,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if val <= 0:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????????????? ????? ??? /cancel:')
+            await update.message.reply_text('❌ Введите положительное число или /cancel:')
             return
         config.pve_bonus = val
         context.user_data.pop('input_state', None)
-        await update.message.reply_text(f'? PVE ?????: {val}?', reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '?? ? ?????'))
+        await update.message.reply_text(f'✅ PVE бонус: {val}₽', reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '🔙 К ценам'))
 
     elif state == INPUT_CHECK_INTERVAL:
         try:
@@ -3714,11 +3714,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if val < 30:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????? ?? ?????? 30 ??? /cancel:')
+            await update.message.reply_text('❌ Введите число не меньше 30 или /cancel:')
             return
         config.check_interval = val
         context.user_data.pop('input_state', None)
-        await update.message.reply_text(f'? ???????? ????????: {val} ???', reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '?? ? ?????'))
+        await update.message.reply_text(f'✅ Интервал проверки: {val} сек', reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '🔙 К ценам'))
 
     elif state == INPUT_DELAY_MIN:
         try:
@@ -3726,11 +3726,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if val < 1:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????? ?? ?????? 1 ??? /cancel:')
+            await update.message.reply_text('❌ Введите число не меньше 1 или /cancel:')
             return
         config.request_delay_min = val
         context.user_data['input_state'] = INPUT_DELAY_MAX
-        await update.message.reply_text(f'? ???. ????????: {val} ???\n\n?????? ??????? ???????????? ????????.')
+        await update.message.reply_text(f'✅ Мин. задержка: {val} сек\n\nТеперь введите максимальную задержку.')
 
     elif state == INPUT_DELAY_MAX:
         try:
@@ -3738,11 +3738,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if val < config.request_delay_min:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text(f'? ??????? ????? ?? ?????? {config.request_delay_min} ??? /cancel:')
+            await update.message.reply_text(f'❌ Введите число не меньше {config.request_delay_min} или /cancel:')
             return
         config.request_delay_max = val
         context.user_data.pop('input_state', None)
-        await update.message.reply_text(f'? ????????: {config.request_delay_min}-{val} ???', reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '?? ? ?????'))
+        await update.message.reply_text(f'✅ Задержка: {config.request_delay_min}-{val} сек', reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '🔙 К ценам'))
 
     elif state == INPUT_RECHECK_ED_PRICE:
         try:
@@ -3750,7 +3750,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if val <= 0:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????????????? ????? ??? /cancel:')
+            await update.message.reply_text('❌ Введите положительное число или /cancel:')
             return
         eid = context.user_data.pop('editing_edition_id', None)
         context.user_data.pop('input_state', None)
@@ -3759,7 +3759,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if ed:
                 ed['price'] = val
                 config.save()
-        await update.message.reply_text(f'? ???? ??????? ?????????: {val}?', reply_markup=_pop_input_return_markup(context, 'set:skins:list:0', '?? ? ??????'))
+        await update.message.reply_text(f'✅ Цена издания обновлена: {val}₽', reply_markup=_pop_input_return_markup(context, 'set:skins:list:0', '🔙 К списку'))
 
     elif state == INPUT_RECHECK_SKIN_PRICE:
         try:
@@ -3767,14 +3767,14 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if val <= 0:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????????????? ????? ??? /cancel:')
+            await update.message.reply_text('❌ Введите положительное число или /cancel:')
             return
         skin_id = context.user_data.pop('editing_recheck_skin', None)
         context.user_data.pop('input_state', None)
         rc_skins = context.user_data.get('recheck_skins', {})
         if skin_id and skin_id in rc_skins:
             rc_skins[skin_id]['price'] = val
-        await update.message.reply_text(f'? ???? ?????????: {val}?')
+        await update.message.reply_text(f'✅ Цена сохранена: {val}₽')
 
     elif state == INPUT_RECHECK_RARE:
         try:
@@ -3782,7 +3782,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if val < 0:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????? ?? ?????? 0 ??? /cancel:')
+            await update.message.reply_text('❌ Введите число не меньше 0 или /cancel:')
             return
         rc_skins = context.user_data.get('recheck_skins', {})
         if val > 0 and rc_skins:
@@ -3804,7 +3804,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if val < 0:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text('? ??????? ????????????? ????? ??? 0. ??? /cancel:')
+            await update.message.reply_text('❌ Введите положительное число или 0. Или /cancel:')
             return
         context.user_data.pop('input_state', None)
 
@@ -3816,11 +3816,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_mode['mode'] = 'recheck_pve'
             bot_mode['params'] = {
                 'restore_mode': config.search_mode,
-                'display_mode': '????????????: ???????. PVE',
-                'target_label': '???????. PVE',
+                'display_mode': 'Перепроверка: Неподтв. PVE',
+                'target_label': 'Неподтв. PVE',
                 'run_snapshot': build_snapshot_fn(
                     config,
-                    display_mode='???????. PVE',
+                    display_mode='Неподтв. PVE',
                     bot_mode_key='recheck_pve',
                     search_mode='skins_pve',
                     include_unconfirmed_pve=True,
@@ -3831,7 +3831,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
             bot_mode['started_at'] = time.time()
             await update.message.reply_text(
-                f'?? <b>????????????: ???????. PVE</b>\n\n?? ????. ????: {val}?\n? ????? ???????...',
+                f'🔓 <b>Перепроверка: неподтв. PVE</b>\n\n💸 Макс. цена: {val}₽\n⏳ Поиск запущен...',
                 parse_mode='HTML'
             )
             asyncio.create_task(_run_recheck_task(chat_id, context, process_fn, skip_seen=False, candidate_limit=None, include_unconfirmed_pve=True, max_price_override=val))
@@ -3841,26 +3841,26 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ==============================
-# ??????????? ?????????
+# РЕГИСТРАЦИЯ ХАНДЛЕРОВ
 # ==============================
 
 def register_settings_handlers(application, config, chat_id_ref, seen_ids_ref, banned_ids_ref):
-    """???????????? ??? ???????? ???????? ? ??????????."""
-    # ????????? config ? bot_data ??? ??????? ?? ?????????
+    """Регистрирует все хандлеры настроек в приложении."""
+    # Сохраняем config в bot_data для доступа из хандлеров
     application.bot_data['config'] = config
     application.bot_data['authorized_chat_id'] = chat_id_ref
     application.bot_data['seen_ids'] = seen_ids_ref
     application.bot_data['banned_ids'] = banned_ids_ref
     application.bot_data['send_recheck_result_message'] = _send_recheck_result_message
 
-    # ??????? /settings
+    # Команда /settings
     application.add_handler(CommandHandler("settings", settings_command))
 
-    # Callback handler ??? ???? ?????? set:*
+    # Callback handler для всех кнопок set:*
     application.add_handler(CallbackQueryHandler(handle_settings_callback, pattern=r'^set:'))
 
-    # ????????? ???? (????? ????? ????? ???? ???????? input_state)
+    # Текстовый ввод (ловим текст когда есть активное input_state)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         handle_text_input
-    ), group=1)  # group=1 ????? ?? ???????????? ? ??????? ??????????
+    ), group=1)  # group=1 чтобы не конфликтовал с другими хандлерами

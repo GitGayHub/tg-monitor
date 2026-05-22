@@ -8,4 +8,8 @@ if exist set_env.bat (
     exit /b 1
 )
 
-python run_launcher.py
+if exist .venv\Scripts\python.exe (
+    .venv\Scripts\python.exe launcher.py
+) else (
+    python launcher.py
+)
