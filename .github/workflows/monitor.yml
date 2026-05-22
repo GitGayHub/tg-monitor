@@ -33,8 +33,8 @@ jobs:
             NOW=$(date +%s)
             DIFF=$((NOW - LAST_EPOCH))
             echo "Last real run was ${DIFF}s ago"
-            if [ $DIFF -lt 500 ]; then
-              echo "Too soon (< 500s), skipping"
+            if [ $DIFF -lt 5 ]; then
+              echo "Too soon (< 5s), skipping"
               echo "skip=true" >> $GITHUB_OUTPUT
               exit 0
             fi
