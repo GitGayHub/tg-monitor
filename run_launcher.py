@@ -5,6 +5,11 @@ import os
 import signal
 import atexit
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 REPO = os.path.dirname(os.path.abspath(__file__))
 MONITOR = os.path.join(REPO, "monitor.py")
 LOCK_FILE = os.path.join(REPO, ".bot.lock")
@@ -22,11 +27,16 @@ _REPO_SAFE = REPO.replace("\\", "/")
 GIT_BASE = ["git", "-c", f"safe.directory={_REPO_SAFE}"]
 
 
-def git(*args, visible=False):
+def git(*args, visible=False, timeout=None):
     kwargs = {"cwd": REPO}
     if not visible:
         kwargs["capture_output"] = True
         kwargs.update(TEXT_KW)
+    if timeout:
+        kwargs["timeout"] = timeout
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    kwargs["env"] = env
     return subprocess.run(GIT_BASE + list(args), **kwargs)
 
 
@@ -191,7 +201,7 @@ def release_lock():
 
 
 def acquire_lock():
-    """Prevent multiple bot instances from running simultaneously."""
+    """Prevent multiple bot instances from running simultaneously. Kills stale ones."""
     if os.path.exists(LOCK_FILE):
         try:
             with open(LOCK_FILE, "r") as f:
@@ -199,9 +209,14 @@ def acquire_lock():
         except OSError:
             old_pid = ""
         if old_pid and old_pid != str(os.getpid()) and pid_alive(old_pid):
-            print(f"ERROR: bot already running (PID {old_pid}). Stop it before starting another copy.")
-            input("Press Enter to exit...")
-            sys.exit(2)
+            print(f"Stopping old bot process PID {old_pid}...")
+            try:
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/F", "/PID", old_pid], capture_output=True)
+                else:
+                    os.kill(int(old_pid), signal.SIGTERM)
+            except Exception as e:
+                print(f"WARNING: could not stop old process: {e}")
         try:
             os.remove(LOCK_FILE)
         except OSError:
@@ -260,13 +275,29 @@ def resolve_state_rebase():
 
 def sync_from_remote():
     print("=== [1/3] Pulling latest state from GitHub ===")
-    # Show remote URL
+    # Auto-fix remote URL: replace embedded stale token with GITHUB_TOKEN from env
+    gh_token = os.environ.get('GITHUB_TOKEN', '')
     remote_url = git("remote", "get-url", "origin")
-    if remote_url.returncode == 0 and remote_url.stdout.strip():
-        print(f"  Git remote: {remote_url.stdout.strip()}")
+    remote_str = (remote_url.stdout or "").strip()
+    if gh_token and remote_str:
+        import re
+        # Replace any embedded token (ghp_xxx or github_pat_xxx) with current one
+        fixed = re.sub(r'https://[^@]*@github\.com', f'https://{gh_token}@github.com', remote_str)
+        if fixed != remote_str:
+            print(f"  Fixing remote URL (old token -> new)...")
+            git("remote", "set-url", "origin", fixed)
+            remote_str = fixed
+    if remote_str:
+        # Show URL with masked token
+        masked = re.sub(r'(https://)[^@]*(@github\.com)', r'\1***\2', remote_str)
+        print(f"  Git remote: {masked}")
     else:
         print("  ⚠️ Git remote: not configured")
-    fetch = git("fetch", "--prune", visible=True)
+    try:
+        fetch = git("fetch", "--prune", visible=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        print("\n⚠️ WARNING: git fetch timed out — starting bot with local state.")
+        return
     if fetch.returncode != 0:
         print("\n⚠️ WARNING: git fetch failed — starting bot with local state.")
         return
@@ -276,11 +307,21 @@ def sync_from_remote():
 
     state_snapshot = protect_state_for_sync()
     try:
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"
         upstream = upstream_ref()
         if upstream:
-            result = subprocess.run(GIT_BASE + ["rebase", "--autostash", upstream], cwd=REPO)
+            try:
+                result = subprocess.run(GIT_BASE + ["rebase", "--autostash", upstream], cwd=REPO, env=env, timeout=60)
+            except subprocess.TimeoutExpired:
+                print("\n⚠️ WARNING: git rebase timed out — starting bot with local state.")
+                return
         else:
-            result = subprocess.run(GIT_BASE + ["pull", "--rebase", "--autostash"], cwd=REPO)
+            try:
+                result = subprocess.run(GIT_BASE + ["pull", "--rebase", "--autostash"], cwd=REPO, env=env, timeout=60)
+            except subprocess.TimeoutExpired:
+                print("\n⚠️ WARNING: git pull timed out — starting bot with local state.")
+                return
         if result.returncode != 0:
             if in_rebase():
                 print("INFO: state conflict during rebase, auto-resolving...")
@@ -300,6 +341,66 @@ def sync_from_remote():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 acquire_lock()
+
+# ═══ Pre-flight validation ═══
+print("=== [0/3] Validating tokens ===")
+import urllib.request, urllib.error, json as _json
+
+tg_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+if not tg_token:
+    print("FATAL: TELEGRAM_BOT_TOKEN not set in environment!")
+    print("Check set_env.bat — copy from set_env.example.bat and fill in real values.")
+    sys.exit(1)
+
+try:
+    req = urllib.request.Request(f"https://api.telegram.org/bot{tg_token}/getMe")
+    resp = urllib.request.urlopen(req, timeout=10)
+    data = _json.loads(resp.read())
+    if data.get("ok"):
+        bot_info = data.get("result", {})
+        print(f"  Telegram: ✅ @{bot_info.get('username', '?')}")
+    else:
+        print(f"  Telegram: ❌ getMe failed: {data}")
+        sys.exit(1)
+except urllib.error.HTTPError as e:
+    if e.code == 401:
+        print(f"  Telegram: ❌ TOKEN INVALID (401) — update TELEGRAM_BOT_TOKEN in set_env.bat")
+    elif e.code == 404:
+        print(f"  Telegram: ❌ TOKEN NOT FOUND (404) — bot deleted or token wrong. Update set_env.bat")
+    else:
+        print(f"  Telegram: ❌ HTTP {e.code}")
+    sys.exit(1)
+except Exception as e:
+    print(f"  Telegram: ⚠️ Network error: {e}")
+    # Don't exit — might be temporary network issue
+
+chat_id_env = os.environ.get('TELEGRAM_CHAT_ID')
+if not chat_id_env:
+    print("  Chat ID: ⚠️ not set in env (will try chat_id.txt)")
+else:
+    print(f"  Chat ID: {chat_id_env}")
+
+gh_token = os.environ.get('GITHUB_TOKEN')
+if gh_token:
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/user",
+            headers={"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3+json"}
+        )
+        resp = urllib.request.urlopen(req, timeout=10)
+        user = _json.loads(resp.read()).get("login", "?")
+        print(f"  GitHub:    ✅ {user}")
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            print(f"  GitHub:    ❌ TOKEN EXPIRED (401) — update GITHUB_TOKEN in set_env.bat")
+        else:
+            print(f"  GitHub:    ⚠️ HTTP {e.code}")
+    except Exception as e:
+        print(f"  GitHub:    ⚠️ {e}")
+else:
+    print("  GitHub:    ⚠️ not set (git may prompt for password)")
+
+print()
 
 if in_rebase():
     print("WARNING: leftover rebase detected, trying auto-repair...")
@@ -327,10 +428,34 @@ finally:
             if commit.returncode != 0:
                 print("WARNING: git commit failed — state left as working-tree changes.")
                 raise SystemExit(0)
-            push = git("push", visible=True)
+            push = git("push", visible=True, timeout=30)
             if push.returncode != 0:
-                print("WARNING: git push failed — remote not updated.")
-                undo_last_state_commit()
+                print("Push rejected — pulling remote changes and retrying...")
+                # Undo commit, pull, re-commit, push
+                git("reset", "--mixed", "HEAD~1")
+                # Pull with rebase
+                env = os.environ.copy()
+                env["GIT_TERMINAL_PROMPT"] = "0"
+                try:
+                    subprocess.run(GIT_BASE + ["pull", "--rebase", "--autostash"], cwd=REPO, env=env, timeout=60)
+                except subprocess.TimeoutExpired:
+                    print("WARNING: pull timed out — state kept locally.")
+                    raise SystemExit(0)
+                # Re-commit and push
+                git("add", *STATE_SYNC)
+                if git_has_staged(STATE_SYNC):
+                    commit2 = git("commit", "-m", "Sync state after run", "--", *STATE_SYNC, visible=True)
+                    if commit2.returncode != 0:
+                        print("WARNING: re-commit failed — state left as working-tree changes.")
+                        raise SystemExit(0)
+                    push2 = git("push", visible=True, timeout=30)
+                    if push2.returncode != 0:
+                        print("WARNING: git push failed again — remote not updated.")
+                        undo_last_state_commit()
+                    else:
+                        print("Done.")
+                else:
+                    print("No state changes after pull.")
             else:
                 print("Done.")
         else:

@@ -1,4 +1,4 @@
-﻿import time
+import time
 import logging
 import re
 import requests
@@ -1221,6 +1221,24 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         if rare_override is not None or pve_override is not None or max_price_override is not None:
             logger.info(f"PRICETEST: rare={rare_override}, pve={pve_override}, max_price={effective_max_price}")
 
+        # Create progress message BEFORE loading so user sees activity immediately
+        if progress_chat_id and progress_bot:
+            try:
+                progress_msg = await progress_bot.send_message(
+                    chat_id=progress_chat_id,
+                    text=(
+                        "🔄 <b>Перепроверка</b>\n\n"
+                        "📍 Этап: Загрузка списка лотов\n"
+                        "▱▱▱▱▱▱▱▱▱▱▱▱ 0%\n"
+                        "📦 Прогресс: …/…\n"
+                        "🔎 Сейчас: Получаю список с FunPay\n"
+                        "✅ Отправлено: 0"
+                    ),
+                    parse_mode='HTML'
+                )
+            except Exception:
+                progress_msg = None
+
         set_check_progress(
             context,
             stage="Загрузка списка лотов",
@@ -1234,30 +1252,32 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             listings = await asyncio.wait_for(get_listings(), timeout=35)
         except asyncio.TimeoutError:
             logger.error("⏱️ Тайм-аут при получении списка лотов")
+            if progress_msg and progress_bot:
+                try:
+                    await progress_bot.edit_message_text(
+                        chat_id=progress_chat_id,
+                        message_id=progress_msg.message_id,
+                        text="❌ Тайм-аут при загрузке списка лотов",
+                    )
+                except Exception:
+                    pass
             return 0
 
         if cancelled():
             logger.info("⏹️ Проверка остановлена пользователем во время загрузки списка")
             return -2
 
-        if progress_chat_id and progress_bot:
-            try:
-                progress_msg = await progress_bot.send_message(
-                    chat_id=progress_chat_id,
-                    text=(
-                        "🔄 <b>Перепроверка</b>\n\n"
-                        "📍 Этап: Отбор лотов\n"
-                        "▱▱▱▱▱▱▱▱▱▱▱▱ 0%\n"
-                        f"📦 Прогресс: 0/{max(len(listings), 1)}\n"
-                        "🔎 Сейчас: Список лотов получен, начинаю отбор\n"
-                        "✅ Отправлено: 0"
-                    ),
-                    parse_mode='HTML'
-                )
-            except Exception:
-                progress_msg = None
-
         total_listings = len(listings)
+        # Update progress: list loaded
+        await update_progress_message(
+            "🔄 <b>Перепроверка</b>",
+            "Отбор лотов",
+            0,
+            max(total_listings, 1),
+            0,
+            f"Список загружен: {total_listings} лотов, начинаю отбор",
+            force=True,
+        )
         already_seen_count = 0
         banned_count = 0
         candidates = []
@@ -2268,6 +2288,53 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"Не удалось обновить кнопку меню: {e}")
 
 
+async def validate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /validate — проверяет все ключи и подключения."""
+    global chat_id
+    user_chat_id = update.effective_chat.id
+    if str(user_chat_id) != str(chat_id):
+        await update.message.reply_text("❌ Вы не авторизованы. Напишите /start")
+        return
+
+    msg = await update.message.reply_text("🔍 Проверяю подключения...")
+
+    lines = ["<b>📋 Диагностика бота</b>\n"]
+
+    # Telegram
+    tg_status, token_id, actual_id = _validate_telegram_bot()
+    lines.append(f"<b>Telegram:</b> {tg_status}")
+
+    # GitHub PAT
+    gh_pat = _validate_github_pat()
+    lines.append(f"<b>GH Token:</b> {gh_pat}")
+
+    # GitHub Actions
+    remote_repo = _get_git_remote_repo()
+    env_repo = _normalize_github_repo(GITHUB_REPO) if GITHUB_REPO else "—"
+    remote_ok = not remote_repo.startswith("⚠️") and remote_repo != "—"
+    repo_for_check = remote_repo if remote_ok else env_repo
+    gh_actions = _validate_github_actions(repo_for_check)
+    lines.append(f"<b>GH Actions:</b> {gh_actions}")
+
+    # Repo info
+    lines.append(f"<b>Remote:</b> {remote_repo}")
+    lines.append(f"<b>Env repo:</b> {env_repo}")
+    if remote_ok and env_repo != "—":
+        match = "✅ Совпадают" if remote_repo.lower() == env_repo.lower() else "⚠️ НЕ СОВПАДАЮТ"
+        lines.append(f"<b>Repo match:</b> {match}")
+
+    # Chat ID
+    lines.append(f"<b>Chat ID:</b> {chat_id or '❌ не задан'}")
+
+    # Config stats
+    enabled_skins = config.get_enabled_skins()
+    lines.append(f"<b>Скинов:</b> {len(enabled_skins)}/{len(config.get_all_skins())}")
+    lines.append(f"<b>Seen IDs:</b> {len(seen_ids)}")
+    lines.append(f"<b>Banned:</b> {len(banned_ids)}")
+
+    await msg.edit_text("\n".join(lines), parse_mode='HTML')
+
+
 async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /sync — синхронизирует config.json с GitHub."""
     global chat_id
@@ -2588,8 +2655,8 @@ async def run_once():
     global bot_username
     """Запуск один раз и выход, для GitHub Actions / Cron."""
     if not TELEGRAM_BOT_TOKEN:
-        print("ОШИБКА: не задан TELEGRAM_BOT_TOKEN")
-        return
+        print("FATAL: TELEGRAM_BOT_TOKEN not set")
+        sys.exit(1)
 
     load_chat_id()
     load_seen_ids()
@@ -2597,16 +2664,20 @@ async def run_once():
     load_banned_ids()
 
     if not chat_id:
-        print("ОШИБКА: Chat ID не найден. Установите переменную окружения TELEGRAM_CHAT_ID")
-        return
+        print("FATAL: Chat ID not found. Set TELEGRAM_CHAT_ID env var")
+        sys.exit(1)
 
     _log_startup_banner("ONE-SHOT")
 
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     try:
-        bot_username = (await bot.get_me()).username
+        me = await bot.get_me()
+        bot_username = me.username
+        logger.info("Bot connected: @%s (id=%s)", me.username, me.id)
     except Exception as e:
-        logger.warning("Не удалось получить username бота: %s", e)
+        logger.error("FATAL: Telegram token invalid or network error: %s", e)
+        print(f"FATAL: Cannot connect to Telegram API: {e}")
+        sys.exit(1)
 
     sent = await process_offers(bot_instance=bot, skip_seen=True)
     logger.info("=== Done (sent: %s) ===", sent)
@@ -2653,6 +2724,8 @@ def main():
     application.add_handler(CommandHandler("recheck", recheck))
     application.add_handler(CommandHandler("pricetest", pricetest))
     application.add_handler(CommandHandler("stop", stop_command))
+    application.add_handler(CommandHandler("sync", sync_command))
+    application.add_handler(CommandHandler("validate", validate_command))
 
     # Обработчик кнопок постоянной клавиатуры.
     button_filter = filters.Regex(r'^(⚙️ Настройки|Settings|🔎 Проверка|🔄 Перепроверка|Recheck|💰 Мін\. прайс|💰 Мин\. прайс|Min price|Min Price|Check|⏹ Стоп|Stop)$')
