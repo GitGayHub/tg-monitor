@@ -1635,6 +1635,15 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             await asyncio.sleep(0)
             logger.info(f"Загружаю детали: {href}")
 
+            def _mark_seen_permanent():
+                if not skip_seen:
+                    return
+                try:
+                    seen_ids.add(offer_id)
+                    save_seen_id(offer_id)
+                except Exception as e:
+                    logger.warning(f"Не удалось сохранить seen_id для отклонённого лота: {e}")
+
             try:
                 full_description, rating_text = await asyncio.wait_for(
                     get_offer_details(href),
@@ -1662,6 +1671,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     )
                 except Exception:
                     pass
+                _mark_seen_permanent()
                 continue
 
             if premium_only:
@@ -1687,11 +1697,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 ed_price = editions.get(matched_edition, {}).get('price', effective_max_price)
                 if seller_price > ed_price:
                     logger.info(f"💸 Дорого для {matched_edition}: {seller_price}₽ > {ed_price}₽")
+                    _mark_seen_permanent()
                     continue
                 price_breakdown = f"🏆 {matched_edition.replace('_', ' ').title()} до {ed_price}₽"
             else:
                 if search_mode != 'skins_only' and has_new_pve(combined_text):
                     logger.info(f"⛔ Пропуск (новое PVE/STW): {candidate['short_description'][:40]}...")
+                    _mark_seen_permanent()
                     continue
 
                 found_skins = find_skins_in_text(combined_text, skins_dict)
@@ -1732,12 +1744,14 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
                 if should_skip:
                     logger.info(f"⏭️ Пропуск (нет ценных скинов/PVE): {candidate['short_description'][:40]}...")
+                    _mark_seen_permanent()
                     continue
 
                 if include_unconfirmed_pve and has_pve_flag:
                     has_confirmed = has_pve(combined_text, include_unconfirmed=False)
                     if has_confirmed:
                         logger.info(f"✅ Пропуск (подтв. PVE, уже в мониторинге): {candidate['short_description'][:40]}...")
+                        _mark_seen_permanent()
                         continue
 
                 all_require_pve = found_skins and all(
@@ -1762,6 +1776,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 seller_price = candidate['price_value']
                 if seller_price > my_max_price:
                     logger.info(f"💸 Слишком дорого: {seller_price}₽ > {my_max_price}₽ ({price_breakdown})")
+                    _mark_seen_permanent()
                     continue
 
             # === ФИНАЛЬНАЯ ЗАЩИТА: не отправлять скины без PVE если require_pve ===
@@ -1778,6 +1793,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         logger.info(f"🛡️ Защита: все скины require_pve но PVE не найдено — пропуск: {candidate['short_description'][:50]}")
                     else:
                         logger.info(f"🛡️ Защита: все скины require_pve, PVE только неподтверждённое — пропуск: {candidate['short_description'][:50]}")
+                    _mark_seen_permanent()
                     continue
 
             rating_emoji = "⭐" if "из 5" in rating_text else "❓"
