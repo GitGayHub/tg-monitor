@@ -1469,6 +1469,15 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             if already_seen:
                 continue
 
+            matched_skins_list = []
+            if source_lot != 'prochee':
+                for sid, skin in skins_dict.items():
+                    for kw in skin.get('keywords', []):
+                        pattern_kw = r'\b' + re.escape(normalize_match_text(kw)) + r'\b'
+                        if re.search(pattern_kw, short_desc_lower):
+                            matched_skins_list.append(sid)
+                            break
+
             candidates.append({
                 'offer_id': offer_id,
                 'href': href,
@@ -1478,6 +1487,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 'user': user,
                 'matched_keyword': matched_keyword,
                 'source_lot': source_lot,
+                'matched_skins': matched_skins_list,
             })
 
         # Save auto-monitoring prices to history
@@ -1602,7 +1612,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             f"Забанено: {banned_count} | Новых кандидатов: {new_candidates}"
         )
 
-        candidates.sort(key=lambda x: x['price_value'])
+        def candidate_sort_key(c):
+            has_rare_skin = 0 if c.get('matched_skins') else 1
+            return (has_rare_skin, c['price_value'])
+
+        candidates.sort(key=candidate_sort_key)
         limit = len(candidates) if candidate_limit is None else min(candidate_limit, len(candidates))
         sent_count = 0
 
