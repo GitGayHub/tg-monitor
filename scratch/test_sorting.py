@@ -1,4 +1,4 @@
-# Test candidate sorting logic
+﻿# Test candidate sorting logic
 mock_candidates = [
     {'offer_id': '1', 'price_value': 700.0, 'matched_skins': []},
     {'offer_id': '2', 'price_value': 1500.0, 'matched_skins': ['eon']},

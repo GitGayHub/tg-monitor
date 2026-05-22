@@ -1,4 +1,4 @@
-"""Launcher: git pull -> run bot -> git push. Auto-resolves state conflicts."""
+﻿"""Launcher: git pull -> run bot -> git push. Auto-resolves state conflicts."""
 import subprocess
 import sys
 import os

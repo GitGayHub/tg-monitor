@@ -1,5 +1,5 @@
-"""
-settings_handlers.py — ????????????? ???? ???????? ???? ????? inline-?????? ? Telegram.
+ï»¿"""
+settings_handlers.py ï¿½ ????????????? ???? ???????? ???? ????? inline-?????? ? Telegram.
 ????????? ????????? ???????, PVE-???????, ?????? ? ????????? ????? ?? ????.
 """
 import logging
@@ -290,9 +290,9 @@ async def _show_price_history(query, context, item_type, item_id, mode='all', pa
             if snapshot.get('offers'):
                 top_offer = snapshot['offers'][0]
                 price_markup = _format_log_offer_v2(top_offer)
-                text += f"?? <b>{date_label}</b> — {price_markup}\n"
+                text += f"?? <b>{date_label}</b> ï¿½ {price_markup}\n"
             else:
-                text += f"?? <b>{date_label}</b> — —\n"
+                text += f"?? <b>{date_label}</b> ï¿½ ï¿½\n"
             text += "??????????????\n\n"
 
     nav = []
@@ -335,7 +335,7 @@ def _main_reply_keyboard():
     )
 
 async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """??????? /settings — ????????? ??????? ???? ????????."""
+    """??????? /settings ï¿½ ????????? ??????? ???? ????????."""
     if not _check_auth(update, context):
         await update.message.reply_text("? ?? ?? ????????????. ???????? /start")
         return
@@ -369,7 +369,7 @@ async def _show_banned_list(query, context, page=0):
         lines.append("??????? ?? ?, ????? ?????? ??? ?? ????:")
         lines.append("")
         for offer_id in page_items:
-            lines.append(f"• <a href='{_offer_url(offer_id)}'>??? {offer_id}</a>")
+            lines.append(f"ï¿½ <a href='{_offer_url(offer_id)}'>??? {offer_id}</a>")
     else:
         lines.append("?????? ????.")
 
@@ -395,7 +395,7 @@ async def _show_banned_list(query, context, page=0):
 
 
 # ==============================
-# ????? — ?????? ? ??????????
+# ????? ï¿½ ?????? ? ??????????
 # ==============================
 
 async def _show_skins_list(query, context, page=0):
@@ -415,7 +415,7 @@ async def _show_skins_list(query, context, page=0):
     def _short_name(name, limit=28):
         if len(name) <= limit:
             return name
-        return name[:limit - 1] + "…"
+        return name[:limit - 1] + "ï¿½"
 
     text = f"?? <b>?????</b> ({page + 1}/{total_pages})\n\n"
     text += "???????? ????????? ????????. ???? ???????? ????????.\n"
@@ -490,7 +490,7 @@ async def _show_pve_positions_list(query, context, page=0):
     page_items = all_ids[start:end]
 
     def _short_name(name, limit=28):
-        return name if len(name) <= limit else name[:limit - 1] + "…"
+        return name if len(name) <= limit else name[:limit - 1] + "ï¿½"
 
     text = f"?? <b>PVE</b> ({page + 1}/{total_pages})\n\n"
     text += "????? ?????? PVE-??????? ??????.\n"
@@ -793,7 +793,7 @@ async def _show_status(query, context):
 
 def _price_link(price_txt, href):
     """Format price as hyperlink if href available."""
-    safe = html.escape(price_txt or '—')
+    safe = html.escape(price_txt or 'ï¿½')
     if href:
         return f"<a href='{html.escape(href, quote=True)}'>{safe}</a>"
     return safe
@@ -839,7 +839,7 @@ async def _show_stats(query, context):
         raw_src = row.get('source', 'minprice')
         src = 'auto' if raw_src == 'auto' else 'minprice'
         entry = {
-            'price_text': row.get('price_text') or '—',
+            'price_text': row.get('price_text') or 'ï¿½',
             'href': row.get('href'),
             'recorded_at': row.get('recorded_at', ''),
             'source': src,
@@ -899,12 +899,12 @@ async def _show_stats(query, context):
         is_skin = item['it'] == 'skin'
         if is_skin:
             same = a and p and a.get('href') and a['href'] == p['href']
-            a_display = '—' if (not a or same) else _price_link(a['price_text'], a['href'])
-            p_display = _price_link(p['price_text'], p['href']) if p else '—'
+            a_display = 'ï¿½' if (not a or same) else _price_link(a['price_text'], a['href'])
+            p_display = _price_link(p['price_text'], p['href']) if p else 'ï¿½'
             text += f"{se}<b>{name}</b>: {a_display} / {p_display}\n"
         else:
             best = a or p
-            price = _price_link(best['price_text'], best['href']) if best else '—'
+            price = _price_link(best['price_text'], best['href']) if best else 'ï¿½'
             text += f"{se}<b>{name}</b>: {price}\n"
 
     keyboard = [
@@ -928,7 +928,7 @@ async def _show_stats_info(query, context, item_type, item_id):
             src_label = '???.?????' if src == 'minprice' else '??????????????'
             date = row.get('recorded_at', '?')
             mode_label = '??? PVE' if 'pve' not in mode else '? PVE'
-            lines.append(f"{mode_label}: {src_label} — {date}")
+            lines.append(f"{mode_label}: {src_label} ï¿½ {date}")
     alert = f"{name}\n" + "\n".join(lines) if lines else "??? ??????"
     await query.answer(alert, show_alert=True)
 
@@ -976,7 +976,7 @@ async def _show_stats_top3_item(query, context, item_type, item_id):
             item_name = row.get('item_name') or item_id
             modes_found.append(row.get('mode') or 'any')
 
-    text = f"? <b>{html.escape(item_name)}</b> — ???-3\n\n"
+    text = f"? <b>{html.escape(item_name)}</b> ï¿½ ???-3\n\n"
     for mode in (modes_found or ['any']):
         top3 = get_latest_top3(item_type, item_id, mode=mode)
         if not top3:
@@ -987,9 +987,9 @@ async def _show_stats_top3_item(query, context, item_type, item_id):
         if mode_label:
             text += f"<b>{mode_label}:</b>\n"
         for i, o in enumerate(top3, 1):
-            p_link = _price_link(o.get('price_text') or '—', o.get('href'))
+            p_link = _price_link(o.get('price_text') or 'ï¿½', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
-            text += f"  {i}. {p_link} — {seller}\n"
+            text += f"  {i}. {p_link} ï¿½ {seller}\n"
         text += "\n"
 
     if not any(get_latest_top3(item_type, item_id, m) for m in (modes_found or ['any'])):
@@ -1031,7 +1031,7 @@ async def _show_stats_item_history(query, context, item_type, item_id):
             src_label = '???.?????' if src == 'minprice' else '????'
             date = row.get('recorded_at', '?')
             mode_icon = '??' if 'pve' in mode else '??'
-            info_lines.append(f"{mode_icon} {src_label} — {date}")
+            info_lines.append(f"{mode_icon} {src_label} ï¿½ {date}")
 
     text = f"? <b>{html.escape(item_name)}</b>\n"
     if info_lines:
@@ -1039,27 +1039,27 @@ async def _show_stats_item_history(query, context, item_type, item_id):
     if top3:
         text += "\n?? <b>???-3 ??????:</b>\n"
         for i, o in enumerate(top3, 1):
-            p_link = _price_link(o.get('price_text') or '—', o.get('href'))
+            p_link = _price_link(o.get('price_text') or 'ï¿½', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
-            text += f"  {i}. {p_link} — {seller}\n"
+            text += f"  {i}. {p_link} ï¿½ {seller}\n"
 
     if any_offers:
         text += "\n?? <b>??? PVE:</b>\n"
         for i, o in enumerate(any_offers[:7], 1):
-            price_display = _price_link(o.get('price_text') or '—', o.get('href'))
+            price_display = _price_link(o.get('price_text') or 'ï¿½', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
             date = o.get('recorded_at', '')
-            text += f"  {i}. {price_display} — {seller} <i>({date})</i>\n"
+            text += f"  {i}. {price_display} ï¿½ {seller} <i>({date})</i>\n"
         if len(any_offers) > 7:
             text += f"  <i>...??? {len(any_offers) - 7}</i>\n"
 
     if pve_offers:
         text += "\n?? <b>? PVE:</b>\n"
         for i, o in enumerate(pve_offers[:7], 1):
-            price_display = _price_link(o.get('price_text') or '—', o.get('href'))
+            price_display = _price_link(o.get('price_text') or 'ï¿½', o.get('href'))
             seller = html.escape(o.get('seller') or '?')
             date = o.get('recorded_at', '')
-            text += f"  {i}. {price_display} — {seller} <i>({date})</i>\n"
+            text += f"  {i}. {price_display} ï¿½ {seller} <i>({date})</i>\n"
         if len(pve_offers) > 7:
             text += f"  <i>...??? {len(pve_offers) - 7}</i>\n"
 
@@ -1080,12 +1080,12 @@ async def _show_red_flags(query, context):
     else:
         text = f"?? <b>??????? ?????</b> (????????? {len(flags)}):\n\n"
         for f in flags:
-            price_display = _price_link(f.get('price_text') or '—', f.get('href'))
+            price_display = _price_link(f.get('price_text') or 'ï¿½', f.get('href'))
             seller = html.escape(f.get('seller') or '?')
             reason = html.escape(f.get('reason') or '?')
             date = f.get('recorded_at', '')
             name = html.escape(f.get('item_name') or '?')
-            text += f"? {price_display} — {seller} <i>({date})</i>\n"
+            text += f"? {price_display} ï¿½ {seller} <i>({date})</i>\n"
             text += f"   <code>{name[:60]}</code>\n"
             text += f"   ???????: <i>{reason}</i>\n\n"
     keyboard = [
@@ -1779,18 +1779,18 @@ async def _launch_minprice_bundle_run(query, context, config):
             if not skin:
                 continue
             name = sid.replace('_', ' ').title()
-            await _update_progress(f"?? {name} • ??? PVE")
-            any_results = await _search_step(f"?? {name} • ??? PVE", skin.get('keywords', [sid]), require_pve=False)
+            await _update_progress(f"?? {name} ï¿½ ??? PVE")
+            any_results = await _search_step(f"?? {name} ï¿½ ??? PVE", skin.get('keywords', [sid]), require_pve=False)
             step_done += 1
-            await _update_progress(f"?? {name} • ? PVE")
-            pve_results = await _search_step(f"?? {name} • ? PVE", skin.get('keywords', [sid]), require_pve=True)
+            await _update_progress(f"?? {name} ï¿½ ? PVE")
+            pve_results = await _search_step(f"?? {name} ï¿½ ? PVE", skin.get('keywords', [sid]), require_pve=True)
             step_done += 1
             done += 1
             await _update_progress(f"?? {name}")
             any_best = any_results[0] if any_results else None
             pve_best = pve_results[0] if pve_results else None
             no_any = _same_min_offer(any_best, pve_best) or not any_results
-            any_markup = "—" if no_any else _format_log_offer_v2(any_best)
+            any_markup = "ï¿½" if no_any else _format_log_offer_v2(any_best)
             pve_markup = _format_log_offer_v2(pve_best)
             record_price_snapshot('skin', sid, name, 'any', any_results, source='custom_minprice')
             record_price_snapshot('skin', sid, name, 'pve', pve_results, source='custom_minprice')
@@ -1861,7 +1861,7 @@ async def _launch_minprice_bundle_run(query, context, config):
                     f"?? ? PVE: <b>{second_markup}</b>\n\n"
                 )
             else:
-                summary += f"{label} — <b>{first_markup}</b>\n"
+                summary += f"{label} ï¿½ <b>{first_markup}</b>\n"
         bar, pct = _make_progress_bar(step_done, max(total_steps, 1))
         keyboard = [
             [InlineKeyboardButton("?? ?????????", callback_data="set:minprice:crun")],
@@ -2029,8 +2029,8 @@ async def _show_recheck_log(query, context, run_id, page=0, refresh=False):
 
 def _format_log_offer_v2(offer):
     if not offer:
-        return "—"
-    price_text = html.escape(offer.get('price_text') or "—")
+        return "ï¿½"
+    price_text = html.escape(offer.get('price_text') or "ï¿½")
     href = offer.get('href')
     if href:
         return f"<a href='{html.escape(href, quote=True)}'>{price_text}</a>"
@@ -2061,7 +2061,7 @@ def _build_skin_minprice_text(name, any_results, pve_results, done=None, total=N
         lines.append("")
         lines.append("?? <b>??? PVE:</b>")
         if no_any:
-            lines.append("—")
+            lines.append("ï¿½")
         else:
             for idx, offer in enumerate(any_results[:3], start=1):
                 lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
@@ -2071,9 +2071,9 @@ def _build_skin_minprice_text(name, any_results, pve_results, done=None, total=N
             for idx, offer in enumerate(pve_results[:3], start=1):
                 lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
         else:
-            lines.append("—")
+            lines.append("ï¿½")
     else:
-        any_display = "—" if no_any else _format_log_offer_v2(any_best)
+        any_display = "ï¿½" if no_any else _format_log_offer_v2(any_best)
         pve_display = _format_log_offer_v2(pve_best)
         lines.append(f"?? ??? PVE: <b>{any_display}</b>")
         lines.append(f"?? ? PVE: <b>{pve_display}</b>")
@@ -2093,7 +2093,7 @@ def _build_simple_minprice_text(label, results, done=None, total=None, expanded=
             for idx, offer in enumerate(results[:3], start=1):
                 lines.append(f"{idx}. {_format_log_offer_v2(offer)}")
         else:
-            lines.append("—")
+            lines.append("ï¿½")
     else:
         price_markup = _format_log_offer_v2(results[0] if results else None)
         lines.append(f"?? ???. ????: <b>{price_markup}</b>")
@@ -2116,12 +2116,12 @@ def _cache_minprice_top3(context, item_type, item_id, name, any_results=None, pv
 def _render_top3_block(title, offers):
     lines = [f"{title}"]
     if not offers:
-        lines.append("—")
+        lines.append("ï¿½")
         return "\n".join(lines)
     for idx, offer in enumerate(offers[:3], start=1):
         price_markup = _format_log_offer_v2(offer)
         seller = html.escape(offer.get('seller') or "?")
-        matched_kw = html.escape(offer.get('matched_kw') or "—")
+        matched_kw = html.escape(offer.get('matched_kw') or "ï¿½")
         lines.append(f"{idx}. {price_markup}")
         lines.append(f"?? {seller}")
         lines.append(f"?? {matched_kw}")
@@ -2176,13 +2176,13 @@ def _build_recheck_log_page_v2(result, page=0):
             any_label = "?? ???????" if item['type'] == 'edition' else "?? ??? PVE"
             text += (
                 f"{title_icon} <b>{html.escape(item['name'])}</b>\n"
-                f"?? <b>???? ???:</b> {item.get('my_price_text', item.get('limit_text', '—'))}\n"
+                f"?? <b>???? ???:</b> {item.get('my_price_text', item.get('limit_text', 'ï¿½'))}\n"
                 f"{any_label}: {_format_log_offer_v2(item.get('any_offer'))}\n"
             )
             if item['type'] != 'edition':
                 text += f"?? ? PVE: {_format_log_offer_v2(item.get('pve_offer'))}\n"
             text += (
-                f"?? <b>???????:</b> {html.escape(item.get('reason_text', item.get('status', '—')))}\n"
+                f"?? <b>???????:</b> {html.escape(item.get('reason_text', item.get('status', 'ï¿½')))}\n"
                 "??????????????\n\n"
             )
 
@@ -2514,7 +2514,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             'recheck_pve': '???????????? (???????. PVE)',
         }
         label = mode_labels.get(mode_key, mode_key)
-        target = (bot_mode.get('params') or {}).get('target_label') or progress.get('stage') or '—'
+        target = (bot_mode.get('params') or {}).get('target_label') or progress.get('stage') or 'ï¿½'
         info_text = (
             "?? <b>?????????? ??????? ?????????</b>\n\n"
             f"?? ????????: <b>{label}</b>\n"
@@ -3054,7 +3054,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
         any_results = await _run_minprice_search_with_watchdog(
             context,
-            f"{name} • ??? PVE",
+            f"{name} ï¿½ ??? PVE",
             lambda: search_min_price(all_keywords, require_pve=False),
             heartbeat_callback=lambda elapsed: _edit_single_progress(0, f"??? PVE ({elapsed}?)")
         )
@@ -3065,7 +3065,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 return
             pve_results = await _run_minprice_search_with_watchdog(
                 context,
-                f"{name} • ? PVE",
+                f"{name} ï¿½ ? PVE",
                 lambda: search_min_price(all_keywords, require_pve=True),
                 heartbeat_callback=lambda elapsed: _edit_single_progress(1, f"? PVE ({elapsed}?)")
             )
@@ -3079,7 +3079,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             any_best = any_results[0] if any_results else None
             pve_best = pve_results[0] if pve_results else None
             no_any = _same_min_offer(any_best, pve_best) or not any_results
-            any_markup = "—" if no_any else _format_log_offer_v2(any_best)
+            any_markup = "ï¿½" if no_any else _format_log_offer_v2(any_best)
             pve_markup = _format_log_offer_v2(pve_best)
             text = (
                 f"?? <b>???. ?????: {name}</b>\n\n"
