@@ -1,0 +1,235 @@
+{
+  "rare_skins": {
+    "item_1": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_2": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_3": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_4": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_5": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_6": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_7": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_8": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_9": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_10": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_11": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_12": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_13": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_14": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_15": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_16": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_17": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_18": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    },
+    "item_19": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000,
+      "require_pve": true
+    }
+  },
+  "confirmed_pve_keywords": [
+    "keyword_placeholder"
+  ],
+  "unconfirmed_pve_keywords": [
+    "keyword_placeholder"
+  ],
+  "new_pve_keywords": [
+    "keyword_placeholder"
+  ],
+  "exclude_keywords": [
+    "keyword_placeholder"
+  ],
+  "positive_keywords": [
+    "keyword_placeholder"
+  ],
+  "prochee_keywords": [
+    "keyword_placeholder"
+  ],
+  "editions": {
+    "edition_1": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000
+    },
+    "edition_2": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000
+    },
+    "edition_3": {
+      "enabled": true,
+      "keywords": [
+        "keyword_placeholder"
+      ],
+      "price": 1000
+    }
+  },
+  "max_price": 1000,
+  "pve_bonus": 1000,
+  "check_interval": 120,
+  "request_delay_min": 3,
+  "request_delay_max": 7,
+  "search_mode": "skins_pve",
+  "confirmed_pve_enabled": false,
+  "confirmed_pve_price": 1000,
+  "minprice_bundle": {
+    "skins": [
+      "item_1",
+      "item_2",
+      "item_3",
+      "item_4",
+      "item_5",
+      "item_6",
+      "item_7",
+      "item_8",
+      "item_9",
+      "item_10",
+      "item_11",
+      "item_12",
+      "item_13",
+      "item_14",
+      "item_15",
+      "item_16",
+      "item_17",
+      "item_18",
+      "item_19"
+    ],
+    "editions": [
+      "edition_1",
+      "edition_2",
+      "edition_3"
+    ],
+    "confirmed_pve": true,
+    "unconfirmed_pve": true
+  }
+}

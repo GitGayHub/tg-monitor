@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.log
+chat_id.txt
+seen_ids.txt
+sent_offers.json
+banned_ids.txt
+run_log.json
+price_history.db
+config.json
+.env
+.env.*
+set_env.bat
+set_env.sh
+.bot.lock

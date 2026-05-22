@@ -1,0 +1,186 @@
+name: Monitor
+
+on:
+  schedule:
+    - cron: "5,20,35,50 */2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Cooldown check
+        id: cooldown
+        env:
+          GH_PAT: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          # Find last REAL run (took >60s, ignoring quick cooldown-skips)
+          LAST_RUN=$(curl -s -H "Authorization: token $GH_PAT" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=success&per_page=5" \
+            | jq -r '[.workflow_runs[] | select((.updated_at | fromdateiso8601) - (.created_at | fromdateiso8601) > 60)][0].created_at // empty')
+          if [ -n "$LAST_RUN" ]; then
+            LAST_EPOCH=$(date -d "$LAST_RUN" +%s)
+            NOW=$(date +%s)
+            DIFF=$((NOW - LAST_EPOCH))
+            echo "Last real run was ${DIFF}s ago"
+            if [ $DIFF -lt 6000 ]; then
+              echo "Too soon (< 100 min), skipping"
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: Checkout code
+        if: steps.cooldown.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.cooldown.outputs.skip != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.cooldown.outputs.skip != 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run monitor once
+        if: steps.cooldown.outputs.skip != 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TARGET_URL: ${{ secrets.TARGET_URL }}
+        run: |
+          python app.py --once 2>&1 | tee run_output.log
+          # Append mini-log entry for diagnostics
+          python -c "
+          import json, os, re
+          from datetime import datetime, timezone
+          log_file = 'run_log.json'
+          logs = []
+          if os.path.exists(log_file):
+              try:
+                  with open(log_file) as f: logs = json.load(f)
+              except: logs = []
+          output = open('run_output.log').read()
+          sent = output.count('Отправлено:')
+          new_candidates = 0
+          skip_no_pve = output.count('требует PVE, но PVE не найден')
+          skip_exclude = output.count('Исключено (')
+          skip_price = output.count('Слишком дорого:')
+          skip_guard = output.count('Защита:')
+          total_on_site = 0
+          already_seen = 0
+          for line in output.splitlines():
+              if 'Новых кандидатов:' in line:
+                  try: new_candidates = int(line.split('Новых кандидатов:')[1].strip().split()[0])
+                  except: pass
+              if 'Всего на сайте:' in line:
+                  try: total_on_site = int(line.split('Всего на сайте:')[1].strip().split()[0])
+                  except: pass
+              if 'Уже просмотрено:' in line:
+                  try: already_seen = int(line.split('Уже просмотрено:')[1].strip().split()[0])
+                  except: pass
+          trigger = '${{ github.event_name }}'
+          entry = {
+              'time': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'),
+              'trigger': trigger,
+              'sent': sent,
+              'new_candidates': new_candidates,
+              'total_on_site': total_on_site,
+              'already_seen': already_seen,
+              'skip_no_pve': skip_no_pve,
+              'skip_exclude': skip_exclude,
+              'skip_price': skip_price,
+              'skip_guard': skip_guard,
+          }
+          if trigger == 'workflow_dispatch' and len(logs) > 0:
+              try:
+                  last_t = logs[-1].get('time','')
+                  from datetime import datetime as dt2
+                  lt = dt2.strptime(last_t, '%Y-%m-%d %H:%M UTC')
+                  gap = (datetime.now(timezone.utc).replace(tzinfo=None) - lt).total_seconds() / 60
+                  entry['trigger'] = 'cron-job.org' if gap > 20 else 'self-trigger'
+              except: entry['trigger'] = 'dispatch'
+          logs.append(entry)
+          logs = logs[-50:]
+          with open(log_file, 'w') as f: json.dump(logs, f, indent=1)
+          print(f'Log: {entry}')
+          "
+          rm -f run_output.log
+
+      - name: Commit runtime state
+        if: steps.cooldown.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -e
+          git config --global user.name "Monitor Bot"
+          git config --global user.email "bot@noreply.github.com"
+          # Backup state files before rebase
+          backup_dir="$(mktemp -d)"
+          for f in seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json run_log.json; do
+            if [ -f "$f" ]; then
+              cp "$f" "$backup_dir/$f"
+            fi
+          done
+          # Rebase on latest main to avoid conflicts
+          git checkout -- seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json run_log.json 2>/dev/null || true
+          git fetch origin main || true
+          if ! git rebase origin/main; then
+            git rebase --abort || true
+          fi
+          # Restore state files after rebase
+          for f in seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json run_log.json; do
+            if [ -f "$backup_dir/$f" ]; then
+              cp "$backup_dir/$f" "$f"
+            fi
+          done
+          git add seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json run_log.json || true
+          if git diff --cached --quiet; then
+            echo "No runtime state changes"
+            exit 0
+          fi
+          git commit -m "Update monitor state"
+          if ! git push; then
+            git reset --mixed HEAD~1
+            echo "WARNING: push failed; state kept in working tree"
+            exit 0
+          fi
+
+      - name: Trigger next run
+        if: steps.cooldown.outputs.skip != 'true'
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          if [ -z "$GH_PAT" ]; then
+            echo "GH_PAT not set, skipping self-trigger"
+            exit 0
+          fi
+          echo "Scheduling next run via workflow_dispatch..."
+          sleep 10
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Authorization: token $GH_PAT" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/monitor.yml/dispatches" \
+            -d '{"ref":"main"}')
+          if [ "$HTTP_CODE" = "204" ]; then
+            echo "Next run triggered successfully"
+          else
+            echo "WARNING: trigger failed with HTTP $HTTP_CODE (GH_PAT may be expired)"
+          fi
