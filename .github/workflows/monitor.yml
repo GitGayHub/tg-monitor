@@ -1,16 +1,16 @@
-name: FunPay Monitor
+name: Monitor
 
 on:
   schedule:
-    - cron: "5,20,35,50 */2 * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 concurrency:
-  group: funpay-monitor
+  group: monitor
   cancel-in-progress: false
 
 jobs:
-  check_funpay:
+  monitor:
     runs-on: ubuntu-latest
     timeout-minutes: 6
 
@@ -33,8 +33,8 @@ jobs:
             NOW=$(date +%s)
             DIFF=$((NOW - LAST_EPOCH))
             echo "Last real run was ${DIFF}s ago"
-            if [ $DIFF -lt 6000 ]; then
-              echo "Too soon (< 100 min), skipping"
+            if [ $DIFF -lt 500 ]; then
+              echo "Too soon (< 500s), skipping"
               echo "skip=true" >> $GITHUB_OUTPUT
               exit 0
             fi
@@ -58,6 +58,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Restore config from secret
+        if: steps.cooldown.outputs.skip != 'true'
+        env:
+          CONFIG_JSON_B64: ${{ secrets.CONFIG_JSON_B64 }}
+        run: |
+          if [ -n "$CONFIG_JSON_B64" ]; then
+            echo "$CONFIG_JSON_B64" | base64 -d > config.json
+            echo "config.json restored ($(wc -c < config.json) bytes)"
+          else
+            echo "WARNING: CONFIG_JSON_B64 secret not set"
+          fi
+
       - name: Run monitor once
         if: steps.cooldown.outputs.skip != 'true'
         env:
@@ -65,8 +77,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          TARGET_URL: ${{ secrets.TARGET_URL }}
         run: |
-          python monitor.py --once 2>&1 | tee run_output.log
+          python app.py --once 2>&1 | tee run_output.log
           # Append mini-log entry for diagnostics
           python -c "
           import json, os, re
@@ -129,7 +142,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          git config --global user.name "FunPay Bot"
+          git config --global user.name "Monitor Bot"
           git config --global user.email "bot@noreply.github.com"
           # Backup state files before rebase
           backup_dir="$(mktemp -d)"
@@ -176,7 +189,7 @@ jobs:
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             -H "Authorization: token $GH_PAT" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/funpay-monitor.yml/dispatches" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/monitor.yml/dispatches" \
             -d '{"ref":"main"}')
           if [ "$HTTP_CODE" = "204" ]; then
             echo "Next run triggered successfully"
