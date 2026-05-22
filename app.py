@@ -1,4 +1,4 @@
-﻿import time
+import time
 import logging
 import re
 import requests
@@ -2382,8 +2382,8 @@ async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def _sync_config_to_github():
-    """Пушит config.json в GitHub через Contents API."""
-    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/config.json"
+    """Пушит зашифрованный config.json.enc в GitHub через Contents API."""
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/config.json.enc"
     headers = {
         'Authorization': f'token {GITHUB_TOKEN}',
         'Accept': 'application/vnd.github.v3+json',
@@ -2401,10 +2401,17 @@ def _sync_config_to_github():
     with open('config.json', 'r', encoding='utf-8') as f:
         content = f.read()
 
-    encoded = base64.b64encode(content.encode('utf-8')).decode('ascii')
+    passphrase = os.environ.get("CONFIG_PASSPHRASE")
+    if not passphrase:
+        raise Exception("CONFIG_PASSPHRASE не установлен в окружении бота!")
+
+    import config_crypt
+    # Шифруем данные перед кодированием в base64
+    encrypted_data = config_crypt.encrypt(content.encode('utf-8'), passphrase)
+    encoded = base64.b64encode(encrypted_data).decode('ascii')
 
     payload = {
-        'message': '🔄 Sync config.json from Telegram bot',
+        'message': '🔄 Sync config.json.enc from Telegram bot',
         'content': encoded,
     }
     if sha:
@@ -2415,6 +2422,7 @@ def _sync_config_to_github():
         return True
     else:
         raise Exception(f"GitHub PUT ошибка ({resp.status_code}): {resp.text[:200]}")
+
 
 
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

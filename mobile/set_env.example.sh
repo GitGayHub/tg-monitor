@@ -4,6 +4,7 @@
 
 export TELEGRAM_BOT_TOKEN="your_bot_token_here"
 export TELEGRAM_CHAT_ID="5326338543"
-export GITHUB_REPOSITORY="joskiyvibecoder/funpay-bot"
+export GITHUB_REPOSITORY="GitGayHub/tg-monitor"
+export CONFIG_PASSPHRASE="your_secret_passphrase_here"
 # Optional — only needed for /sync button in Telegram
 # export GITHUB_TOKEN="your_github_pat_optional"
