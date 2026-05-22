@@ -3,7 +3,7 @@ import asyncio
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import monitor
+import app
 
 class MockBot:
     async def send_message(self, chat_id, text, parse_mode=None):

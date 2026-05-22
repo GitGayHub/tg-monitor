@@ -14,9 +14,9 @@ import json
 import base64
 import subprocess
 
-from config_manager import ConfigManager
-from price_history import init_price_history_db, record_price_snapshot, record_red_flag, get_latest_top3
-from settings_handlers import register_settings_handlers
+from cfg import ConfigManager
+from history import init_price_history_db, record_price_snapshot, record_red_flag, get_latest_top3
+from handlers import register_settings_handlers
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -2453,11 +2453,11 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("⌨️ Клавиатура обновлена.", reply_markup=main_reply_keyboard())
 
     if text in ("⚙️ Настройки", "Settings"):
-        from settings_handlers import settings_command
+        from handlers import settings_command
         await settings_command(update, context)
 
     elif text in ("🔎 Проверка", "🔄 Перепроверка", "💰 Мін. прайс", "💰 Мин. прайс", "Recheck", "Min price", "Min Price", "Check"):
-        from settings_handlers import _show_check_menu_as_new_message
+        from handlers import _show_check_menu_as_new_message
         await _show_check_menu_as_new_message(update, context)
 
     elif text in ("⏹ Стоп", "Stop"):

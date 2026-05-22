@@ -2,12 +2,12 @@
 # Скрипт перепривязки к GitHub аккаунту
 # Использование:
 #   .\switch_github.ps1 -Token "ghp_НОВЫЙ_ТОКЕН"
-#   .\switch_github.ps1 -Token "ghp_xxx" -Repo "GitGayHub/funpay-bot"
+#   .\switch_github.ps1 -Token "ghp_xxx" -Repo "GitGayHub/tg-monitor"
 # ============================================================
 param(
     [Parameter(Mandatory=$true)]
     [string]$Token,
-    [string]$Repo = "GitGayHub/funpay-bot"
+    [string]$Repo = "GitGayHub/tg-monitor"
 )
 
 $RepoPath = "d:\AStest\funpay-bot-repo"
