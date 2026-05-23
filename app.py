@@ -130,15 +130,28 @@ def load_sent_offers():
     except (FileNotFoundError, json.JSONDecodeError):
         sent_offers = {}
 
-def save_sent_offer(offer_id, price, description):
+def save_sent_offer(offer_id, price, description, seller=None):
     global sent_offers
     sent_offers[offer_id] = {
         'price': price,
         'description': description,
-        'timestamp': time.time()
+        'timestamp': time.time(),
+        'seller': seller
     }
     with open(SENT_OFFERS_FILE, 'w', encoding='utf-8') as f:
         json.dump(sent_offers, f, ensure_ascii=False, indent=2)
+
+
+def clear_monitoring_state():
+    """Reset seen_ids + sent_offers so auto-monitoring re-sends everything. For testing."""
+    global seen_ids, sent_offers
+    seen_ids.clear()
+    with open(SEEN_IDS_FILE, 'w') as f:
+        f.write('')
+    sent_offers.clear()
+    with open(SENT_OFFERS_FILE, 'w', encoding='utf-8') as f:
+        json.dump({}, f)
+    logger.info("🧹 Сброс мониторинга: seen_ids, sent_offers очищены")
 
 def parse_price(price_text):
     if not price_text:
@@ -181,22 +194,68 @@ def normalize_match_text(text):
     return text.strip()
 
 
+def is_recently_sent(offer_id, seller, description, price_value, max_days=7):
+    """Returns True if this offer was already sent within max_days days."""
+    global sent_offers
+    now = time.time()
+    seconds_limit = max_days * 24 * 3600
+
+    # 1. Check by offer_id
+    if offer_id in sent_offers:
+        sent_time = sent_offers[offer_id].get('timestamp', 0)
+        if now - sent_time < seconds_limit:
+            return True
+
+    # 2. Check by seller and description/price similarity
+    norm_desc = normalize_match_text(description)
+    for oid, sent in sent_offers.items():
+        sent_time = sent.get('timestamp', 0)
+        if now - sent_time < seconds_limit:
+            # Check if same seller and description
+            sent_seller = sent.get('seller')
+            sent_desc = sent.get('description', '')
+            sent_price = sent.get('price', 0)
+            
+            if sent_seller and seller and sent_seller.lower() == seller.lower():
+                if normalize_match_text(sent_desc) == norm_desc:
+                    return True
+            
+            # Fallback if seller is not saved (legacy sent_offers) - check description and price
+            if not sent_seller:
+                if normalize_match_text(sent_desc) == norm_desc and abs(sent_price - price_value) < 1.0:
+                    return True
+                    
+    return False
+
+
 def contains_exclude_keyword(text, exclude_keywords, positive_keywords=None):
     """Returns the first matching exclude phrase, or None.
     If positive_keywords is provided and matches, exclude is overridden (returns None).
-    This whitelist behavior fixes false positives like 'перепривяжу почту'."""
+    Exception: if the positive match is a substring of the exclude match
+    (e.g. 'full access' inside 'no full access'), the exclude still wins."""
     normalized_text = normalize_match_text(text)
-    # Whitelist: if any positive phrase is found, don't exclude
+    # First: find if any exclude keyword matches
+    matched_exclude = None
+    normalized_exclude_str = None
+    for exclude_word in exclude_keywords:
+        ne = normalize_match_text(exclude_word)
+        if ne and ne in normalized_text:
+            matched_exclude = exclude_word
+            normalized_exclude_str = ne
+            break
+    if matched_exclude is None:
+        return None
+    # Second: check if a positive keyword overrides the exclude
     if positive_keywords:
         for pos_word in positive_keywords:
             normalized_pos = normalize_match_text(pos_word)
             if normalized_pos and normalized_pos in normalized_text:
-                return None
-    for exclude_word in exclude_keywords:
-        normalized_exclude = normalize_match_text(exclude_word)
-        if normalized_exclude and normalized_exclude in normalized_text:
-            return exclude_word
-    return None
+                # Don't let positive override if it's a substring of the matched exclude
+                # e.g. 'full access' should NOT override 'no full access'
+                if normalized_pos in normalized_exclude_str:
+                    continue
+                return None  # Positive overrides exclude
+    return matched_exclude
 
 
 def _keyword_word_match(normalized_kw, text):
@@ -1288,6 +1347,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         auto_pve_map = {}     # skin_id → [offers] (mode=pve)
         auto_edition_map = {} # edition_id → [offers]
         auto_pve_confirmed = []  # top-3 cheapest confirmed-PVE offers
+        auto_pve_unconfirmed = []  # top-3 cheapest unconfirmed-PVE offers
         auto_pve_seen = False    # True if any confirmed PVE offer seen
         kw_to_skin = {}
         kw_to_edition = {}
@@ -1428,9 +1488,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         if len(auto_edition_map[best_eid]) > 3:
                             auto_edition_map[best_eid].pop()
 
-            # Track confirmed PVE (cheapest accounts with confirmed PVE)
+            # Track confirmed & unconfirmed PVE (cheapest accounts with PVE)
             if price_value is not None and skip_seen and source_lot != 'prochee':
-                if has_pve(short_desc_lower, include_unconfirmed=False):
+                has_confirmed = has_pve(short_desc_lower, include_unconfirmed=False)
+                has_any_pve = has_pve(short_desc_lower, include_unconfirmed=True)
+                if has_confirmed:
                     auto_pve_seen = True
                     if not is_excluded:
                         auto_pve_confirmed.append(
@@ -1439,6 +1501,15 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         auto_pve_confirmed.sort(key=lambda x: x['price'])
                         if len(auto_pve_confirmed) > 3:
                             auto_pve_confirmed.pop()
+                elif has_any_pve:
+                    # Unconfirmed PVE: has 'pve'/'stw' keyword but no confirmed keyword
+                    if not is_excluded:
+                        auto_pve_unconfirmed.append(
+                            {'price': price_value, 'price_text': price_text,
+                             'href': href, 'seller': user, 'name': 'STW'})
+                        auto_pve_unconfirmed.sort(key=lambda x: x['price'])
+                        if len(auto_pve_unconfirmed) > 3:
+                            auto_pve_unconfirmed.pop()
 
             if not matched_keyword:
                 if skip_seen and not already_seen:
@@ -1545,6 +1616,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             for eid in list(auto_edition_map.keys()):
                 auto_edition_map[eid] = await _validate_cheapest(auto_edition_map[eid])
             auto_pve_confirmed = await _validate_cheapest(auto_pve_confirmed)
+            auto_pve_unconfirmed = await _validate_cheapest(auto_pve_unconfirmed)
 
             if validated_cache:
                 n_checked = len(validated_cache)
@@ -1602,7 +1674,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 _save_auto('pve', 'confirmed', 'STW', 'confirmed', auto_pve_confirmed)
             elif _old_offer_gone('pve', 'confirmed', 'confirmed'):
                 _save_auto('pve', 'confirmed', 'STW', 'confirmed', [])
-            parts.append(f"STW: {'да' if auto_pve_confirmed else '—'}")
+            if auto_pve_unconfirmed:
+                _save_auto('pve', 'unconfirmed', 'STW', 'unconfirmed', auto_pve_unconfirmed)
+            elif _old_offer_gone('pve', 'unconfirmed', 'unconfirmed'):
+                _save_auto('pve', 'unconfirmed', 'STW', 'unconfirmed', [])
+            parts.append(f"STW подтв: {'да' if auto_pve_confirmed else '—'}, неподтв: {'да' if auto_pve_unconfirmed else '—'}")
+
 
             logger.info(f"📈 Авто-мониторинг: {', '.join(parts)}")
 
@@ -1677,6 +1754,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     save_seen_id(offer_id)
                 except Exception as e:
                     logger.warning(f"Не удалось сохранить seen_id для отклонённого лота: {e}")
+
+            if is_recently_sent(offer_id, candidate['user'], candidate['short_description'], candidate['price_value']):
+                logger.info(f"⏳ Пропуск: лот {offer_id} от {candidate['user']} (или аналогичный) уже отправлялся в последние 7 дней")
+                _mark_seen_permanent()
+                continue
 
             try:
                 full_description, rating_text = await asyncio.wait_for(
@@ -1903,7 +1985,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     logger.warning(f"Не удалось сохранить seen_id: {e}")
 
                 try:
-                    save_sent_offer(offer_id, candidate['price_value'], candidate['short_description'])
+                    save_sent_offer(offer_id, candidate['price_value'], candidate['short_description'], candidate['user'])
                 except Exception as e:
                     logger.warning(f"Не удалось сохранить в историю: {e}")
             except Exception as e:

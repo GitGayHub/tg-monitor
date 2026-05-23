@@ -821,13 +821,10 @@ async def _show_stats(query, context):
         raw_ii = row.get('item_id', '')
         mode = (row.get('mode') or '').lower()
         ii = _normalize_pve_id(it, raw_ii, mode)
-        # Skip unconfirmed PVE from main display (not tracked by auto-monitoring)
-        if it == 'pve' and ii == 'unconfirmed':
-            continue
         key = f"{it}:{ii}"
         if key not in items:
             if it == 'pve':
-                name = 'STW' if ii == 'confirmed' else 'Неподтв. PVE'
+                name = 'STW (подтв.)' if ii == 'confirmed' else 'STW (неподтв.)'
             else:
                 name = row.get('item_name') or ii or '?'
             items[key] = {
@@ -872,10 +869,11 @@ async def _show_stats(query, context):
         if it == 'skin':
             return (0, item['name'].lower())
         if it == 'pve':
-            return (1, 0)
+            # confirmed first, unconfirmed second
+            return (1, 0 if ii == 'confirmed' else 1)
         if it == 'edition':
-            return (1, _edition_order.get(ii, 99))
-        return (2, 0)
+            return (2, _edition_order.get(ii, 99))
+        return (3, 0)
     sorted_items = sorted(items.values(), key=_sort_key)
 
     text = "💰 <b>Последние цены:</b>\n\n"
@@ -910,6 +908,7 @@ async def _show_stats(query, context):
     keyboard = [
         [InlineKeyboardButton("📊 Статистика по скину", callback_data="set:stats:histmenu")],
         [InlineKeyboardButton("🗑 Сброс статистики", callback_data="set:stats:reset")],
+        [InlineKeyboardButton("🔄 Сброс автомониторинга", callback_data="set:stats:monreset")],
         [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
@@ -934,7 +933,7 @@ async def _show_stats_info(query, context, item_type, item_id):
 
 
 def _normalize_stats_items(prices):
-    """Dedupe legacy PVE item_ids; skip unconfirmed PVE. Returns list of {it, ii, name}."""
+    """Dedupe legacy PVE item_ids. Returns list of {it, ii, name}."""
     seen = set()
     result = []
     for row in prices:
@@ -943,9 +942,7 @@ def _normalize_stats_items(prices):
         mode = (row.get('mode') or '').lower()
         if it == 'pve':
             ii = 'unconfirmed' if 'unconfirmed' in mode or raw_ii == 'unconfirmed' else 'confirmed'
-            if ii == 'unconfirmed':
-                continue
-            name = 'Подтв. PVE'
+            name = 'STW (подтв.)' if ii == 'confirmed' else 'STW (неподтв.)'
         else:
             ii = raw_ii
             name = row.get('item_name') or raw_ii or '?'
@@ -2601,6 +2598,27 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
     elif data == "set:stats:reset:confirm":
         clear_all_price_history()
         await query.answer("✅ Статистика очищена")
+        await _show_stats(query, context)
+
+    elif data == "set:stats:monreset":
+        keyboard = [
+            [InlineKeyboardButton("⚠️ Да, сбросить мониторинг", callback_data="set:stats:monreset:confirm")],
+            [InlineKeyboardButton("🔙 Отмена", callback_data="set:stats")],
+        ]
+        await query.edit_message_text(
+            "🔄 <b>Сброс автомониторинга</b>\n\n"
+            "Будут очищены:\n"
+            "• 👁 Все просмотренные ID (seen_ids)\n"
+            "• 📤 Все отправленные предложения (sent_offers)\n\n"
+            "📈 История цен и статистика останутся нетронутыми.\n"
+            "⚠️ После сброса автомониторинг заново отправит ВСЕ найденные предложения.",
+            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML'
+        )
+
+    elif data == "set:stats:monreset:confirm":
+        from app import clear_monitoring_state
+        clear_monitoring_state()
+        await query.answer("✅ Автомониторинг сброшен: seen_ids и sent_offers очищены")
         await _show_stats(query, context)
 
     elif data.startswith("set:stats:hist:"):
