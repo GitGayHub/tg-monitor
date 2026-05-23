@@ -472,16 +472,38 @@ finally:
             except Exception as e:
                 print(f"  ⚠️ Error encrypting config: {e}")
         
+        # Ensure remote URL has token for non-interactive push
+        gh_token = os.environ.get('GITHUB_TOKEN', '')
+        if gh_token:
+            import re
+            remote_url = git("remote", "get-url", "origin")
+            remote_str = (remote_url.stdout or "").strip()
+            if remote_str:
+                fixed = re.sub(r'https://(?:[^@]+@)?github\.com', f'https://{gh_token}@github.com', remote_str)
+                if fixed != remote_str:
+                    git("remote", "set-url", "origin", fixed)
+
         git("add", *STATE_SYNC)
         if git_has_staged(STATE_SYNC):
             commit = git("commit", "-m", "Sync state after run", "--", *STATE_SYNC, visible=True)
             if commit.returncode != 0:
                 print("WARNING: git commit failed — state left as working-tree changes.")
                 raise SystemExit(0)
-            push = git("push", visible=True, timeout=30)
-            if push.returncode != 0:
-                print("Push rejected — pulling remote changes and retrying...")
-                # Pull with rebase while keeping the local commit
+
+            # Retry push up to 5 times with increasing delay
+            import time as _time
+            pushed = False
+            for attempt in range(1, 6):
+                push = git("push", visible=True, timeout=30)
+                if push.returncode == 0:
+                    print("Done.")
+                    pushed = True
+                    break
+                delay = attempt * 3  # 3, 6, 9, 12, 15 seconds
+                print(f"Push attempt {attempt}/5 failed — pull & retry in {delay}s...")
+                _time.sleep(delay)
+                # Backup state, pull remote, restore state, re-commit
+                state_snapshot = backup_files(dirty_state_files() or STATE_SYNC)
                 env = os.environ.copy()
                 env["GIT_TERMINAL_PROMPT"] = "0"
                 try:
@@ -492,21 +514,32 @@ finally:
                             if not resolve_state_rebase():
                                 print("WARNING: could not auto-resolve rebase, aborting.")
                                 clean_leftover_rebase()
-                                raise SystemExit(0)
+                                break
                 except subprocess.TimeoutExpired:
-                    print("WARNING: pull timed out — state kept locally.")
-                    raise SystemExit(0)
-                
-                # Re-push the rebased commit
-                push2 = git("push", visible=True, timeout=30)
-                if push2.returncode != 0:
-                    print("WARNING: git push failed again — remote not updated.")
-                    undo_last_state_commit()
-                else:
-                    print("Done.")
-            else:
-                print("Done.")
+                    print("WARNING: pull timed out.")
+                    break
+                # Restore our local state files on top of whatever remote had
+                if state_snapshot:
+                    restore_files(state_snapshot)
+                # Re-encrypt config if needed
+                if passphrase and os.path.exists(os.path.join(REPO, "config.json")):
+                    try:
+                        with open(os.path.join(REPO, "config.json"), "rb") as f:
+                            encrypted = config_crypt.encrypt(f.read(), passphrase)
+                        with open(os.path.join(REPO, "config.json.enc"), "wb") as f:
+                            f.write(encrypted)
+                    except Exception:
+                        pass
+                # Re-add and amend/re-commit
+                git("add", *STATE_SYNC)
+                if git_has_staged(STATE_SYNC):
+                    git("commit", "-m", "Sync state after run", "--", *STATE_SYNC)
+
+            if not pushed:
+                print("WARNING: all push attempts failed — remote not updated.")
+                undo_last_state_commit()
         else:
             print("No state changes to push.")
     except Exception as e:
         print(f"WARNING: state sync skipped: {e}")
+
