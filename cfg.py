@@ -394,6 +394,13 @@ class ConfigManager:
                     if sid not in existing_skins:
                         existing_skins[sid] = copy.deepcopy(sdata)
                         logger.info(f"Миграция: добавлен скин '{sid}' из дефолтов")
+                    else:
+                        # Дополняем отсутствующие ключевые слова из дефолтов
+                        existing_kws_lower = {k.lower() for k in existing_skins[sid].get('keywords', [])}
+                        for kw in sdata.get('keywords', []):
+                            if kw.lower() not in existing_kws_lower:
+                                existing_skins[sid].setdefault('keywords', []).append(kw)
+                                logger.info(f"Миграция: для скина '{sid}' добавлено ключевое слово '{kw}'")
                 # Миграция: добавляем недостающие confirmed PVE слова из дефолтов
                 existing_confirmed = set(k.lower() for k in self.data.get('confirmed_pve_keywords', []))
                 for kw in DEFAULT_CONFIRMED_PVE:

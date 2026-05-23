@@ -297,10 +297,10 @@ def sync_from_remote():
     remote_str = (remote_url.stdout or "").strip()
     if gh_token and remote_str:
         import re
-        # Replace any embedded token (ghp_xxx or github_pat_xxx) with current one
-        fixed = re.sub(r'https://[^@]*@github\.com', f'https://{gh_token}@github.com', remote_str)
+        # Replace or embed GITHUB_TOKEN (e.g. ghp_xxx or github_pat_xxx) into the URL
+        fixed = re.sub(r'https://(?:[^@]+@)?github\.com', f'https://{gh_token}@github.com', remote_str)
         if fixed != remote_str:
-            print(f"  Fixing remote URL (old token -> new)...")
+            print(f"  Fixing remote URL (embedding GITHUB_TOKEN)...")
             git("remote", "set-url", "origin", fixed)
             remote_str = fixed
     if remote_str:
