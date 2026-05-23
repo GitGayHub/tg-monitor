@@ -42,7 +42,34 @@ SEEN_IDS_FILE = 'seen_ids.txt'
 SENT_OFFERS_FILE = 'sent_offers.json'
 BANNED_IDS_FILE = 'banned_ids.txt'
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s', stream=sys.stdout, force=True)
+def setup_logging(verbose=False):
+    if verbose:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
+            stream=sys.stdout,
+            force=True
+        )
+        logging.getLogger("httpx").setLevel(logging.DEBUG)
+        logging.getLogger("telegram").setLevel(logging.DEBUG)
+        logging.getLogger("httpcore").setLevel(logging.DEBUG)
+        logging.getLogger("apscheduler").setLevel(logging.DEBUG)
+    else:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
+            stream=sys.stdout,
+            force=True
+        )
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("telegram").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("apscheduler").setLevel(logging.WARNING)
+
+# Настройка логирования по умолчанию (без миллисекунд, тихий режим для библиотек)
+setup_logging(verbose=False)
 logger = logging.getLogger()
 process_offers_lock = asyncio.Lock()
 HTTP_TIMEOUT = (10, 20)
@@ -860,7 +887,7 @@ def _sync_get_listings():
                         seen_hrefs.add(href)
                         item['data-source-lot'] = source_lot
                         all_items.append(item)
-                logger.info(f"📄 {url} [{source_lot}]: {len(items)} предложений")
+                logger.debug(f"📄 {url} [{source_lot}]: {len(items)} предложений")
                 if url != FUNPAY_URLS[-1]:
                     time.sleep(random.uniform(0.5, 1.0))
             except Exception as e:
@@ -1040,7 +1067,7 @@ def _sync_search_min_price(keywords, require_pve=False):
                                 'matched_kw': kw
                             }
 
-                logger.info(f"Мин. прайс: '{kw}' → {len(items)} предложений")
+                logger.debug(f"Мин. прайс: '{kw}' → {len(items)} предложений")
                 if kw != keywords[-1]:
                     time.sleep(random.uniform(0.5, 1.0))
 
@@ -1119,7 +1146,7 @@ def _sync_search_min_price(keywords, require_pve=False):
                 logger.warning(f"Мін. прайс: не удалось открыть описание {href}: {e}")
         full_desc, full_text = details_cache.get(href, ("", ""))
         if full_text and contains_exclude_keyword(full_text, exclude_kws, positive_kws):
-            logger.info(f"Мін. прайс: отфильтровано по описанию — {href}")
+            logger.debug(f"Мін. прайс: отфильтровано по описанию — {href}")
             continue
         if require_pve:
             combined = f"{normalize_match_text(candidate.get('description',''))} {full_text}"
@@ -1251,11 +1278,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         if include_unconfirmed_pve:
             mode_parts.append("+PVE")
         mode = " ".join(mode_parts) if mode_parts else "СТАНДАРТ"
-        logger.info(f"🔍 Проверка предложений... [{mode}] (макс. цена авто)")
+        logger.debug(f"🔍 Проверка предложений... [{mode}] (макс. цена авто)")
 
         if premium_only:
             search_keywords = config.get_premium_pve()
-            logger.info(f"🏆 PREMIUM режим: ищу только издания ({len(search_keywords)} слов)")
+            logger.debug(f"🏆 PREMIUM режим: ищу только издания ({len(search_keywords)} слов)")
         else:
             search_keywords = config.get_search_keywords(include_unconfirmed_pve=include_unconfirmed_pve)
 
@@ -1519,7 +1546,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             if is_excluded:
                 if not already_seen:
-                    logger.info(f"🚫 Исключено в кратком описании: {short_description[:40]}...")
+                    logger.debug(f"🚫 Исключено в кратком описании: {short_description[:40]}...")
                 if skip_seen and not already_seen:
                     seen_ids.add(offer_id)
                     save_seen_id(offer_id)
@@ -1591,7 +1618,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     if full_desc:
                         excluded = contains_exclude_keyword(full_desc, exclude_keywords, positive_keywords)
                         if excluded:
-                            logger.info(f"🚫 Авто-валидация: исключён по описанию ('{excluded}'): {href}")
+                            logger.debug(f"🚫 Авто-валидация: исключён по описанию ('{excluded}'): {href}")
                             validated_cache[href] = False
                             return False
                 except Exception as e:
@@ -1621,7 +1648,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             if validated_cache:
                 n_checked = len(validated_cache)
                 n_removed = sum(1 for v in validated_cache.values() if not v)
-                logger.info(f"🔍 Авто-валидация: проверено {n_checked} описаний, исключено {n_removed}")
+                logger.debug(f"🔍 Авто-валидация: проверено {n_checked} описаний, исключено {n_removed}")
 
             parts = []
 
@@ -1681,10 +1708,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             parts.append(f"STW подтв: {'да' if auto_pve_confirmed else '—'}, неподтв: {'да' if auto_pve_unconfirmed else '—'}")
 
 
-            logger.info(f"📈 Авто-мониторинг: {', '.join(parts)}")
+            logger.debug(f"📈 Авто-мониторинг: {', '.join(parts)}")
 
         new_candidates = len(candidates)
-        logger.info(
+        logger.debug(
             f"📊 Статистика: Всего на сайте: {total_listings} | Уже просмотрено: {already_seen_count} | "
             f"Забанено: {banned_count} | Новых кандидатов: {new_candidates}"
         )
@@ -1715,7 +1742,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             force=True,
         )
 
-        logger.info(f"🔢 Обрабатываю кандидатов: {limit}/{len(candidates)}")
+        logger.debug(f"🔢 Обрабатываю кандидатов: {limit}/{len(candidates)}")
 
         for idx, candidate in enumerate(candidates[:limit], start=1):
             if cancelled():
@@ -1744,7 +1771,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             )
 
             await asyncio.sleep(0)
-            logger.info(f"Загружаю детали: {href}")
+            logger.debug(f"Загружаю детали: {href}")
 
             def _mark_seen_permanent():
                 if not skip_seen:
@@ -1756,7 +1783,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     logger.warning(f"Не удалось сохранить seen_id для отклонённого лота: {e}")
 
             if is_recently_sent(offer_id, candidate['user'], candidate['short_description'], candidate['price_value']):
-                logger.info(f"⏳ Пропуск: лот {offer_id} от {candidate['user']} (или аналогичный) уже отправлялся в последние 7 дней")
+                logger.debug(f"⏳ Пропуск: лот {offer_id} от {candidate['user']} (или аналогичный) уже отправлялся в последние 7 дней")
                 _mark_seen_permanent()
                 continue
 
@@ -1776,7 +1803,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             combined_text = candidate['short_description'] + " " + full_description
             matched_exclude = contains_exclude_keyword(combined_text, exclude_keywords, positive_keywords)
             if matched_exclude:
-                logger.info(f"🚫 Исключено ('{matched_exclude}'): {candidate['short_description'][:40]}...")
+                logger.debug(f"🚫 Исключено ('{matched_exclude}'): {candidate['short_description'][:40]}...")
                 try:
                     record_red_flag(
                         item_name=candidate.get('short_description', '')[:80],
@@ -1812,13 +1839,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     update_recheck_log_offer(log_state[matched_edition], 'any_offer', seller_price, candidate['price_text'], href)
                 ed_price = editions.get(matched_edition, {}).get('price', effective_max_price)
                 if seller_price > ed_price:
-                    logger.info(f"💸 Дорого для {matched_edition}: {seller_price}₽ > {ed_price}₽")
+                    logger.debug(f"💸 Дорого для {matched_edition}: {seller_price}₽ > {ed_price}₽")
                     _mark_seen_permanent()
                     continue
                 price_breakdown = f"🏆 {matched_edition.replace('_', ' ').title()} до {ed_price}₽"
             else:
                 if search_mode != 'skins_only' and has_new_pve(combined_text):
-                    logger.info(f"⛔ Пропуск (новое PVE/STW): {candidate['short_description'][:40]}...")
+                    logger.debug(f"⛔ Пропуск (новое PVE/STW): {candidate['short_description'][:40]}...")
                     _mark_seen_permanent()
                     continue
 
@@ -1834,7 +1861,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     for skin in found_skins:
                         skin_cfg = all_skins_data.get(skin['id'], {})
                         if skin_cfg.get('require_pve', False):
-                            logger.info(f"🧟 Скин {skin['id']} требует PVE, но PVE не найден — пропускаю скин")
+                            logger.debug(f"🧟 Скин {skin['id']} требует PVE, но PVE не найден — пропускаю скин")
                         else:
                             filtered_skins.append(skin)
                     found_skins = filtered_skins
@@ -1859,14 +1886,14 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 should_skip = not found_skins and not pure_confirmed_pve_match and not pure_unconfirmed_pve_match
 
                 if should_skip:
-                    logger.info(f"⏭️ Пропуск (нет ценных скинов/PVE): {candidate['short_description'][:40]}...")
+                    logger.debug(f"⏭️ Пропуск (нет ценных скинов/PVE): {candidate['short_description'][:40]}...")
                     _mark_seen_permanent()
                     continue
 
                 if include_unconfirmed_pve and has_pve_flag:
                     has_confirmed = has_pve(combined_text, include_unconfirmed=False)
                     if has_confirmed:
-                        logger.info(f"✅ Пропуск (подтв. PVE, уже в мониторинге): {candidate['short_description'][:40]}...")
+                        logger.debug(f"✅ Пропуск (подтв. PVE, уже в мониторинге): {candidate['short_description'][:40]}...")
                         _mark_seen_permanent()
                         continue
 
@@ -1891,7 +1918,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
                 seller_price = candidate['price_value']
                 if seller_price > my_max_price:
-                    logger.info(f"💸 Слишком дорого: {seller_price}₽ > {my_max_price}₽ ({price_breakdown})")
+                    logger.debug(f"💸 Слишком дорого: {seller_price}₽ > {my_max_price}₽ ({price_breakdown})")
                     _mark_seen_permanent()
                     continue
 
@@ -1906,9 +1933,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 if all_require and not has_confirmed_final:
                     # Все скины требуют подтверждённое PVE — неподтверждённое не считается
                     if not has_any_final:
-                        logger.info(f"🛡️ Защита: все скины require_pve но PVE не найдено — пропуск: {candidate['short_description'][:50]}")
+                        logger.debug(f"🛡️ Защита: все скины require_pve но PVE не найдено — пропуск: {candidate['short_description'][:50]}")
                     else:
-                        logger.info(f"🛡️ Защита: все скины require_pve, PVE только неподтверждённое — пропуск: {candidate['short_description'][:50]}")
+                        logger.debug(f"🛡️ Защита: все скины require_pve, PVE только неподтверждённое — пропуск: {candidate['short_description'][:50]}")
                     _mark_seen_permanent()
                     continue
 
@@ -1998,7 +2025,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         if sent_count > 0:
             logger.info(f"✅ Итого отправлено: {sent_count} новых предложений")
         else:
-            logger.info("ℹ️ Новых подходящих предложений не найдено")
+            logger.debug("ℹ️ Новых подходящих предложений не найдено")
 
         return sent_count
     finally:
@@ -2044,7 +2071,7 @@ async def check_funpay_job(context: ContextTypes.DEFAULT_TYPE):
             context.bot_data.pop('current_check_origin', None)
             context.bot_data['cancel_current_check'] = False
         else:
-            logger.info("⏭️ Фоновая проверка пропущена: выполняется ручной режим")
+            logger.debug("⏭️ Фоновая проверка пропущена: выполняется ручной режим")
             return
     await process_offers(context=context, skip_seen=True)
 
@@ -2755,9 +2782,10 @@ def _log_startup_banner(mode):
     logger.info("╚══════════════════════════════════════════════╝")
 
 
-async def run_once():
+async def run_once(verbose=False):
     global bot_username
     """Запуск один раз и выход, для GitHub Actions / Cron."""
+    setup_logging(verbose=verbose)
     if not TELEGRAM_BOT_TOKEN:
         print("FATAL: TELEGRAM_BOT_TOKEN not set")
         sys.exit(1)
@@ -2803,10 +2831,13 @@ async def post_init(application):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--once', action='store_true', help='Запустить один раз и выйти')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Подробный вывод логов')
     args = parser.parse_args()
 
+    setup_logging(verbose=args.verbose)
+
     if args.once:
-        asyncio.run(run_once())
+        asyncio.run(run_once(verbose=args.verbose))
         return
 
     if not TELEGRAM_BOT_TOKEN:

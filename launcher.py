@@ -453,7 +453,7 @@ print("\n=== [2/3] Starting bot (Ctrl+C to exit) ===\n")
 
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 try:
-    subprocess.run([sys.executable, MONITOR], cwd=REPO)
+    subprocess.run([sys.executable, MONITOR] + sys.argv[1:], cwd=REPO)
 finally:
     print("\n=== [3/3] Pushing state updates to GitHub ===")
     try:

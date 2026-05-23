@@ -28,4 +28,5 @@ $pythonPath = "python"
 if (Test-Path "$PSScriptRoot\.venv\Scripts\python.exe") {
     $pythonPath = "$PSScriptRoot\.venv\Scripts\python.exe"
 }
-& $pythonPath "$PSScriptRoot\launcher.py"
+& $pythonPath "$PSScriptRoot\launcher.py" $args
+
