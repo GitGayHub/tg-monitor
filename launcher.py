@@ -243,6 +243,22 @@ def ensure_on_main():
         git("checkout", "main", visible=True)
 
 
+def clean_leftover_rebase():
+    """Force remove rebase folders if git gets stuck."""
+    import shutil
+    git_dir = os.path.join(REPO, ".git")
+    for folder in ["rebase-merge", "rebase-apply"]:
+        path = os.path.join(git_dir, folder)
+        if os.path.exists(path):
+            print(f"INFO: cleaning leftover rebase folder {folder}...")
+            git("rebase", "--abort")
+            if os.path.exists(path):
+                try:
+                    shutil.rmtree(path)
+                except Exception as e:
+                    print(f"WARNING: could not remove {path}: {e}")
+
+
 def resolve_state_rebase():
     """Auto-resolve rebase conflicts in state files by taking remote version."""
     guard = 0
@@ -341,6 +357,7 @@ def sync_from_remote():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 acquire_lock()
+clean_leftover_rebase()
 
 # ═══ Pre-flight validation ═══
 print("=== [0/3] Validating tokens ===")
@@ -405,7 +422,7 @@ print()
 if in_rebase():
     print("WARNING: leftover rebase detected, trying auto-repair...")
     if not resolve_state_rebase():
-        git("rebase", "--abort", visible=True)
+        clean_leftover_rebase()
 
 ensure_on_main()
 
@@ -474,7 +491,7 @@ finally:
                             print("INFO: state conflict during pull rebase, auto-resolving...")
                             if not resolve_state_rebase():
                                 print("WARNING: could not auto-resolve rebase, aborting.")
-                                git("rebase", "--abort")
+                                clean_leftover_rebase()
                                 raise SystemExit(0)
                 except subprocess.TimeoutExpired:
                     print("WARNING: pull timed out — state kept locally.")
