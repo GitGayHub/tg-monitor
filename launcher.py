@@ -464,44 +464,29 @@ finally:
             push = git("push", visible=True, timeout=30)
             if push.returncode != 0:
                 print("Push rejected — pulling remote changes and retrying...")
-                # Undo commit, pull, re-commit, push
-                git("reset", "--mixed", "HEAD~1")
-                # Pull with rebase
+                # Pull with rebase while keeping the local commit
                 env = os.environ.copy()
                 env["GIT_TERMINAL_PROMPT"] = "0"
                 try:
-                    subprocess.run(GIT_BASE + ["pull", "--rebase", "--autostash"], cwd=REPO, env=env, timeout=60)
+                    pull = subprocess.run(GIT_BASE + ["pull", "--rebase"], cwd=REPO, env=env, timeout=60)
+                    if pull.returncode != 0:
+                        if in_rebase():
+                            print("INFO: state conflict during pull rebase, auto-resolving...")
+                            if not resolve_state_rebase():
+                                print("WARNING: could not auto-resolve rebase, aborting.")
+                                git("rebase", "--abort")
+                                raise SystemExit(0)
                 except subprocess.TimeoutExpired:
                     print("WARNING: pull timed out — state kept locally.")
                     raise SystemExit(0)
                 
-                # Re-encrypt config after pull
-                if passphrase and os.path.exists(os.path.join(REPO, "config.json")):
-                    try:
-                        sys.path.append(REPO)
-                        import config_crypt
-                        with open(os.path.join(REPO, "config.json"), "rb") as f:
-                            encrypted = config_crypt.encrypt(f.read(), passphrase)
-                        with open(os.path.join(REPO, "config.json.enc"), "wb") as f:
-                            f.write(encrypted)
-                    except Exception as e:
-                        print(f"  ⚠️ Error re-encrypting config after pull: {e}")
-                
-                # Re-commit and push
-                git("add", *STATE_SYNC)
-                if git_has_staged(STATE_SYNC):
-                    commit2 = git("commit", "-m", "Sync state after run", "--", *STATE_SYNC, visible=True)
-                    if commit2.returncode != 0:
-                        print("WARNING: re-commit failed — state left as working-tree changes.")
-                        raise SystemExit(0)
-                    push2 = git("push", visible=True, timeout=30)
-                    if push2.returncode != 0:
-                        print("WARNING: git push failed again — remote not updated.")
-                        undo_last_state_commit()
-                    else:
-                        print("Done.")
+                # Re-push the rebased commit
+                push2 = git("push", visible=True, timeout=30)
+                if push2.returncode != 0:
+                    print("WARNING: git push failed again — remote not updated.")
+                    undo_last_state_commit()
                 else:
-                    print("No state changes after pull.")
+                    print("Done.")
             else:
                 print("Done.")
         else:
