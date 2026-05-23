@@ -1,4 +1,4 @@
-﻿"""
+"""
 ConfigManager — загрузка/сохранение настроек бота из config.json.
 Все параметры хранятся в JSON-файле и могут изменяться через Telegram-меню.
 """
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_RARE_SKINS = {
     'royale_bomber': {
         'enabled': True,
-        'keywords': ['королевский пилот', 'пилот', 'royale bomber'],
+        'keywords': ['королевский пилот', 'пилот', 'royale bomber', 'royalebomber'],
         'price': 1800
     },
     'eon': {
@@ -29,7 +29,7 @@ DEFAULT_RARE_SKINS = {
     },
     'dark_vertex': {
         'enabled': True,
-        'keywords': ['тёмный вертекс', 'темный вертекс', 'dark vertex', 'черный вертекс', 'чёрный вертекс'],
+        'keywords': ['тёмный вертекс', 'темный вертекс', 'dark vertex', 'darkvertex', 'черный вертекс', 'чёрный вертекс'],
         'price': 2200
     },
     'neo_versa': {
@@ -39,7 +39,7 @@ DEFAULT_RARE_SKINS = {
     },
     'rogue_spider_knight': {
         'enabled': True,
-        'keywords': ['ядовитый арахнид', 'rogue spider knight', 'ядовитый арахнит'],
+        'keywords': ['ядовитый арахнид', 'rogue spider knight', 'roguespiderknight', 'spiderknight', 'ядовитый арахнит'],
         'price': 1500
     },
     'stealth_reflex': {
@@ -49,7 +49,7 @@ DEFAULT_RARE_SKINS = {
     },
     'surf_strider': {
         'enabled': True,
-        'keywords': ['волнолом', 'surf strider'],
+        'keywords': ['волнолом', 'surf strider', 'surfstrider'],
         'price': 1500
     },
     'wildcat': {
@@ -79,7 +79,7 @@ DEFAULT_RARE_SKINS = {
     },
     'cobalt_snowfoot': {
         'enabled': True,
-        'keywords': ['cobalt snowfoot', 'кобальтовый айсберг'],
+        'keywords': ['cobalt snowfoot', 'cobaltsnowfoot', 'cobalt', 'кобальтовый айсберг'],
         'price': 1500
     },
     'florin': {
@@ -249,6 +249,9 @@ DEFAULT_EXCLUDE_KEYWORDS = [
     'почты в продаже нет', 'почта не в продаже',
     'почта при аккаунте не идет', 'почта к аккаунту не идёт',
     'почту получить нельзя', 'получить почту нельзя',
+    # --- Нет полного доступа (EN) ---
+    'no full access', 'non-full-access', 'non full access',
+    'unverified', 'no email access',
 ]
 
 # --- Позитивные фразы: если найдены, аккаунт ТОЧНО с почтой/перепривязкой ---
