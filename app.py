@@ -1278,7 +1278,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         if include_unconfirmed_pve:
             mode_parts.append("+PVE")
         mode = " ".join(mode_parts) if mode_parts else "СТАНДАРТ"
-        logger.debug(f"🔍 Проверка предложений... [{mode}] (макс. цена авто)")
+        logger.info(f"🔍 Проверка предложений... [{mode}] (макс. цена авто)")
 
         if premium_only:
             search_keywords = config.get_premium_pve()
@@ -2879,6 +2879,8 @@ def main():
 
     job_queue = application.job_queue
     job_queue.run_repeating(check_funpay_job, interval=config.check_interval, first=10)
+
+    logger.info("🤖 Бот запущен, запуск мониторинга...")
 
     import signal as _signal
     _signal.signal(_signal.SIGINT, lambda s, f: os._exit(0))
