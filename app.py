@@ -78,6 +78,11 @@ HTTP_TIMEOUT = (10, 20)
 seen_ids = set()
 sent_offers = {}
 banned_ids = set()
+
+# Глобальный кэш деталей предложений (для минимизации запросов к FunPay)
+# Схема: href → { 'full_description': str, 'rating_text': str, 'cached_at': float }
+OFFER_DETAILS_CACHE = {}
+OFFER_DETAILS_CACHE_TTL = 3600  # Время жизни кэша: 1 час (3600 секунд)
 chat_id = os.environ.get('TELEGRAM_CHAT_ID')
 bot_username = os.environ.get('TELEGRAM_BOT_USERNAME')
 config = ConfigManager()  # Загружает из config.json или создаёт с дефолтами
@@ -998,8 +1003,23 @@ def _sync_get_offer_details(offer_url):
         return None, "Ошибка загрузки"
 
 async def get_offer_details(offer_url):
-    """Получает детали предложения — НЕ блокирует event loop."""
-    return await asyncio.to_thread(_sync_get_offer_details, offer_url)
+    """Получает детали предложения с кэшированием."""
+    now = time.time()
+    if offer_url in OFFER_DETAILS_CACHE:
+        cached = OFFER_DETAILS_CACHE[offer_url]
+        if now - cached['cached_at'] < OFFER_DETAILS_CACHE_TTL:
+            return cached['full_description'], cached['rating_text']
+
+    full_desc, rating = await asyncio.to_thread(_sync_get_offer_details, offer_url)
+
+    if full_desc is not None and full_desc != "Ошибка загрузки":
+        OFFER_DETAILS_CACHE[offer_url] = {
+            'full_description': full_desc,
+            'rating_text': rating,
+            'cached_at': now
+        }
+
+    return full_desc, rating
 
 
 def _sync_search_min_price(keywords, require_pve=False):
@@ -1605,12 +1625,16 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             # --- Validate top offers by loading full descriptions ---
             # Only check cheapest (first) offer per map to minimize HTTP requests
             validated_cache = {}  # href → True/False
+            cache_hits = 0
 
             async def _validate_offer(offer):
-                """Load full description and check exclude keywords. Returns True if OK."""
+                nonlocal cache_hits
                 href = offer.get('href', '')
                 if href in validated_cache:
                     return validated_cache[href]
+                if href in OFFER_DETAILS_CACHE:
+                    if time.time() - OFFER_DETAILS_CACHE[href]['cached_at'] < OFFER_DETAILS_CACHE_TTL:
+                        cache_hits += 1
                 try:
                     full_desc, _ = await asyncio.wait_for(
                         get_offer_details(href), timeout=15
@@ -1636,6 +1660,15 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 return result
 
             # Validate only the #1 cheapest offer per map (fast: ~20 requests max)
+            total_auto_keys = len(auto_price_map) + len(auto_pve_map) + len(auto_edition_map)
+            if auto_pve_confirmed:
+                total_auto_keys += 1
+            if auto_pve_unconfirmed:
+                total_auto_keys += 1
+
+            if total_auto_keys > 0:
+                logger.info("🔍 Авто-валидация: проверка цен для авто-мониторинга...")
+
             for sid in list(auto_price_map.keys()):
                 auto_price_map[sid] = await _validate_cheapest(auto_price_map[sid])
             for sid in list(auto_pve_map.keys()):
@@ -1648,7 +1681,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             if validated_cache:
                 n_checked = len(validated_cache)
                 n_removed = sum(1 for v in validated_cache.values() if not v)
-                logger.debug(f"🔍 Авто-валидация: проверено {n_checked} описаний, исключено {n_removed}")
+                logger.info(f"🔍 Авто-валидация: проверено {n_checked} описаний (из кэша: {cache_hits}), исключено {n_removed}")
 
             parts = []
 
