@@ -78,6 +78,7 @@ HTTP_TIMEOUT = (10, 20)
 seen_ids = set()
 sent_offers = {}
 banned_ids = set()
+check_run_count = 0
 
 # Глобальный кэш деталей предложений (для минимизации запросов к FunPay)
 # Схема: href → { 'full_description': str, 'rating_text': str, 'cached_at': float }
@@ -1298,7 +1299,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         if include_unconfirmed_pve:
             mode_parts.append("+PVE")
         mode = " ".join(mode_parts) if mode_parts else "СТАНДАРТ"
-        logger.info(f"🔍 Проверка предложений... [{mode}] (макс. цена авто)")
+        if skip_seen:
+            global check_run_count
+            check_run_count += 1
+            logger.info(f"🔍 Проверка предложений #{check_run_count}... [{mode}] (макс. цена авто)")
+        else:
+            logger.info(f"🔍 Проверка предложений... [{mode}] (макс. цена авто)")
 
         if premium_only:
             search_keywords = config.get_premium_pve()
@@ -1744,8 +1750,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             logger.debug(f"📈 Авто-мониторинг: {', '.join(parts)}")
 
         new_candidates = len(candidates)
+        new_offers_count = total_listings - already_seen_count - banned_count
         logger.info(
-            f"📊 Статистика: Всего на сайте: {total_listings} | Уже просмотрено: {already_seen_count} | "
+            f"📊 Статистика: Всего на сайте: {total_listings} | Новых объявлений: {new_offers_count} | "
             f"Забанено: {banned_count} | Новых кандидатов: {new_candidates}"
         )
 
