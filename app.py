@@ -1711,7 +1711,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             logger.debug(f"📈 Авто-мониторинг: {', '.join(parts)}")
 
         new_candidates = len(candidates)
-        logger.debug(
+        logger.info(
             f"📊 Статистика: Всего на сайте: {total_listings} | Уже просмотрено: {already_seen_count} | "
             f"Забанено: {banned_count} | Новых кандидатов: {new_candidates}"
         )
@@ -1742,7 +1742,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             force=True,
         )
 
-        logger.debug(f"🔢 Обрабатываю кандидатов: {limit}/{len(candidates)}")
+        logger.info(f"🔢 Обрабатываю кандидатов: {limit}/{len(candidates)}")
 
         for idx, candidate in enumerate(candidates[:limit], start=1):
             if cancelled():
@@ -1771,7 +1771,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             )
 
             await asyncio.sleep(0)
-            logger.debug(f"Загружаю детали: {href}")
+            logger.info(f"Загружаю детали: {href}")
 
             def _mark_seen_permanent():
                 if not skip_seen:
@@ -1803,7 +1803,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             combined_text = candidate['short_description'] + " " + full_description
             matched_exclude = contains_exclude_keyword(combined_text, exclude_keywords, positive_keywords)
             if matched_exclude:
-                logger.debug(f"🚫 Исключено ('{matched_exclude}'): {candidate['short_description'][:40]}...")
+                logger.info(f"🚫 Исключено ('{matched_exclude}'): {candidate['short_description'][:40]}...")
                 try:
                     record_red_flag(
                         item_name=candidate.get('short_description', '')[:80],
@@ -1839,13 +1839,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     update_recheck_log_offer(log_state[matched_edition], 'any_offer', seller_price, candidate['price_text'], href)
                 ed_price = editions.get(matched_edition, {}).get('price', effective_max_price)
                 if seller_price > ed_price:
-                    logger.debug(f"💸 Дорого для {matched_edition}: {seller_price}₽ > {ed_price}₽")
+                    logger.info(f"💸 Дорого для {matched_edition}: {seller_price}₽ > {ed_price}₽")
                     _mark_seen_permanent()
                     continue
                 price_breakdown = f"🏆 {matched_edition.replace('_', ' ').title()} до {ed_price}₽"
             else:
                 if search_mode != 'skins_only' and has_new_pve(combined_text):
-                    logger.debug(f"⛔ Пропуск (новое PVE/STW): {candidate['short_description'][:40]}...")
+                    logger.info(f"⛔ Пропуск (новое PVE/STW): {candidate['short_description'][:40]}...")
                     _mark_seen_permanent()
                     continue
 
@@ -1861,7 +1861,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     for skin in found_skins:
                         skin_cfg = all_skins_data.get(skin['id'], {})
                         if skin_cfg.get('require_pve', False):
-                            logger.debug(f"🧟 Скин {skin['id']} требует PVE, но PVE не найден — пропускаю скин")
+                            logger.info(f"🧟 Скин {skin['id']} требует PVE, но PVE не найден — пропускаю скин")
                         else:
                             filtered_skins.append(skin)
                     found_skins = filtered_skins
@@ -1886,14 +1886,14 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 should_skip = not found_skins and not pure_confirmed_pve_match and not pure_unconfirmed_pve_match
 
                 if should_skip:
-                    logger.debug(f"⏭️ Пропуск (нет ценных скинов/PVE): {candidate['short_description'][:40]}...")
+                    logger.info(f"⏭️ Пропуск (нет ценных скинов/PVE): {candidate['short_description'][:40]}...")
                     _mark_seen_permanent()
                     continue
 
                 if include_unconfirmed_pve and has_pve_flag:
                     has_confirmed = has_pve(combined_text, include_unconfirmed=False)
                     if has_confirmed:
-                        logger.debug(f"✅ Пропуск (подтв. PVE, уже в мониторинге): {candidate['short_description'][:40]}...")
+                        logger.info(f"✅ Пропуск (подтв. PVE, уже в мониторинге): {candidate['short_description'][:40]}...")
                         _mark_seen_permanent()
                         continue
 
@@ -1918,7 +1918,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
                 seller_price = candidate['price_value']
                 if seller_price > my_max_price:
-                    logger.debug(f"💸 Слишком дорого: {seller_price}₽ > {my_max_price}₽ ({price_breakdown})")
+                    logger.info(f"💸 Слишком дорого: {seller_price}₽ > {my_max_price}₽ ({price_breakdown})")
                     _mark_seen_permanent()
                     continue
 
@@ -1933,9 +1933,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 if all_require and not has_confirmed_final:
                     # Все скины требуют подтверждённое PVE — неподтверждённое не считается
                     if not has_any_final:
-                        logger.debug(f"🛡️ Защита: все скины require_pve но PVE не найдено — пропуск: {candidate['short_description'][:50]}")
+                        logger.info(f"🛡️ Защита: все скины require_pve но PVE не найдено — пропуск: {candidate['short_description'][:50]}")
                     else:
-                        logger.debug(f"🛡️ Защита: все скины require_pve, PVE только неподтверждённое — пропуск: {candidate['short_description'][:50]}")
+                        logger.info(f"🛡️ Защита: все скины require_pve, PVE только неподтверждённое — пропуск: {candidate['short_description'][:50]}")
                     _mark_seen_permanent()
                     continue
 
@@ -2025,7 +2025,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         if sent_count > 0:
             logger.info(f"✅ Итого отправлено: {sent_count} новых предложений")
         else:
-            logger.debug("ℹ️ Новых подходящих предложений не найдено")
+            logger.info("ℹ️ Новых подходящих предложений не найдено")
 
         return sent_count
     finally:
