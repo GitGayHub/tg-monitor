@@ -658,6 +658,16 @@ class ConfigManager:
     # ========================
 
     @property
+    def x5_mode(self):
+        import os
+        return self.data.get('x5_mode', False) or os.environ.get('X5_MODE') == 'true'
+
+    @x5_mode.setter
+    def x5_mode(self, value):
+        self.data['x5_mode'] = bool(value)
+        self.save()
+
+    @property
     def max_price(self):
         return self.data.get('max_price', 5000)
 

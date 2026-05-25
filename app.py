@@ -1312,6 +1312,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         else:
             search_keywords = config.get_search_keywords(include_unconfirmed_pve=include_unconfirmed_pve)
 
+        x5_mode = config.x5_mode
+        is_git = os.environ.get('GITHUB_ACTIONS') == 'true'
+        source_text = "автомониторинг git" if is_git else "автомониторинг local"
+
         skins_dict = config.get_enabled_skins_dict()
         exclude_keywords = config.get_exclude_keywords()
         positive_keywords = config.get_positive_keywords()
@@ -1329,6 +1333,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             effective_max_price = max(skin_prices, default=config.max_price) + config.pve_bonus
             if confirmed_pve_enabled_effective:
                 effective_max_price = max(effective_max_price, confirmed_pve_price_effective)
+
+        if x5_mode:
+            effective_max_price *= 5
 
         if rare_override is not None or pve_override is not None or max_price_override is not None:
             logger.info(f"PRICETEST: rare={rare_override}, pve={pve_override}, max_price={effective_max_price}")
@@ -1743,12 +1750,19 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 seller_price = candidate['price_value']
                 if log_state and matched_edition in log_state:
                     update_recheck_log_offer(log_state[matched_edition], 'any_offer', seller_price, candidate['price_text'], href)
-                ed_price = editions.get(matched_edition, {}).get('price', effective_max_price)
-                if seller_price > ed_price:
-                    logger.info(f"💸 Дорого для {matched_edition}: {seller_price}₽ > {ed_price}₽")
+                
+                ed_price_original = editions.get(matched_edition, {}).get('price', effective_max_price / 5 if x5_mode else effective_max_price)
+                ed_price_x5 = ed_price_original * 5 if x5_mode else ed_price_original
+                
+                if seller_price > ed_price_x5:
+                    logger.info(f"💸 Дорого для {matched_edition}: {seller_price}₽ > {ed_price_x5}₽")
                     _mark_seen_permanent()
                     continue
-                price_breakdown = f"🏆 {matched_edition.replace('_', ' ').title()} до {ed_price}₽"
+                
+                original_my_max_price = ed_price_original
+                x5_my_max_price = ed_price_x5
+                passed_without_x5 = (seller_price <= ed_price_original)
+                price_breakdown = f"🏆 {matched_edition.replace('_', ' ').title()} до {ed_price_x5}₽ (оригинал: {ed_price_original}₽)" if x5_mode else f"🏆 {matched_edition.replace('_', ' ').title()} до {ed_price_original}₽"
             else:
                 if search_mode != 'skins_only' and has_new_pve(combined_text):
                     logger.info(f"⛔ Пропуск (новое PVE/STW): {candidate['short_description'][:40]}...")
@@ -1809,13 +1823,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 pve_for_price = False if all_require_pve else has_pve_flag
 
                 if not found_skins and pure_confirmed_pve_match:
-                    my_max_price = max_price_override if max_price_override is not None and confirmed_pve_only else confirmed_pve_price_effective
-                    price_breakdown = f"Подтв. PVE до {my_max_price}₽"
+                    original_my_max_price = max_price_override if max_price_override is not None and confirmed_pve_only else confirmed_pve_price_effective
+                    original_price_breakdown = f"Подтв. PVE до {original_my_max_price}₽"
                 elif not found_skins and pure_unconfirmed_pve_match:
-                    my_max_price = effective_max_price
-                    price_breakdown = f"PVE до {effective_max_price}₽"
+                    original_my_max_price = effective_max_price / 5 if x5_mode else effective_max_price
+                    original_price_breakdown = f"PVE до {original_my_max_price}₽"
                 else:
-                    my_max_price, price_breakdown = calculate_max_price(
+                    original_my_max_price, original_price_breakdown = calculate_max_price(
                         found_skins,
                         pve_for_price,
                         rare_override=rare_override,
@@ -1823,10 +1837,19 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     )
 
                 seller_price = candidate['price_value']
-                if seller_price > my_max_price:
-                    logger.info(f"💸 Слишком дорого: {seller_price}₽ > {my_max_price}₽ ({price_breakdown})")
+                x5_my_max_price = original_my_max_price * 5 if x5_mode else original_my_max_price
+                
+                if x5_mode:
+                    price_breakdown = f"{original_price_breakdown} (x5 = {x5_my_max_price}₽)"
+                else:
+                    price_breakdown = original_price_breakdown
+
+                if seller_price > x5_my_max_price:
+                    logger.info(f"💸 Слишком дорого: {seller_price}₽ > {x5_my_max_price}₽ ({price_breakdown})")
                     _mark_seen_permanent()
                     continue
+
+                passed_without_x5 = (seller_price <= original_my_max_price)
 
             # === ФИНАЛЬНАЯ ЗАЩИТА: не отправлять скины без PVE если require_pve ===
             if not premium_only and found_skins:
@@ -1860,18 +1883,40 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             ban_href = build_ban_link(offer_id)
             ban_line = f"🚫 <a href='{ban_href}'>Бан</a>" if ban_href else f"🚫 Бан: /ban {offer_id}"
-            msg = (
-                f"🔔 <b>Найдено предложение!</b>\n\n"
-                f"⭐ <b>Главное:</b> {main_feature}\n"
-                f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n"
-                f"🧟 <b>PVE:</b> {pve_text}\n"
-                f"📊 <b>Оценка:</b> {price_breakdown}\n"
-                f"📌 <b>Название:</b> {candidate['short_description']}\n"
-                f"🎮 <b>Скины:</b> {skins_list}\n"
-                f"👤 <b>Продавец:</b> {candidate['user']}\n"
-                f"{rating_emoji} <b>Рейтинг:</b> {rating_text}\n"
-                f"🔗 <a href='{href}'>Ссылка на товар</a>"
-            )
+            
+            source_line = f"🖥️ <b>Источник:</b> {source_text}\n"
+            
+            if x5_mode:
+                passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
+                msg = (
+                    f"🔔 <b>Найдено предложение!</b>\n"
+                    f"⚙️ <b>Режим:</b> х5 режим\n\n"
+                    f"⭐ <b>Главное:</b> {main_feature}\n"
+                    f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a> (Моя цена в конфиге: {original_my_max_price}₽)\n"
+                    f"🤔 <b>Подошло бы без х5 режима:</b> {passed_str}\n"
+                    f"🧟 <b>PVE:</b> {pve_text}\n"
+                    f"📊 <b>Оценка:</b> {price_breakdown}\n"
+                    f"📌 <b>Название:</b> {candidate['short_description']}\n"
+                    f"🎮 <b>Скины:</b> {skins_list}\n"
+                    f"👤 <b>Продавец:</b> {candidate['user']}\n"
+                    f"{rating_emoji} <b>Рейтинг:</b> {rating_text}\n"
+                    f"{source_line}"
+                    f"🔗 <a href='{href}'>Ссылка на товар</a>"
+                )
+            else:
+                msg = (
+                    f"🔔 <b>Найдено предложение!</b>\n\n"
+                    f"⭐ <b>Главное:</b> {main_feature}\n"
+                    f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n"
+                    f"🧟 <b>PVE:</b> {pve_text}\n"
+                    f"📊 <b>Оценка:</b> {price_breakdown}\n"
+                    f"📌 <b>Название:</b> {candidate['short_description']}\n"
+                    f"🎮 <b>Скины:</b> {skins_list}\n"
+                    f"👤 <b>Продавец:</b> {candidate['user']}\n"
+                    f"{rating_emoji} <b>Рейтинг:</b> {rating_text}\n"
+                    f"{source_line}"
+                    f"🔗 <a href='{href}'>Ссылка на товар</a>"
+                )
             link_line = f"🔗 <a href='{href}'>Ссылка</a>"
             msg = msg.replace(f"🔗 <a href='{href}'>Ссылка на товар</a>", f"{ban_line}\n{link_line}")
 
