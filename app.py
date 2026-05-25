@@ -2080,6 +2080,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             async def _validate_cheapest(offers):
                 """Validate cheapest offers. Remove excluded ones from the top."""
+                if test_summary_mode:
+                    return list(offers)
                 result = list(offers)
                 while result:
                     if await _validate_offer(result[0]):
