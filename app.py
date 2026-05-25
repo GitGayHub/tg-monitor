@@ -1980,13 +1980,15 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         stat = summary_stats[matched_edition]
                         if stat['min_price'] is None or seller_price < stat['min_price']:
                             stat['min_price'] = seller_price
+                            stat['href'] = candidate.get('href', '')
                         if stat['status'].startswith('Не найдено') or stat['status'].startswith('💸 Слишком дорого'):
-                            stat['status'] = f"💸 Слишком дорого (мин цена {seller_price}₽, лимит {ed_price_x5}₽)"
+                            stat['status'] = f"💸 Слишком дорого (мин: {seller_price}₽, лимит: {ed_price_x5}₽)"
                     _mark_seen_permanent()
                     continue
                 
                 if matched_edition in summary_stats:
                     summary_stats[matched_edition]['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
+                    summary_stats[matched_edition]['href'] = candidate.get('href', '')
                 
                 original_my_max_price = ed_price_original
                 x5_my_max_price = ed_price_x5
@@ -2013,6 +2015,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             logger.info(f"🧟 Скин {skin['id']} требует PVE, но PVE не найден — пропускаю скин")
                             if skin['id'] in summary_stats:
                                 summary_stats[skin['id']]['status'] = "❌ Найден только без PVE"
+                                summary_stats[skin['id']]['href'] = candidate.get('href', '')
+                                if summary_stats[skin['id']].get('min_price') is None:
+                                    summary_stats[skin['id']]['min_price'] = seller_price
                         else:
                             filtered_skins.append(skin)
                     found_skins = filtered_skins
@@ -2082,24 +2087,28 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             stat = summary_stats[skin['id']]
                             if stat['min_price'] is None or seller_price < stat['min_price']:
                                 stat['min_price'] = seller_price
+                                stat['href'] = candidate.get('href', '')
                             if stat['status'].startswith('Не найдено') or stat['status'].startswith('💸 Слишком дорого'):
-                                stat['status'] = f"💸 Слишком дорого (мин цена {seller_price}₽, лимит {x5_my_max_price}₽)"
+                                stat['status'] = f"💸 Слишком дорого (мин: {seller_price}₽, лимит: {x5_my_max_price}₽)"
                     if not found_skins and pure_confirmed_pve_match:
                         if '__pve__' in summary_stats:
                             stat = summary_stats['__pve__']
                             if stat['min_price'] is None or seller_price < stat['min_price']:
                                 stat['min_price'] = seller_price
+                                stat['href'] = candidate.get('href', '')
                             if stat['status'].startswith('Не найдено') or stat['status'].startswith('💸 Слишком дорого'):
-                                stat['status'] = f"💸 Слишком дорого (мин цена {seller_price}₽, лимит {x5_my_max_price}₽)"
+                                stat['status'] = f"💸 Слишком дорого (мин: {seller_price}₽, лимит: {x5_my_max_price}₽)"
                     _mark_seen_permanent()
                     continue
 
                 for skin in found_skins:
                     if skin['id'] in summary_stats:
                         summary_stats[skin['id']]['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
+                        summary_stats[skin['id']]['href'] = candidate.get('href', '')
                 if not found_skins and (pure_confirmed_pve_match or pure_unconfirmed_pve_match):
                     if '__pve__' in summary_stats:
                         summary_stats['__pve__']['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
+                        summary_stats['__pve__']['href'] = candidate.get('href', '')
 
                 passed_without_x5 = (seller_price <= original_my_max_price)
 
@@ -2420,12 +2429,15 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             if seller_price <= limit_price:
                                 stat['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
                                 stat['min_price'] = seller_price
+                                stat['href'] = cheapest.get('href', '')
                             else:
-                                stat['status'] = f"💸 Слишком дорого (мин цена {seller_price}₽, лимит {limit_price}₽)"
+                                stat['status'] = f"💸 Слишком дорого (мин: {seller_price}₽, лимит: {limit_price}₽)"
                                 stat['min_price'] = seller_price
+                                stat['href'] = cheapest.get('href', '')
                         elif best_no_pve:
                             stat['status'] = "❌ Найден только без PVE"
                             stat['min_price'] = best_no_pve['price']
+                            stat['href'] = best_no_pve.get('href', '')
                 except Exception as e:
                     logger.error(f"Ошибка диагностического поиска: {e}")
 
@@ -2435,17 +2447,38 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             for sid, stat in summary_stats.items():
                 name = stat['name'].capitalize()
                 status = stat['status']
-                if status == 'Не найдено' and stat.get('min_price') is not None:
-                    status = f"💸 Слишком дорого (мин цена {stat['min_price']}₽)"
-                report_lines.append(f"• <b>{name}</b>: {status}")
+                price = stat.get('min_price')
+                href = stat.get('href', '')
+
+                if status == 'Не найдено' and price is not None:
+                    status = f"💸 Слишком дорого (мин: {price}₽)"
+
+                # Формируем строку с ценой и ссылкой
+                line = f"• <b>{name}</b>: {status}"
+
+                # Добавляем цену и ссылку для "без PVE"
+                if "без PVE" in status and price is not None:
+                    line = f"• <b>{name}</b>: ❌ без PVE (мин: {price}₽)"
+                    if href:
+                        line += f' <a href="{href}">🔗</a>'
+
+                # Добавляем ссылку для "Отправлен"
+                elif "Отправлен" in status and href:
+                    line += f' <a href="{href}">🔗</a>'
+
+                # Добавляем ссылку для "Слишком дорого"
+                elif "Слишком дорого" in status and href:
+                    line += f' <a href="{href}">🔗</a>'
+
+                report_lines.append(line)
             
             report_msg = "\n".join(report_lines)
             logger.info("📊 Отправляю диагностический отчет в Telegram...")
             try:
                 if context:
-                    await context.bot.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML')
+                    await context.bot.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML', disable_web_page_preview=True)
                 elif bot_instance:
-                    await bot_instance.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML')
+                    await bot_instance.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML', disable_web_page_preview=True)
             except Exception as e:
                 logger.error(f"Ошибка отправки диагностического отчета: {e}")
 
