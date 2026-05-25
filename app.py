@@ -1187,7 +1187,7 @@ async def search_min_price(keywords, require_pve=False):
 
 
 async def process_offers(bot_instance=None, context=None, skip_seen=True, max_price_override=None,
-                         rare_override=None, pve_override=None, candidate_limit=60,
+                         rare_override=None, pve_override=None, candidate_limit=30,
                          include_unconfirmed_pve=False, premium_only=False,
                          confirmed_pve_enabled_override=None, confirmed_pve_price_override=None):
     """Основная функция обработки предложений."""
