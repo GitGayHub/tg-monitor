@@ -1157,7 +1157,7 @@ def _sync_search_min_price(keywords, require_pve=False):
     positive_kws = config.get_positive_keywords()
     pve_tokens = [normalize_match_text(pk) for pk in config.get_confirmed_pve()] if require_pve else []
     validated = []
-    for candidate in results[:4]:
+    for candidate in results[:8]:
         href = candidate['href']
         if href not in details_cache:
             try:
