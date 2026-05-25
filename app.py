@@ -1157,7 +1157,7 @@ def _sync_search_min_price(keywords, require_pve=False):
     positive_kws = config.get_positive_keywords()
     pve_tokens = [normalize_match_text(pk) for pk in config.get_confirmed_pve()] if require_pve else []
     validated = []
-    for candidate in results[:12]:
+    for candidate in results[:4]:
         href = candidate['href']
         if href not in details_cache:
             try:
@@ -1176,7 +1176,7 @@ def _sync_search_min_price(keywords, require_pve=False):
         if full_desc:
             candidate['description'] = full_desc[:200]
         validated.append(candidate)
-        if len(validated) >= 3:
+        if len(validated) >= 1:
             break
     return validated
 
