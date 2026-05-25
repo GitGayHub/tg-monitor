@@ -2017,7 +2017,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                                 summary_stats[skin['id']]['status'] = "❌ Найден только без PVE"
                                 summary_stats[skin['id']]['href'] = candidate.get('href', '')
                                 if summary_stats[skin['id']].get('min_price') is None:
-                                    summary_stats[skin['id']]['min_price'] = seller_price
+                                    summary_stats[skin['id']]['min_price'] = candidate.get('price', 0)
                         else:
                             filtered_skins.append(skin)
                     found_skins = filtered_skins
