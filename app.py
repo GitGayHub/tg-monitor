@@ -2174,7 +2174,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
         if test_summary_mode:
             logger.info("🔍 Тестовый режим: выполняю поиск скрытых позиций на FunPay...")
+            priority_skins = {'floss', 'black_knight', 'wildcat', 'eon', 'neo_versa', 'dark_vertex', 'double_helix', '__pve__'}
             for sid, stat in summary_stats.items():
+                if sid not in priority_skins:
+                    continue
                 if stat['status'] == 'Не найдено' or stat['status'] == '❌ Найден только без PVE':
                     try:
                         require_pve = False
