@@ -1315,8 +1315,34 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         x5_mode = config.x5_mode
         is_git = os.environ.get('GITHUB_ACTIONS') == 'true'
         source_text = "автомониторинг git" if is_git else "автомониторинг local"
+        test_summary_mode = config.data.get('test_summary_mode', False) or os.environ.get('TEST_SUMMARY_MODE') == 'true'
 
         skins_dict = config.get_enabled_skins_dict()
+        
+        summary_stats = {}
+        if premium_only:
+            editions = config.get_all_editions()
+            for ed_id, ed in editions.items():
+                if ed.get('enabled', True):
+                    summary_stats[ed_id] = {
+                        'name': ed_id.replace('_', ' ').title(),
+                        'status': 'Не найдено',
+                        'min_price': None
+                    }
+        else:
+            for sid, skin in skins_dict.items():
+                summary_stats[sid] = {
+                    'name': skin.get('keywords', [sid])[0],
+                    'status': 'Не найдено',
+                    'min_price': None
+                }
+            if search_mode == 'pve_only' or confirmed_pve_only:
+                summary_stats['__pve__'] = {
+                    'name': 'Подтв. PVE',
+                    'status': 'Не найдено',
+                    'min_price': None
+                }
+
         exclude_keywords = config.get_exclude_keywords()
         positive_keywords = config.get_positive_keywords()
         search_mode = config.search_mode
@@ -1756,8 +1782,17 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 
                 if seller_price > ed_price_x5:
                     logger.info(f"💸 Дорого для {matched_edition}: {seller_price}₽ > {ed_price_x5}₽")
+                    if matched_edition in summary_stats:
+                        stat = summary_stats[matched_edition]
+                        if stat['min_price'] is None or seller_price < stat['min_price']:
+                            stat['min_price'] = seller_price
+                        if stat['status'].startswith('Не найдено') or stat['status'].startswith('💸 Слишком дорого'):
+                            stat['status'] = f"💸 Слишком дорого (мин цена {seller_price}₽, лимит {ed_price_x5}₽)"
                     _mark_seen_permanent()
                     continue
+                
+                if matched_edition in summary_stats:
+                    summary_stats[matched_edition]['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
                 
                 original_my_max_price = ed_price_original
                 x5_my_max_price = ed_price_x5
@@ -1782,6 +1817,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         skin_cfg = all_skins_data.get(skin['id'], {})
                         if skin_cfg.get('require_pve', False):
                             logger.info(f"🧟 Скин {skin['id']} требует PVE, но PVE не найден — пропускаю скин")
+                            if skin['id'] in summary_stats:
+                                summary_stats[skin['id']]['status'] = "❌ Найден только без PVE"
                         else:
                             filtered_skins.append(skin)
                     found_skins = filtered_skins
@@ -1846,8 +1883,29 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
                 if seller_price > x5_my_max_price:
                     logger.info(f"💸 Слишком дорого: {seller_price}₽ > {x5_my_max_price}₽ ({price_breakdown})")
+                    for skin in found_skins:
+                        if skin['id'] in summary_stats:
+                            stat = summary_stats[skin['id']]
+                            if stat['min_price'] is None or seller_price < stat['min_price']:
+                                stat['min_price'] = seller_price
+                            if stat['status'].startswith('Не найдено') or stat['status'].startswith('💸 Слишком дорого'):
+                                stat['status'] = f"💸 Слишком дорого (мин цена {seller_price}₽, лимит {x5_my_max_price}₽)"
+                    if not found_skins and pure_confirmed_pve_match:
+                        if '__pve__' in summary_stats:
+                            stat = summary_stats['__pve__']
+                            if stat['min_price'] is None or seller_price < stat['min_price']:
+                                stat['min_price'] = seller_price
+                            if stat['status'].startswith('Не найдено') or stat['status'].startswith('💸 Слишком дорого'):
+                                stat['status'] = f"💸 Слишком дорого (мин цена {seller_price}₽, лимит {x5_my_max_price}₽)"
                     _mark_seen_permanent()
                     continue
+
+                for skin in found_skins:
+                    if skin['id'] in summary_stats:
+                        summary_stats[skin['id']]['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
+                if not found_skins and (pure_confirmed_pve_match or pure_unconfirmed_pve_match):
+                    if '__pve__' in summary_stats:
+                        summary_stats['__pve__']['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
 
                 passed_without_x5 = (seller_price <= original_my_max_price)
 
@@ -2111,6 +2169,30 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             parts.append(f"STW подтв: {'да' if auto_pve_confirmed else '—'}, неподтв: {'да' if auto_pve_unconfirmed else '—'}")
 
             logger.debug(f"📈 Авто-мониторинг: {', '.join(parts)}")
+
+        if test_summary_mode:
+            report_lines = [
+                "📋 <b>Диагностический отчет (Тестовый режим)</b>\n"
+            ]
+            for sid, stat in summary_stats.items():
+                name = stat['name'].capitalize()
+                status = stat['status']
+                if status == 'Не найдено' and stat.get('min_price') is not None:
+                    status = f"💸 Слишком дорого (мин цена {stat['min_price']}₽)"
+                report_lines.append(f"• <b>{name}</b>: {status}")
+            
+            report_msg = "\n".join(report_lines)
+            logger.info("📊 Отправляю диагностический отчет в Telegram...")
+            try:
+                if context:
+                    await context.bot.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML')
+                elif bot_instance:
+                    await bot_instance.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML')
+            except Exception as e:
+                logger.error(f"Ошибка отправки диагностического отчета: {e}")
+
+            clear_monitoring_state()
+            logger.info("🧹 Тестовый режим: история очищена перед повтором")
 
         return sent_count
 
