@@ -1186,11 +1186,13 @@ async def search_min_price(keywords, require_pve=False):
     return await asyncio.to_thread(_sync_search_min_price, keywords, require_pve)
 
 
-def _sync_diagnostic_search(skin_searches, time_budget=80):
+def _sync_diagnostic_search(skin_searches, time_budget=120):
     """Быстрый пакетный поиск для диагностического отчёта.
 
     Использует ОДНУ HTTP-сессию для всех скинов, короткие паузы,
     и облегчённую проверку деталей (без _sync_get_offer_details с 3-7с задержкой).
+    Ищет по ВСЕМ ключевым словам, доверяет результатам поиска FunPay
+    (без дополнительного _keyword_word_match фильтра).
 
     Args:
         skin_searches: список (skin_id, keywords, require_pve)
@@ -1215,10 +1217,14 @@ def _sync_diagnostic_search(skin_searches, time_budget=80):
                 break
 
             all_candidates = {}
+            found_any_results = False
 
-            # Поиск по первым 2 ключевым словам
-            for kw in keywords[:2]:
+            # Поиск по ВСЕМ ключевым словам (не только первым 2)
+            for kw in keywords:
                 if time.monotonic() - start_time >= time_budget:
+                    break
+                # Если уже нашли кандидатов, не тратим время на остальные слова
+                if len(all_candidates) >= 5:
                     break
                 search_url = f'{FUNPAY_ACCOUNTS_URL}&search={requests.utils.quote(kw)}'
                 try:
@@ -1226,8 +1232,10 @@ def _sync_diagnostic_search(skin_searches, time_budget=80):
                     response.raise_for_status()
                     soup = BeautifulSoup(response.text, 'html.parser')
                     items = soup.find_all('a', class_='tc-item')
+                    if items:
+                        found_any_results = True
 
-                    for item in items:
+                    for item in items[:30]:  # Макс 30 результатов на запрос
                         href = item.get('href', '')
                         if href.startswith('/'):
                             href = f"https://funpay.com{href}"
@@ -1252,8 +1260,11 @@ def _sync_diagnostic_search(skin_searches, time_budget=80):
                         if price_value is None or price_value <= 0:
                             continue
 
+                        # Доверяем результатам поиска FunPay — если поиск вернул
+                        # результат по ключевому слову, значит он релевантен.
+                        # Дополнительно проверяем только substring match для надёжности.
                         normalized_kw = normalize_match_text(kw)
-                        if normalized_kw and _keyword_word_match(normalized_kw, item_text):
+                        if normalized_kw and normalized_kw in item_text:
                             all_candidates[href] = {
                                 'price': price_value,
                                 'price_text': price_text,
@@ -1264,23 +1275,73 @@ def _sync_diagnostic_search(skin_searches, time_budget=80):
                             }
 
                     logger.debug(f"Диаг [{sid}]: '{kw}' → {len(items)} предложений, {len(all_candidates)} кандидатов")
-                    time.sleep(0.3)
+                    time.sleep(0.15)  # Короткая пауза — достаточно для FunPay
 
                 except Exception as e:
                     logger.error(f"Диаг [{sid}]: ошибка поиска '{kw}': {e}")
 
-            # Валидация топ-4 кандидатов — облегчённая (без _sync_get_offer_details)
+            # Если поиск по ключевым словам ничего не нашёл, но FunPay вернул
+            # результаты — возьмём первые результаты без проверки ключевого слова
+            if not all_candidates and found_any_results:
+                # Повторим поиск по первому ключевому слову без фильтра по substring
+                kw = keywords[0]
+                search_url = f'{FUNPAY_ACCOUNTS_URL}&search={requests.utils.quote(kw)}'
+                try:
+                    response = session.get(search_url, timeout=HTTP_TIMEOUT)
+                    response.raise_for_status()
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    items = soup.find_all('a', class_='tc-item')
+
+                    for item in items[:10]:
+                        href = item.get('href', '')
+                        if href.startswith('/'):
+                            href = f"https://funpay.com{href}"
+                        if href in all_candidates:
+                            continue
+
+                        desc_div = item.find('div', class_='tc-desc-text')
+                        price_div = item.find('div', class_='tc-price')
+                        user_div = item.find('div', class_='media-user-name')
+
+                        desc = desc_div.get_text(" ", strip=True) if desc_div else ""
+                        price_text = price_div.get_text(strip=True) if price_div else ""
+                        seller = user_div.get_text(strip=True) if user_div else "?"
+                        item_text = normalize_match_text(item.get_text(" ", strip=True))
+
+                        if 'аренда' in item_text and 'продажа' not in item_text:
+                            continue
+                        if contains_exclude_keyword(item_text, exclude_kws, positive_kws):
+                            continue
+
+                        price_value = parse_price(price_text)
+                        if price_value is None or price_value <= 0:
+                            continue
+
+                        all_candidates[href] = {
+                            'price': price_value,
+                            'price_text': price_text,
+                            'description': desc[:200],
+                            'seller': seller,
+                            'href': href,
+                            'matched_kw': kw
+                        }
+                    logger.debug(f"Диаг [{sid}]: fallback '{kw}' → {len(all_candidates)} кандидатов (без фильтра)")
+                    time.sleep(0.15)
+                except Exception as e:
+                    logger.error(f"Диаг [{sid}]: ошибка fallback поиска '{kw}': {e}")
+
+            # Валидация топ-3 кандидатов — облегчённая (без _sync_get_offer_details)
             sorted_candidates = sorted(all_candidates.values(), key=lambda x: x['price'])
             pve_tokens = [normalize_match_text(pk) for pk in pve_confirmed] if require_pve else []
             validated = []
             best_without_pve = None
 
-            for candidate in sorted_candidates[:4]:
+            for candidate in sorted_candidates[:3]:
                 if time.monotonic() - start_time >= time_budget:
                     break
                 href = candidate['href']
                 try:
-                    time.sleep(0.3)
+                    time.sleep(0.15)
                     resp = session.get(href, timeout=HTTP_TIMEOUT)
                     resp.raise_for_status()
                     detail_soup = BeautifulSoup(resp.text, 'html.parser')
@@ -1318,8 +1379,8 @@ def _sync_diagnostic_search(skin_searches, time_budget=80):
 
                 if require_pve:
                     combined = f"{normalize_match_text(candidate.get('description', ''))} {full_text}"
-                    has_pve = any(token in combined for token in pve_tokens if token)
-                    if not has_pve:
+                    has_pve_flag = any(token in combined for token in pve_tokens if token)
+                    if not has_pve_flag:
                         if best_without_pve is None:
                             best_without_pve = candidate.copy()
                             if full_description:
@@ -2337,6 +2398,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         if test_summary_mode:
             logger.info("🔍 Тестовый режим: быстрый поиск скрытых позиций...")
             search_list = []
+            # Импортируем дефолтные ключевые слова из cfg для объединения
+            from cfg import DEFAULT_RARE_SKINS
             for sid, stat in summary_stats.items():
                 if stat['status'] == 'Не найдено' or stat['status'] == '❌ Найден только без PVE':
                     keywords = []
@@ -2345,8 +2408,15 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         keywords = config.get_confirmed_pve()
                     elif sid in skins_dict:
                         skin_cfg = skins_dict[sid]
-                        keywords = skin_cfg.get('keywords', [])
+                        keywords = list(skin_cfg.get('keywords', []))
                         require_pve = skin_cfg.get('require_pve', False)
+                        # Добавляем дефолтные ключевые слова из cfg.py
+                        if sid in DEFAULT_RARE_SKINS:
+                            default_kws = DEFAULT_RARE_SKINS[sid].get('keywords', [])
+                            existing_lower = {k.lower() for k in keywords}
+                            for dk in default_kws:
+                                if dk.lower() not in existing_lower:
+                                    keywords.append(dk)
                     else:
                         editions = config.get_all_editions()
                         if sid in editions:
@@ -2358,7 +2428,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             if search_list:
                 try:
-                    diag_results = await diagnostic_search(search_list, time_budget=80)
+                    diag_results = await diagnostic_search(search_list, time_budget=120)
                     for sid, diag_result in diag_results.items():
                         stat = summary_stats[sid]
                         validated = diag_result['validated']
