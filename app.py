@@ -2172,7 +2172,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
         if test_summary_mode:
             report_lines = [
-                "📋 <b>Диагностический отчет (Тестовый режим)</b>\n"
+                f"📋 <b>Диагностический отчет ({source_text})</b>\n"
             ]
             for sid, stat in summary_stats.items():
                 name = stat['name'].capitalize()
