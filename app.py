@@ -1317,6 +1317,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         source_text = "автомониторинг git" if is_git else "автомониторинг local"
         test_summary_mode = config.data.get('test_summary_mode', False) or os.environ.get('TEST_SUMMARY_MODE') == 'true'
 
+        search_mode = config.search_mode
+        confirmed_pve_only = search_mode == 'pve_only'
         skins_dict = config.get_enabled_skins_dict()
         
         summary_stats = {}
@@ -1345,8 +1347,6 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
         exclude_keywords = config.get_exclude_keywords()
         positive_keywords = config.get_positive_keywords()
-        search_mode = config.search_mode
-        confirmed_pve_only = search_mode == 'pve_only'
         confirmed_pve_enabled_effective = config.confirmed_pve_enabled if confirmed_pve_enabled_override is None else bool(confirmed_pve_enabled_override)
         confirmed_pve_price_effective = config.confirmed_pve_price if confirmed_pve_price_override is None else int(confirmed_pve_price_override)
 
