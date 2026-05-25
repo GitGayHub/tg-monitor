@@ -2171,6 +2171,55 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             logger.debug(f"📈 Авто-мониторинг: {', '.join(parts)}")
 
         if test_summary_mode:
+            logger.info("🔍 Тестовый режим: выполняю поиск скрытых позиций на FunPay...")
+            for sid, stat in summary_stats.items():
+                if stat['status'] == 'Не найдено' or stat['status'] == '❌ Найден только без PVE':
+                    try:
+                        require_pve = False
+                        keywords = []
+                        if sid == '__pve__':
+                            keywords = config.get_confirmed_pve()
+                        elif sid in skins_dict:
+                            skin_cfg = skins_dict[sid]
+                            keywords = skin_cfg.get('keywords', [])
+                            require_pve = skin_cfg.get('require_pve', False)
+                        else:
+                            editions = config.get_all_editions()
+                            if sid in editions:
+                                ed_cfg = editions[sid]
+                                keywords = ed_cfg.get('keywords', [])
+                                require_pve = ed_cfg.get('require_pve', False)
+
+                        if keywords:
+                            results = await search_min_price(keywords, require_pve=require_pve)
+                            if results:
+                                cheapest = results[0]
+                                seller_price = cheapest['price']
+                                original_limit = 0
+                                if sid == '__pve__':
+                                    original_limit = config.confirmed_pve_price
+                                elif sid in skins_dict:
+                                    original_limit = skins_dict[sid].get('price', 0)
+                                else:
+                                    original_limit = config.get_all_editions().get(sid, {}).get('price', 0)
+
+                                limit_price = original_limit * 5 if x5_mode else original_limit
+                                if seller_price <= limit_price:
+                                    stat['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
+                                    stat['min_price'] = seller_price
+                                else:
+                                    stat['status'] = f"💸 Слишком дорого (мин цена {seller_price}₽, лимит {limit_price}₽)"
+                                    stat['min_price'] = seller_price
+                            else:
+                                if require_pve:
+                                    no_pve_results = await search_min_price(keywords, require_pve=False)
+                                    if no_pve_results:
+                                        cheapest = no_pve_results[0]
+                                        stat['status'] = "❌ Найден только без PVE"
+                                        stat['min_price'] = cheapest['price']
+                    except Exception as e:
+                        logger.error(f"Ошибка фонового поиска для '{sid}': {e}")
+
             report_lines = [
                 f"📋 <b>Диагностический отчет ({source_text})</b>\n"
             ]
