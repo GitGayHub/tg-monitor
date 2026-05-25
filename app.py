@@ -1186,6 +1186,168 @@ async def search_min_price(keywords, require_pve=False):
     return await asyncio.to_thread(_sync_search_min_price, keywords, require_pve)
 
 
+def _sync_diagnostic_search(skin_searches, time_budget=80):
+    """Быстрый пакетный поиск для диагностического отчёта.
+
+    Использует ОДНУ HTTP-сессию для всех скинов, короткие паузы,
+    и облегчённую проверку деталей (без _sync_get_offer_details с 3-7с задержкой).
+
+    Args:
+        skin_searches: список (skin_id, keywords, require_pve)
+        time_budget: макс. секунд на все поиски
+    Returns:
+        dict: {skin_id: {'validated': [...], 'best_without_pve': {...} или None}}
+    """
+    start_time = time.monotonic()
+    results = {}
+
+    exclude_kws = config.get_exclude_keywords()
+    positive_kws = config.get_positive_keywords()
+    pve_confirmed = config.get_confirmed_pve()
+
+    with build_http_session() as session:
+        session.headers.update({'Referer': 'https://funpay.com/'})
+
+        for sid, keywords, require_pve in skin_searches:
+            elapsed = time.monotonic() - start_time
+            if elapsed >= time_budget:
+                logger.warning(f"⏱ Диагностика: лимит {time_budget}с исчерпан после {len(results)} скинов")
+                break
+
+            all_candidates = {}
+
+            # Поиск по первым 2 ключевым словам
+            for kw in keywords[:2]:
+                if time.monotonic() - start_time >= time_budget:
+                    break
+                search_url = f'{FUNPAY_ACCOUNTS_URL}&search={requests.utils.quote(kw)}'
+                try:
+                    response = session.get(search_url, timeout=HTTP_TIMEOUT)
+                    response.raise_for_status()
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    items = soup.find_all('a', class_='tc-item')
+
+                    for item in items:
+                        href = item.get('href', '')
+                        if href.startswith('/'):
+                            href = f"https://funpay.com{href}"
+                        if href in all_candidates:
+                            continue
+
+                        desc_div = item.find('div', class_='tc-desc-text')
+                        price_div = item.find('div', class_='tc-price')
+                        user_div = item.find('div', class_='media-user-name')
+
+                        desc = desc_div.get_text(" ", strip=True) if desc_div else ""
+                        price_text = price_div.get_text(strip=True) if price_div else ""
+                        seller = user_div.get_text(strip=True) if user_div else "?"
+                        item_text = normalize_match_text(item.get_text(" ", strip=True))
+
+                        if 'аренда' in item_text and 'продажа' not in item_text:
+                            continue
+                        if contains_exclude_keyword(item_text, exclude_kws, positive_kws):
+                            continue
+
+                        price_value = parse_price(price_text)
+                        if price_value is None or price_value <= 0:
+                            continue
+
+                        normalized_kw = normalize_match_text(kw)
+                        if normalized_kw and _keyword_word_match(normalized_kw, item_text):
+                            all_candidates[href] = {
+                                'price': price_value,
+                                'price_text': price_text,
+                                'description': desc[:200],
+                                'seller': seller,
+                                'href': href,
+                                'matched_kw': kw
+                            }
+
+                    logger.debug(f"Диаг [{sid}]: '{kw}' → {len(items)} предложений, {len(all_candidates)} кандидатов")
+                    time.sleep(0.3)
+
+                except Exception as e:
+                    logger.error(f"Диаг [{sid}]: ошибка поиска '{kw}': {e}")
+
+            # Валидация топ-4 кандидатов — облегчённая (без _sync_get_offer_details)
+            sorted_candidates = sorted(all_candidates.values(), key=lambda x: x['price'])
+            pve_tokens = [normalize_match_text(pk) for pk in pve_confirmed] if require_pve else []
+            validated = []
+            best_without_pve = None
+
+            for candidate in sorted_candidates[:4]:
+                if time.monotonic() - start_time >= time_budget:
+                    break
+                href = candidate['href']
+                try:
+                    time.sleep(0.3)
+                    resp = session.get(href, timeout=HTTP_TIMEOUT)
+                    resp.raise_for_status()
+                    detail_soup = BeautifulSoup(resp.text, 'html.parser')
+
+                    # Удаляем отзывы
+                    for cls in ['review-list', 'review-container', 'review-item']:
+                        for el in detail_soup.find_all(True, class_=cls):
+                            el.decompose()
+
+                    full_description = ""
+                    for block in detail_soup.find_all(['div', 'p', 'span']):
+                        text = block.get_text(strip=True)
+                        if 'ПОДРОБНОЕ ОПИСАНИЕ' in text.upper() or 'КРАТКОЕ ОПИСАНИЕ' in text.upper():
+                            parent = block.find_parent('div')
+                            if parent:
+                                full_description = parent.get_text(separator=' ', strip=True)
+                                break
+                    if not full_description:
+                        desc_block = (
+                            detail_soup.find('div', class_='offer-description') or
+                            detail_soup.find('div', class_='lot-description') or
+                            detail_soup.find('div', class_='param-item') or
+                            detail_soup.find('div', class_='lot-info')
+                        )
+                        if desc_block:
+                            full_description = desc_block.get_text(separator=' ', strip=True)
+
+                    full_text = normalize_match_text(full_description or "")
+                except Exception as e:
+                    logger.warning(f"Диаг [{sid}]: не удалось открыть {href}: {e}")
+                    continue
+
+                if full_text and contains_exclude_keyword(full_text, exclude_kws, positive_kws):
+                    continue
+
+                if require_pve:
+                    combined = f"{normalize_match_text(candidate.get('description', ''))} {full_text}"
+                    has_pve = any(token in combined for token in pve_tokens if token)
+                    if not has_pve:
+                        if best_without_pve is None:
+                            best_without_pve = candidate.copy()
+                            if full_description:
+                                best_without_pve['description'] = full_description[:200]
+                        continue
+
+                if full_description:
+                    candidate['description'] = full_description[:200]
+                validated.append(candidate)
+                break  # Нужен только 1 валидный результат
+
+            results[sid] = {
+                'validated': validated,
+                'best_without_pve': best_without_pve if require_pve and not validated else None
+            }
+            status_icon = '✅' if validated else ('⚠️ без PVE' if best_without_pve else '❌')
+            logger.info(f"Диаг [{sid}]: {status_icon} ({time.monotonic() - start_time:.1f}с)")
+
+    elapsed = time.monotonic() - start_time
+    logger.info(f"🔍 Диагностический поиск: {len(results)}/{len(skin_searches)} скинов за {elapsed:.1f}с")
+    return results
+
+
+async def diagnostic_search(skin_searches, time_budget=80):
+    """Async обёртка для диагностического поиска."""
+    return await asyncio.to_thread(_sync_diagnostic_search, skin_searches, time_budget)
+
+
 async def process_offers(bot_instance=None, context=None, skip_seen=True, max_price_override=None,
                          rare_override=None, pve_override=None, candidate_limit=15,
                          include_unconfirmed_pve=False, premium_only=False,
@@ -2173,57 +2335,58 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             logger.debug(f"📈 Авто-мониторинг: {', '.join(parts)}")
 
         if test_summary_mode:
-            logger.info("🔍 Тестовый режим: выполняю поиск скрытых позиций на FunPay...")
-            priority_skins = {'floss', 'black_knight', 'wildcat', 'eon', 'neo_versa', 'dark_vertex', 'double_helix', '__pve__'}
+            logger.info("🔍 Тестовый режим: быстрый поиск скрытых позиций...")
+            search_list = []
             for sid, stat in summary_stats.items():
-                if sid not in priority_skins:
-                    continue
                 if stat['status'] == 'Не найдено' or stat['status'] == '❌ Найден только без PVE':
-                    try:
-                        require_pve = False
-                        keywords = []
-                        if sid == '__pve__':
-                            keywords = config.get_confirmed_pve()
-                        elif sid in skins_dict:
-                            skin_cfg = skins_dict[sid]
-                            keywords = skin_cfg.get('keywords', [])
-                            require_pve = skin_cfg.get('require_pve', False)
-                        else:
-                            editions = config.get_all_editions()
-                            if sid in editions:
-                                ed_cfg = editions[sid]
-                                keywords = ed_cfg.get('keywords', [])
-                                require_pve = ed_cfg.get('require_pve', False)
+                    keywords = []
+                    require_pve = False
+                    if sid == '__pve__':
+                        keywords = config.get_confirmed_pve()
+                    elif sid in skins_dict:
+                        skin_cfg = skins_dict[sid]
+                        keywords = skin_cfg.get('keywords', [])
+                        require_pve = skin_cfg.get('require_pve', False)
+                    else:
+                        editions = config.get_all_editions()
+                        if sid in editions:
+                            ed_cfg = editions[sid]
+                            keywords = ed_cfg.get('keywords', [])
+                            require_pve = ed_cfg.get('require_pve', False)
+                    if keywords:
+                        search_list.append((sid, keywords, require_pve))
 
-                        if keywords:
-                            results = await search_min_price(keywords, require_pve=require_pve)
-                            if results:
-                                cheapest = results[0]
-                                seller_price = cheapest['price']
-                                original_limit = 0
-                                if sid == '__pve__':
-                                    original_limit = config.confirmed_pve_price
-                                elif sid in skins_dict:
-                                    original_limit = skins_dict[sid].get('price', 0)
-                                else:
-                                    original_limit = config.get_all_editions().get(sid, {}).get('price', 0)
+            if search_list:
+                try:
+                    diag_results = await diagnostic_search(search_list, time_budget=80)
+                    for sid, diag_result in diag_results.items():
+                        stat = summary_stats[sid]
+                        validated = diag_result['validated']
+                        best_no_pve = diag_result.get('best_without_pve')
 
-                                limit_price = original_limit * 5 if x5_mode else original_limit
-                                if seller_price <= limit_price:
-                                    stat['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
-                                    stat['min_price'] = seller_price
-                                else:
-                                    stat['status'] = f"💸 Слишком дорого (мин цена {seller_price}₽, лимит {limit_price}₽)"
-                                    stat['min_price'] = seller_price
+                        if validated:
+                            cheapest = validated[0]
+                            seller_price = cheapest['price']
+                            original_limit = 0
+                            if sid == '__pve__':
+                                original_limit = config.confirmed_pve_price
+                            elif sid in skins_dict:
+                                original_limit = skins_dict[sid].get('price', 0)
                             else:
-                                if require_pve:
-                                    no_pve_results = await search_min_price(keywords, require_pve=False)
-                                    if no_pve_results:
-                                        cheapest = no_pve_results[0]
-                                        stat['status'] = "❌ Найден только без PVE"
-                                        stat['min_price'] = cheapest['price']
-                    except Exception as e:
-                        logger.error(f"Ошибка фонового поиска для '{sid}': {e}")
+                                original_limit = config.get_all_editions().get(sid, {}).get('price', 0)
+
+                            limit_price = original_limit * 5 if x5_mode else original_limit
+                            if seller_price <= limit_price:
+                                stat['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
+                                stat['min_price'] = seller_price
+                            else:
+                                stat['status'] = f"💸 Слишком дорого (мин цена {seller_price}₽, лимит {limit_price}₽)"
+                                stat['min_price'] = seller_price
+                        elif best_no_pve:
+                            stat['status'] = "❌ Найден только без PVE"
+                            stat['min_price'] = best_no_pve['price']
+                except Exception as e:
+                    logger.error(f"Ошибка диагностического поиска: {e}")
 
             report_lines = [
                 f"📋 <b>Диагностический отчет ({source_text})</b>\n"
