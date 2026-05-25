@@ -1532,9 +1532,19 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     'status': 'Не найдено',
                     'min_price': None
                 }
-            if search_mode == 'pve_only' or confirmed_pve_only:
+            # Добавляем издания в отчёт
+            editions = config.get_all_editions()
+            for ed_id, ed in editions.items():
+                if ed.get('enabled', True):
+                    summary_stats[ed_id] = {
+                        'name': '🏆 ' + ed_id.replace('_', ' ').title(),
+                        'status': 'Не найдено',
+                        'min_price': None
+                    }
+            # Добавляем подтверждённое PVE
+            if confirmed_pve_only or search_mode in ('pve_only', 'skins_pve'):
                 summary_stats['__pve__'] = {
-                    'name': 'Подтв. PVE',
+                    'name': '🧟 Подтв. PVE',
                     'status': 'Не найдено',
                     'min_price': None
                 }
