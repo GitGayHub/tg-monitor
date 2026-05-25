@@ -1614,140 +1614,6 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 'matched_skins': matched_skins_list,
             })
 
-        # Save auto-monitoring prices to history
-        # Empty lists → snapshot with 0 results (source=auto, shows "—" with 📡)
-        if skip_seen and kw_to_skin:
-            def _auto_name(sid):
-                return sid.replace('_', ' ').title()
-
-            def _save_auto(item_type, item_id, name, mode, offers):
-                record_price_snapshot(
-                    item_type, item_id, name, mode,
-                    [{'price': o['price'], 'price_text': o['price_text'],
-                      'href': o['href'], 'seller': o['seller']} for o in offers],
-                    source='auto'
-                )
-
-            # --- Validate top offers by loading full descriptions ---
-            # Only check cheapest (first) offer per map to minimize HTTP requests
-            validated_cache = {}  # href → True/False
-            cache_hits = 0
-
-            async def _validate_offer(offer):
-                nonlocal cache_hits
-                href = offer.get('href', '')
-                if href in validated_cache:
-                    return validated_cache[href]
-                if href in OFFER_DETAILS_CACHE:
-                    if time.time() - OFFER_DETAILS_CACHE[href]['cached_at'] < OFFER_DETAILS_CACHE_TTL:
-                        cache_hits += 1
-                try:
-                    full_desc, _ = await asyncio.wait_for(
-                        get_offer_details(href), timeout=15
-                    )
-                    if full_desc:
-                        excluded = contains_exclude_keyword(full_desc, exclude_keywords, positive_keywords)
-                        if excluded:
-                            logger.debug(f"🚫 Авто-валидация: исключён по описанию ('{excluded}'): {href}")
-                            validated_cache[href] = False
-                            return False
-                except Exception as e:
-                    logger.debug(f"⚠️ Авто-валидация: не удалось загрузить {href}: {e}")
-                validated_cache[href] = True
-                return True
-
-            async def _validate_cheapest(offers):
-                """Validate cheapest offers. Remove excluded ones from the top."""
-                result = list(offers)
-                while result:
-                    if await _validate_offer(result[0]):
-                        break  # cheapest is valid
-                    result = result[1:]  # drop excluded, check next
-                return result
-
-            # Validate only the #1 cheapest offer per map (fast: ~20 requests max)
-            total_auto_keys = len(auto_price_map) + len(auto_pve_map) + len(auto_edition_map)
-            if auto_pve_confirmed:
-                total_auto_keys += 1
-            if auto_pve_unconfirmed:
-                total_auto_keys += 1
-
-            if total_auto_keys > 0:
-                logger.info("🔍 Авто-валидация: проверка цен для авто-мониторинга...")
-
-            for sid in list(auto_price_map.keys()):
-                auto_price_map[sid] = await _validate_cheapest(auto_price_map[sid])
-            for sid in list(auto_pve_map.keys()):
-                auto_pve_map[sid] = await _validate_cheapest(auto_pve_map[sid])
-            for eid in list(auto_edition_map.keys()):
-                auto_edition_map[eid] = await _validate_cheapest(auto_edition_map[eid])
-            auto_pve_confirmed = await _validate_cheapest(auto_pve_confirmed)
-            auto_pve_unconfirmed = await _validate_cheapest(auto_pve_unconfirmed)
-
-            if validated_cache:
-                n_checked = len(validated_cache)
-                n_removed = sum(1 for v in validated_cache.values() if not v)
-                logger.info(f"🔍 Авто-валидация: проверено {n_checked} описаний (из кэша: {cache_hits}), исключено {n_removed}")
-
-            parts = []
-
-            def _old_offer_gone(item_type, item_id, mode):
-                """Check if previously saved offer is no longer on the listing page."""
-                # If listing was truncated (2000 items), we can't be sure the offer is gone
-                if total_listings >= 2000:
-                    return False
-                try:
-                    top = get_latest_top3(item_type, item_id, mode)
-                    if top:
-                        old_href = top[0].get('href')
-                        if old_href and old_href not in all_listing_hrefs:
-                            return True  # offer was sold/removed
-                except Exception:
-                    pass
-                return False
-
-            # Save skins: write if offers found, or clear if old offer is gone
-            all_skin_ids = set()
-            for kw, (sid, sname) in kw_to_skin.items():
-                all_skin_ids.add(sid)
-            for sid in all_skin_ids:
-                if auto_price_map.get(sid):
-                    _save_auto('skin', sid, _auto_name(sid), 'any', auto_price_map[sid])
-                elif _old_offer_gone('skin', sid, 'any'):
-                    _save_auto('skin', sid, _auto_name(sid), 'any', [])
-                if auto_pve_map.get(sid):
-                    _save_auto('skin', sid, _auto_name(sid), 'pve', auto_pve_map[sid])
-                elif _old_offer_gone('skin', sid, 'pve'):
-                    _save_auto('skin', sid, _auto_name(sid), 'pve', [])
-            n_any = sum(1 for sid in all_skin_ids if auto_price_map.get(sid))
-            n_pve = sum(1 for sid in all_skin_ids if auto_pve_map.get(sid))
-            parts.append(f"скины: {n_any}/{len(all_skin_ids)} без PVE, {n_pve}/{len(all_skin_ids)} с PVE")
-
-            # Save editions: write if offers found, or clear if old offer is gone
-            all_edition_ids = set()
-            for kw, (eid, ename) in kw_to_edition.items():
-                all_edition_ids.add(eid)
-            for eid in all_edition_ids:
-                if auto_edition_map.get(eid):
-                    _save_auto('edition', eid, _auto_name(eid), 'any', auto_edition_map[eid])
-                elif _old_offer_gone('edition', eid, 'any'):
-                    _save_auto('edition', eid, _auto_name(eid), 'any', [])
-            n_ed = sum(1 for eid in all_edition_ids if auto_edition_map.get(eid))
-            parts.append(f"издания: {n_ed}/{len(all_edition_ids)}")
-
-            # Save STW: write if offers found, or clear if old offer is gone
-            if auto_pve_confirmed:
-                _save_auto('pve', 'confirmed', 'STW', 'confirmed', auto_pve_confirmed)
-            elif _old_offer_gone('pve', 'confirmed', 'confirmed'):
-                _save_auto('pve', 'confirmed', 'STW', 'confirmed', [])
-            if auto_pve_unconfirmed:
-                _save_auto('pve', 'unconfirmed', 'STW', 'unconfirmed', auto_pve_unconfirmed)
-            elif _old_offer_gone('pve', 'unconfirmed', 'unconfirmed'):
-                _save_auto('pve', 'unconfirmed', 'STW', 'unconfirmed', [])
-            parts.append(f"STW подтв: {'да' if auto_pve_confirmed else '—'}, неподтв: {'да' if auto_pve_unconfirmed else '—'}")
-
-
-            logger.debug(f"📈 Авто-мониторинг: {', '.join(parts)}")
 
         new_candidates = len(candidates)
         new_offers_count = total_listings - already_seen_count - banned_count
@@ -2067,7 +1933,142 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         else:
             logger.info("ℹ️ Новых подходящих предложений не найдено")
 
+        # Save auto-monitoring prices to history
+        # Empty lists → snapshot with 0 results (source=auto, shows "—" with 📡)
+        if skip_seen and kw_to_skin:
+            def _auto_name(sid):
+                return sid.replace('_', ' ').title()
+
+            def _save_auto(item_type, item_id, name, mode, offers):
+                record_price_snapshot(
+                    item_type, item_id, name, mode,
+                    [{'price': o['price'], 'price_text': o['price_text'],
+                      'href': o['href'], 'seller': o['seller']} for o in offers],
+                    source='auto'
+                )
+
+            # --- Validate top offers by loading full descriptions ---
+            # Only check cheapest (first) offer per map to minimize HTTP requests
+            validated_cache = {}  # href → True/False
+            cache_hits = 0
+
+            async def _validate_offer(offer):
+                nonlocal cache_hits
+                href = offer.get('href', '')
+                if href in validated_cache:
+                    return validated_cache[href]
+                if href in OFFER_DETAILS_CACHE:
+                    if time.time() - OFFER_DETAILS_CACHE[href]['cached_at'] < OFFER_DETAILS_CACHE_TTL:
+                        cache_hits += 1
+                try:
+                    full_desc, _ = await asyncio.wait_for(
+                        get_offer_details(href), timeout=15
+                    )
+                    if full_desc:
+                        excluded = contains_exclude_keyword(full_desc, exclude_keywords, positive_keywords)
+                        if excluded:
+                            logger.debug(f"🚫 Авто-валидация: исключён по описанию ('{excluded}'): {href}")
+                            validated_cache[href] = False
+                            return False
+                except Exception as e:
+                    logger.debug(f"⚠️ Авто-валидация: не удалось загрузить {href}: {e}")
+                validated_cache[href] = True
+                return True
+
+            async def _validate_cheapest(offers):
+                """Validate cheapest offers. Remove excluded ones from the top."""
+                result = list(offers)
+                while result:
+                    if await _validate_offer(result[0]):
+                        break  # cheapest is valid
+                    result = result[1:]  # drop excluded, check next
+                return result
+
+            # Validate only the #1 cheapest offer per map (fast: ~20 requests max)
+            total_auto_keys = len(auto_price_map) + len(auto_pve_map) + len(auto_edition_map)
+            if auto_pve_confirmed:
+                total_auto_keys += 1
+            if auto_pve_unconfirmed:
+                total_auto_keys += 1
+
+            if total_auto_keys > 0:
+                logger.info("🔍 Авто-валидация: проверка цен для авто-мониторинга...")
+
+            for sid in list(auto_price_map.keys()):
+                auto_price_map[sid] = await _validate_cheapest(auto_price_map[sid])
+            for sid in list(auto_pve_map.keys()):
+                auto_pve_map[sid] = await _validate_cheapest(auto_pve_map[sid])
+            for eid in list(auto_edition_map.keys()):
+                auto_edition_map[eid] = await _validate_cheapest(auto_edition_map[eid])
+            auto_pve_confirmed = await _validate_cheapest(auto_pve_confirmed)
+            auto_pve_unconfirmed = await _validate_cheapest(auto_pve_unconfirmed)
+
+            if validated_cache:
+                n_checked = len(validated_cache)
+                n_removed = sum(1 for v in validated_cache.values() if not v)
+                logger.info(f"🔍 Авто-валидация: проверено {n_checked} описаний (из кэша: {cache_hits}), исключено {n_removed}")
+
+            parts = []
+
+            def _old_offer_gone(item_type, item_id, mode):
+                """Check if previously saved offer is no longer on the listing page."""
+                # If listing was truncated (2000 items), we can't be sure the offer is gone
+                if total_listings >= 2000:
+                    return False
+                try:
+                    top = get_latest_top3(item_type, item_id, mode)
+                    if top:
+                        old_href = top[0].get('href')
+                        if old_href and old_href not in all_listing_hrefs:
+                            return True  # offer was sold/removed
+                except Exception:
+                    pass
+                return False
+
+            # Save skins: write if offers found, or clear if old offer is gone
+            all_skin_ids = set()
+            for kw, (sid, sname) in kw_to_skin.items():
+                all_skin_ids.add(sid)
+            for sid in all_skin_ids:
+                if auto_price_map.get(sid):
+                    _save_auto('skin', sid, _auto_name(sid), 'any', auto_price_map[sid])
+                elif _old_offer_gone('skin', sid, 'any'):
+                    _save_auto('skin', sid, _auto_name(sid), 'any', [])
+                if auto_pve_map.get(sid):
+                    _save_auto('skin', sid, _auto_name(sid), 'pve', auto_pve_map[sid])
+                elif _old_offer_gone('skin', sid, 'pve'):
+                    _save_auto('skin', sid, _auto_name(sid), 'pve', [])
+            n_any = sum(1 for sid in all_skin_ids if auto_price_map.get(sid))
+            n_pve = sum(1 for sid in all_skin_ids if auto_pve_map.get(sid))
+            parts.append(f"скины: {n_any}/{len(all_skin_ids)} без PVE, {n_pve}/{len(all_skin_ids)} с PVE")
+
+            # Save editions: write if offers found, or clear if old offer is gone
+            all_edition_ids = set()
+            for kw, (eid, ename) in kw_to_edition.items():
+                all_edition_ids.add(eid)
+            for eid in all_edition_ids:
+                if auto_edition_map.get(eid):
+                    _save_auto('edition', eid, _auto_name(eid), 'any', auto_edition_map[eid])
+                elif _old_offer_gone('edition', eid, 'any'):
+                    _save_auto('edition', eid, _auto_name(eid), 'any', [])
+            n_ed = sum(1 for eid in all_edition_ids if auto_edition_map.get(eid))
+            parts.append(f"издания: {n_ed}/{len(all_edition_ids)}")
+
+            # Save STW: write if offers found, or clear if old offer is gone
+            if auto_pve_confirmed:
+                _save_auto('pve', 'confirmed', 'STW', 'confirmed', auto_pve_confirmed)
+            elif _old_offer_gone('pve', 'confirmed', 'confirmed'):
+                _save_auto('pve', 'confirmed', 'STW', 'confirmed', [])
+            if auto_pve_unconfirmed:
+                _save_auto('pve', 'unconfirmed', 'STW', 'unconfirmed', auto_pve_unconfirmed)
+            elif _old_offer_gone('pve', 'unconfirmed', 'unconfirmed'):
+                _save_auto('pve', 'unconfirmed', 'STW', 'unconfirmed', [])
+            parts.append(f"STW подтв: {'да' if auto_pve_confirmed else '—'}, неподтв: {'да' if auto_pve_unconfirmed else '—'}")
+
+            logger.debug(f"📈 Авто-мониторинг: {', '.join(parts)}")
+
         return sent_count
+
     finally:
         if progress_msg and progress_bot:
             try:
