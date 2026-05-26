@@ -1885,8 +1885,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         )
 
         def candidate_sort_key(c):
-            has_rare_skin = 0 if c.get('matched_skins') else 1
-            return (has_rare_skin, c['price_value'])
+            return c['price_value']
 
         candidates.sort(key=candidate_sort_key)
         limit = len(candidates) if candidate_limit is None else min(candidate_limit, len(candidates))
