@@ -2596,7 +2596,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             p = best_without_pve['price']
                             h = best_without_pve['href']
                             if skin_require_pve:
-                                verdict = "❌ Не подходит (требуется PVE)"
+                                verdict = "❌ Требуется PVE"
                             else:
                                 verdict = f"✅ Подходит (лимит {limit_price}₽)" if p <= limit_price else f"❌ Слишком дорого (лимит {limit_price}₽)"
                             report_lines.append(f"  без PVE: {p}₽ <a href='{h}'>🔗</a>")
