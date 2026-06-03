@@ -39,6 +39,7 @@ GITHUB_REPO = os.environ.get('GITHUB_REPO') or os.environ.get('GITHUB_REPOSITORY
 
 CHAT_ID_FILE = 'chat_id.txt'
 SEEN_IDS_FILE = 'seen_ids.txt'
+SEEN_CACHE_FILE = 'seen_cache.json'
 SENT_OFFERS_FILE = 'sent_offers.json'
 BANNED_IDS_FILE = 'banned_ids.txt'
 
@@ -76,7 +77,9 @@ HTTP_TIMEOUT = (10, 20)
 
 # Глобальные переменные
 seen_ids = set()
+seen_cache = {}
 sent_offers = {}
+sent_by_seller = {}
 banned_ids = set()
 check_run_count = 0
 
@@ -114,25 +117,52 @@ def save_chat_id(new_id):
 SEEN_IDS_MAX = 15000
 
 def load_seen_ids():
-    global seen_ids
+    global seen_ids, seen_cache
     try:
         with open(SEEN_IDS_FILE, 'r') as f:
             all_ids = [line.strip() for line in f if line.strip()]
     except FileNotFoundError:
-        seen_ids = set()
-        return
-    if len(all_ids) > SEEN_IDS_MAX:
-        trimmed = all_ids[-SEEN_IDS_MAX:]
-        logger.info(f"🧹 Очистка seen_ids: {len(all_ids)} → {len(trimmed)}")
-        with open(SEEN_IDS_FILE, 'w') as f:
-            f.write('\n'.join(trimmed) + '\n')
-        seen_ids = set(trimmed)
-    else:
-        seen_ids = set(all_ids)
+        all_ids = []
+    
+    seen_ids = set(all_ids)
 
-def save_seen_id(offer_id):
-    with open(SEEN_IDS_FILE, 'a') as f:
-        f.write(offer_id + '\n')
+    try:
+        with open(SEEN_CACHE_FILE, 'r', encoding='utf-8') as f:
+            seen_cache = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        seen_cache = {}
+
+    # Migrate legacy/existing text ids to the JSON seen_cache if missing
+    migrated = False
+    for oid in seen_ids:
+        if oid not in seen_cache:
+            seen_cache[oid] = [None, ""]
+            migrated = True
+    if migrated:
+        save_seen_cache()
+
+def save_seen_cache():
+    global seen_cache
+    if len(seen_cache) > SEEN_IDS_MAX:
+        keys = list(seen_cache.keys())
+        trimmed_keys = keys[-SEEN_IDS_MAX:]
+        seen_cache = {k: seen_cache[k] for k in trimmed_keys}
+    try:
+        with open(SEEN_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(seen_cache, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"Ошибка сохранения seen_cache: {e}")
+
+def save_seen_id(offer_id, price=None, description=None):
+    global seen_ids, seen_cache
+    seen_ids.add(offer_id)
+    seen_cache[offer_id] = [price, description or ""]
+    try:
+        with open(SEEN_IDS_FILE, 'a') as f:
+            f.write(offer_id + '\n')
+    except Exception as e:
+        logger.warning(f"Ошибка сохранения seen_ids.txt: {e}")
+    save_seen_cache()
 
 def load_banned_ids():
     global banned_ids
@@ -156,35 +186,53 @@ def clear_banned_ids():
     return removed
 
 def load_sent_offers():
-    global sent_offers
+    global sent_offers, sent_by_seller
     try:
         with open(SENT_OFFERS_FILE, 'r', encoding='utf-8') as f:
             sent_offers = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         sent_offers = {}
+    
+    # Rebuild sent_by_seller index
+    sent_by_seller = {}
+    for oid, sent in sent_offers.items():
+        sent['offer_id'] = oid
+        seller = sent.get('seller')
+        if seller:
+            seller_key = seller.strip().lower()
+            sent_by_seller.setdefault(seller_key, []).append(sent)
 
 def save_sent_offer(offer_id, price, description, seller=None):
-    global sent_offers
-    sent_offers[offer_id] = {
+    global sent_offers, sent_by_seller
+    record = {
+        'offer_id': offer_id,
         'price': price,
         'description': description,
         'timestamp': time.time(),
         'seller': seller
     }
+    sent_offers[offer_id] = record
+    if seller:
+        seller_key = seller.strip().lower()
+        sent_by_seller.setdefault(seller_key, []).append(record)
     with open(SENT_OFFERS_FILE, 'w', encoding='utf-8') as f:
         json.dump(sent_offers, f, ensure_ascii=False, indent=2)
 
 
 def clear_monitoring_state():
     """Reset seen_ids + sent_offers so auto-monitoring re-sends everything. For testing."""
-    global seen_ids, sent_offers
+    global seen_ids, seen_cache, sent_offers, sent_by_seller
     seen_ids.clear()
+    seen_cache.clear()
     with open(SEEN_IDS_FILE, 'w') as f:
         f.write('')
+    with open(SEEN_CACHE_FILE, 'w', encoding='utf-8') as f:
+        json.dump({}, f)
     sent_offers.clear()
+    sent_by_seller.clear()
     with open(SENT_OFFERS_FILE, 'w', encoding='utf-8') as f:
         json.dump({}, f)
-    logger.info("🧹 Сброс мониторинга: seen_ids, sent_offers очищены")
+    logger.info("🧹 Сброс мониторинга: seen_ids, seen_cache, sent_offers, sent_by_seller очищены")
 
 def parse_price(price_text):
     if not price_text:
@@ -228,36 +276,44 @@ def normalize_match_text(text):
 
 
 def is_recently_sent(offer_id, seller, description, price_value, max_days=7):
-    """Returns True if this offer was already sent within max_days days."""
-    global sent_offers
+    """Returns True if this exact offer (same ID, price, and description) or an identical re-post
+    by the same seller (different ID but identical description) was already sent within max_days days."""
+    global sent_offers, sent_by_seller
     now = time.time()
     seconds_limit = max_days * 24 * 3600
 
-    # 1. Check by offer_id
+    # 1. Check by exact offer_id: if price and description are unchanged, skip it.
+    # If the price or description has changed, we treat it as new and don't skip.
     if offer_id in sent_offers:
-        sent_time = sent_offers[offer_id].get('timestamp', 0)
-        if now - sent_time < seconds_limit:
-            return True
-
-    # 2. Check by seller and description/price similarity
-    norm_desc = normalize_match_text(description)
-    for oid, sent in sent_offers.items():
+        sent = sent_offers[offer_id]
         sent_time = sent.get('timestamp', 0)
         if now - sent_time < seconds_limit:
-            # Check if same seller and description
-            sent_seller = sent.get('seller')
-            sent_desc = sent.get('description', '')
-            sent_price = sent.get('price', 0)
-            
-            if sent_seller and seller and sent_seller.lower() == seller.lower():
-                if normalize_match_text(sent_desc) == norm_desc:
-                    return True
-            
-            # Fallback if seller is not saved (legacy sent_offers) - check description and price
-            if not sent_seller:
-                if normalize_match_text(sent_desc) == norm_desc and abs(sent_price - price_value) < 1.0:
-                    return True
-                    
+            if sent.get('price') == price_value and normalize_match_text(sent.get('description', '')) == normalize_match_text(description):
+                return True
+
+    # 2. Check by seller (re-post detection): if same seller, different ID, and identical title, skip it.
+    if seller:
+        seller_key = seller.strip().lower()
+        norm_desc = normalize_match_text(description)
+        if seller_key in sent_by_seller:
+            for sent in sent_by_seller[seller_key]:
+                # Only match if it's a DIFFERENT offer_id (re-posted)
+                if sent.get('offer_id') != offer_id:
+                    sent_time = sent.get('timestamp', 0)
+                    if now - sent_time < seconds_limit:
+                        if normalize_match_text(sent.get('description', '')) == norm_desc:
+                            return True
+    else:
+        # Fallback for empty/unknown seller: compare description against all sent offers (legacy/unknown)
+        norm_desc = normalize_match_text(description)
+        for oid, sent in sent_offers.items():
+            sent_time = sent.get('timestamp', 0)
+            if now - sent_time < seconds_limit:
+                sent_seller = sent.get('seller')
+                if not sent_seller:
+                    if normalize_match_text(sent.get('description', '')) == norm_desc:
+                        return True
+
     return False
 
 
@@ -1713,25 +1769,31 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 banned_count += 1
                 continue
 
-            already_seen = skip_seen and offer_id in seen_ids
-            if already_seen:
-                already_seen_count += 1
-                # Continue processing to update auto_price_map for stats,
-                # but will skip notification logic below.
-
             desc_div = item.find('div', class_='tc-desc-text')
             price_div = item.find('div', class_='tc-price')
             user_div = item.find('div', class_='media-user-name')
 
             short_description = desc_div.get_text(strip=True) if desc_div else ""
             price_text = price_div.get_text(strip=True) if price_div else "Нет цены"
+            price_value = parse_price(price_text)
             user = user_div.get_text(strip=True) if user_div else "Неизвестный"
             short_desc_lower = normalize_match_text(short_description)
+
+            already_seen = False
+            if skip_seen and offer_id in seen_cache:
+                cached_price, cached_desc = seen_cache[offer_id]
+                if cached_price == price_value and cached_desc == short_description:
+                    already_seen = True
+
+            if already_seen:
+                already_seen_count += 1
+                # Continue processing to update auto_price_map for stats,
+                # but will skip notification logic below.
 
             if 'аренда' in short_desc_lower and 'продажа' not in short_desc_lower:
                 if skip_seen:
                     seen_ids.add(offer_id)
-                    save_seen_id(offer_id)
+                    save_seen_id(offer_id, price_value, short_description)
                 continue
 
             source_lot = item.get('data-source-lot', 'accounts')
@@ -1745,7 +1807,6 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     break
 
             # --- Auto price tracking: detect skins BEFORE exclude filter ---
-            price_value = parse_price(price_text)
             is_excluded = bool(contains_exclude_keyword(short_description, exclude_keywords, positive_keywords))
             # Auto-tracking only for accounts page (not 'prochee' misc items)
             if price_value is not None and kw_to_skin and source_lot != 'prochee':
@@ -1829,7 +1890,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             if not matched_keyword:
                 if skip_seen and not already_seen:
                     seen_ids.add(offer_id)
-                    save_seen_id(offer_id)
+                    save_seen_id(offer_id, price_value, short_description)
                 continue
 
             if is_excluded:
@@ -1837,7 +1898,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     logger.debug(f"🚫 Исключено в кратком описании: {short_description[:40]}...")
                 if skip_seen and not already_seen:
                     seen_ids.add(offer_id)
-                    save_seen_id(offer_id)
+                    save_seen_id(offer_id, price_value, short_description)
                 continue
 
             if log_state and price_value is not None:
@@ -1848,7 +1909,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             if price_value is None or price_value > effective_max_price:
                 if skip_seen and not already_seen:
                     seen_ids.add(offer_id)
-                    save_seen_id(offer_id)
+                    save_seen_id(offer_id, price_value, short_description)
                 continue
 
             # Skip notification for already-seen offers, but auto_price_map is already updated
@@ -1945,7 +2006,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     return
                 try:
                     seen_ids.add(offer_id)
-                    save_seen_id(offer_id)
+                    save_seen_id(offer_id, candidate['price_value'], candidate['short_description'])
                 except Exception as e:
                     logger.warning(f"Не удалось сохранить seen_id для отклонённого лота: {e}")
 
@@ -2264,7 +2325,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
                 seen_ids.add(offer_id)
                 try:
-                    save_seen_id(offer_id)
+                    save_seen_id(offer_id, candidate['price_value'], candidate['short_description'])
                 except Exception as e:
                     logger.warning(f"Не удалось сохранить seen_id: {e}")
 
