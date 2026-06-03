@@ -2534,6 +2534,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             report_lines = [
                 f"📋 <b>Диагностический отчет ({source_text})</b>\n"
             ]
+
+            # Determine which sids are editions
+            edition_ids = set(config.get_all_editions().keys())
+
             for sid, stat in summary_stats.items():
                 name = stat['name'].capitalize()
                 
@@ -2553,42 +2557,43 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 best_with_pve = stat.get('best_with_pve')
                 best_without_pve = stat.get('best_without_pve')
                 
-                if sid in ('__pve__', '__unconfirmed_pve__'):
-                    # PVE-позиции не имеют версии "без PVE"
+                is_edition = sid in edition_ids
+                is_pve_pos = sid in ('__pve__', '__unconfirmed_pve__')
+
+                if is_pve_pos or is_edition:
+                    # PVE-позиции и издания — только одна строка (всегда с PVE)
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
                         if p <= limit_price:
-                            line = f"• <b>{name}</b>: ✅ Отправлен (Цена: {p}₽) <a href='{h}'>🔗</a>"
+                            line = f"• <b>{name}</b>: ✅ {p}₽ <a href='{h}'>🔗</a>"
                         else:
-                            line = f"• <b>{name}</b>: 💸 Слишком дорого (мин: {p}₽, лимит: {limit_price}₽) <a href='{h}'>🔗</a>"
+                            line = f"• <b>{name}</b>: 💸 {p}₽ (лимит {limit_price}₽) <a href='{h}'>🔗</a>"
                     else:
                         line = f"• <b>{name}</b>: Не найдено"
+                    report_lines.append(line)
                 else:
-                    # Скины и издания могут иметь обе версии
-                    parts = []
-                    if best_with_pve:
-                        p = best_with_pve['price']
-                        h = best_with_pve['href']
-                        if p <= limit_price:
-                            parts.append(f"✅ с PVE ({p}₽) <a href='{h}'>🔗</a>")
-                        else:
-                            parts.append(f"💸 с PVE ({p}₽, лимит {limit_price}₽) <a href='{h}'>🔗</a>")
-                    if best_without_pve:
-                        p = best_without_pve['price']
-                        h = best_without_pve['href']
-                        if p <= limit_price:
-                            parts.append(f"✅ без PVE ({p}₽) <a href='{h}'>🔗</a>")
-                        else:
-                            parts.append(f"❌ без PVE ({p}₽, лимит {limit_price}₽) <a href='{h}'>🔗</a>")
-                            
-                    if parts:
-                        line = f"• <b>{name}</b>: {', '.join(parts)}"
+                    # Скины — показываем с PVE и без PVE на отдельных строках
+                    if not best_with_pve and not best_without_pve:
+                        report_lines.append(f"• <b>{name}</b>: Не найдено")
                     else:
-                        line = f"• <b>{name}</b>: Не найдено"
-                        
-                report_lines.append(line)
-            
+                        sub_parts = []
+                        if best_with_pve:
+                            p = best_with_pve['price']
+                            h = best_with_pve['href']
+                            icon = "✅" if p <= limit_price else "💸"
+                            price_info = f"{p}₽" if p <= limit_price else f"{p}₽ (лимит {limit_price}₽)"
+                            sub_parts.append(f"с PVE: {icon} {price_info} <a href='{h}'>🔗</a>")
+                        if best_without_pve:
+                            p = best_without_pve['price']
+                            h = best_without_pve['href']
+                            icon = "✅" if p <= limit_price else "❌"
+                            price_info = f"{p}₽" if p <= limit_price else f"{p}₽ (лимит {limit_price}₽)"
+                            sub_parts.append(f"без PVE: {icon} {price_info} <a href='{h}'>🔗</a>")
+                        report_lines.append(f"• <b>{name}</b>:")
+                        for sp in sub_parts:
+                            report_lines.append(f"  {sp}")
+                
             report_msg = "\n".join(report_lines)
             logger.info("📊 Отправляю диагностический отчет в Telegram...")
             try:
@@ -3115,8 +3120,17 @@ def _sync_mode_to_github():
         raise Exception(f"GitHub PUT ошибка ({resp.status_code}): {resp.text[:200]}")
 
 def _sync_config_to_github():
-    """Пушит зашифрованный config.json.enc в GitHub через Contents API."""
-    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/config.json.enc"
+    """Пушит config в GitHub через Contents API.
+    Если CONFIG_PASSPHRASE задан — шифрует и пушит config.json.enc.
+    Если нет — пушит config.json напрямую (для локального режима)."""
+    passphrase = os.environ.get("CONFIG_PASSPHRASE")
+
+    if passphrase:
+        target_file = "config.json.enc"
+    else:
+        target_file = "config.json"
+
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{target_file}"
     headers = {
         'Authorization': f'token {GITHUB_TOKEN}',
         'Accept': 'application/vnd.github.v3+json',
@@ -3134,17 +3148,15 @@ def _sync_config_to_github():
     with open('config.json', 'r', encoding='utf-8') as f:
         content = f.read()
 
-    passphrase = os.environ.get("CONFIG_PASSPHRASE")
-    if not passphrase:
-        raise Exception("CONFIG_PASSPHRASE не установлен в окружении бота!")
-
-    import config_crypt
-    # Шифруем данные перед кодированием в base64
-    encrypted_data = config_crypt.encrypt(content.encode('utf-8'), passphrase)
-    encoded = base64.b64encode(encrypted_data).decode('ascii')
+    if passphrase:
+        import config_crypt
+        encrypted_data = config_crypt.encrypt(content.encode('utf-8'), passphrase)
+        encoded = base64.b64encode(encrypted_data).decode('ascii')
+    else:
+        encoded = base64.b64encode(content.encode('utf-8')).decode('ascii')
 
     payload = {
-        'message': '🔄 Sync config.json.enc from Telegram bot',
+        'message': f'🔄 Sync {target_file} from Telegram bot',
         'content': encoded,
     }
     if sha:
