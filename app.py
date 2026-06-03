@@ -1240,7 +1240,9 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
             if href.startswith('/'):
                 href = f"https://funpay.com{href}"
 
-            item_text = normalize_match_text(item.get_text(" ", strip=True))
+            desc_div = item.find('div', class_='tc-desc-text')
+            desc = desc_div.get_text(" ", strip=True) if desc_div else ""
+            item_text = normalize_match_text(desc)
 
             # Быстрая проверка: аренда
             if 'аренда' in item_text and 'продажа' not in item_text:
@@ -1257,9 +1259,7 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
             if price_value is None or price_value <= 0:
                 continue
 
-            desc_div = item.find('div', class_='tc-desc-text')
             user_div = item.find('div', class_='media-user-name')
-            desc = desc_div.get_text(" ", strip=True) if desc_div else ""
             seller = user_div.get_text(strip=True) if user_div else "?"
 
             # Проверяем ВСЕ ключевые слова — какие скины упоминаются?
