@@ -487,9 +487,23 @@ finally:
                 if fixed != remote_str:
                     git("remote", "set-url", "origin", fixed)
 
-        git("add", *STATE_SYNC)
-        if git_has_staged(STATE_SYNC):
-            commit = git("commit", "-m", "Sync state after run", "--", *STATE_SYNC, visible=True)
+        files_to_sync = list(STATE_SYNC)
+        if not passphrase:
+            if "config.json.enc" in files_to_sync:
+                files_to_sync.remove("config.json.enc")
+            if "config.json" not in files_to_sync:
+                files_to_sync.append("config.json")
+            print("No passphrase set, staging unencrypted config.json directly...")
+            git("add", "-f", "config.json")
+            git("rm", "--cached", "config.json.enc", visible=False)
+        else:
+            if "config.json" in files_to_sync:
+                files_to_sync.remove("config.json")
+            git("rm", "--cached", "config.json", visible=False)
+
+        git("add", *files_to_sync)
+        if git_has_staged(files_to_sync):
+            commit = git("commit", "-m", "Sync state after run", "--", *files_to_sync, visible=True)
             if commit.returncode != 0:
                 print("WARNING: git commit failed — state left as working-tree changes.")
                 raise SystemExit(0)
@@ -507,7 +521,7 @@ finally:
                 print(f"Push attempt {attempt}/5 failed — pull & retry in {delay}s...")
                 _time.sleep(delay)
                 # Backup state, pull remote, restore state, re-commit
-                state_snapshot = backup_files(dirty_state_files() or STATE_SYNC)
+                state_snapshot = backup_files(dirty_state_files() or files_to_sync)
                 env = os.environ.copy()
                 env["GIT_TERMINAL_PROMPT"] = "0"
                 try:
@@ -525,7 +539,7 @@ finally:
                 # Restore our local state files on top of whatever remote had
                 if state_snapshot:
                     restore_files(state_snapshot)
-                # Re-encrypt config if needed
+                # Re-encrypt config if needed, otherwise stage config.json directly
                 if passphrase and os.path.exists(os.path.join(REPO, "config.json")):
                     try:
                         with open(os.path.join(REPO, "config.json"), "rb") as f:
@@ -534,10 +548,13 @@ finally:
                             f.write(encrypted)
                     except Exception:
                         pass
+                elif not passphrase and os.path.exists(os.path.join(REPO, "config.json")):
+                    git("add", "-f", "config.json")
+                    git("rm", "--cached", "config.json.enc", visible=False)
                 # Re-add and amend/re-commit
-                git("add", *STATE_SYNC)
-                if git_has_staged(STATE_SYNC):
-                    git("commit", "-m", "Sync state after run", "--", *STATE_SYNC)
+                git("add", *files_to_sync)
+                if git_has_staged(files_to_sync):
+                    git("commit", "-m", "Sync state after run", "--", *files_to_sync)
 
             if not pushed:
                 print("WARNING: all push attempts failed — remote not updated.")
