@@ -163,8 +163,11 @@ def _build_settings_main_text(config):
     editions = config.get_all_editions()
     enabled = sum(1 for s in skins.values() if s.get('enabled', True))
     pve_req = sum(1 for s in skins.values() if s.get('require_pve', False))
+    test_summary_mode = config.data.get('test_summary_mode', False)
+    mode_str = "Статистика" if test_summary_mode else "Обычный"
     return (
         "⚙️ <b>Панель настроек</b>\n\n"
+        f"⚙️ Режим автомониторинга: <b>{mode_str}</b>\n"
         f"🎮 Скинов: {enabled}/{len(skins)} | 🏆 Изданий: {len(editions)}\n"
         f"🧟 С PVE: {pve_req}/{len(skins)}\n"
         f"🚫 Фильтров: {len(config.get_exclude_keywords())}\n\n"
@@ -173,6 +176,9 @@ def _build_settings_main_text(config):
 
 
 def _build_settings_main_markup(context):
+    config = context.bot_data['config']
+    test_summary_mode = config.data.get('test_summary_mode', False)
+    mode_label = "📊 Режим: Статистика" if test_summary_mode else "🔄 Режим: Обычный"
     keyboard = [
         [InlineKeyboardButton("📋 Список", callback_data="set:skins:menu"),
          InlineKeyboardButton("🚫 Фильтры", callback_data="set:filters:menu")],
@@ -180,6 +186,7 @@ def _build_settings_main_markup(context):
          InlineKeyboardButton("🔎 Проверка", callback_data="set:check:menu")],
         [InlineKeyboardButton("📊 Статус", callback_data="set:status"),
          InlineKeyboardButton("📈 Статистика", callback_data="set:stats")],
+        [InlineKeyboardButton(mode_label, callback_data="set:toggle_mode")],
     ]
     if _is_check_running(context):
         keyboard.append([InlineKeyboardButton("⏹ Остановить текущую проверку", callback_data="set:checkstop")])
@@ -2492,7 +2499,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         )
 
     elif data == "set:stop:confirm":
-        await query.edit_message_text("⏹ <b>Остановка бота...</b>", parse_mode='HTML')
+        await query.edit_message_text("⏹ <b>Бот остановлен.</b>", parse_mode='HTML')
         import os
         asyncio.get_event_loop().call_later(1, lambda: os._exit(0))
 
@@ -2627,6 +2634,20 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             s_item_type = parts[3]
             s_item_id = ":".join(parts[4:])
             await _show_stats_item_history(query, context, s_item_type, s_item_id)
+
+    elif data == "set:toggle_mode":
+        current = config.data.get('test_summary_mode', False)
+        config.data['test_summary_mode'] = not current
+        config.save()
+        sync_fn = context.bot_data.get('sync_fn')
+        if sync_fn:
+            async def do_sync_bg():
+                try:
+                    await asyncio.to_thread(sync_fn)
+                except Exception as e:
+                    logger.error(f"Auto-sync failed on toggle: {e}")
+            asyncio.create_task(do_sync_bg())
+        await _show_main_menu(query, context)
 
     elif data == "set:sync":
         sync_fn = context.bot_data.get('sync_fn')

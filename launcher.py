@@ -352,6 +352,173 @@ def sync_from_remote():
             print("INFO: local state restored after git sync.")
 
 
+def prompt_and_sync_mode():
+    is_git_actions = os.environ.get('GITHUB_ACTIONS') == 'true'
+    if is_git_actions:
+        return
+
+    config_path = os.path.join(REPO, "config.json")
+    if not os.path.exists(config_path):
+        return
+
+    import json
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg_data = json.load(f)
+    except Exception as e:
+        print(f"  ⚠️ Error reading config.json: {e}", flush=True)
+        return
+
+    current_val = cfg_data.get("test_summary_mode", False)
+    current_str = "Статистика" if current_val else "Обычный"
+
+    # Single-key selection with timeout
+    print("\n" + "=" * 45, flush=True)
+    print("=== ВЫБОР РЕЖИМА АВТОМОНИТОРИНГА ===", flush=True)
+    print(f"Текущий режим: {current_str}", flush=True)
+    print("1. Обычный режим (обычные проверки и отправка в TG)", flush=True)
+    print("2. Режим статистики (сводка минимальных цен в TG)", flush=True)
+    print(f"Нажмите 1 или 2 (таймаут 5 сек, по умолчанию останется: {current_str}): ", end="", flush=True)
+
+    import time
+    import sys
+    choice = "current"
+    start_time = time.time()
+    
+    if sys.platform == "win32":
+        import msvcrt
+        while time.time() - start_time < 5:
+            if msvcrt.kbhit():
+                b = msvcrt.getch()
+                if b in (b'\x00', b'\xe0'): # arrow keys
+                    if msvcrt.kbhit():
+                        msvcrt.getch()
+                    continue
+                try:
+                    ch = b.decode('utf-8', errors='ignore')
+                except Exception:
+                    ch = ''
+                if ch == '1':
+                    choice = "1"
+                    print("1 (Выбран Обычный)", flush=True)
+                    break
+                elif ch == '2':
+                    choice = "2"
+                    print("2 (Выбран Статистика)", flush=True)
+                    break
+                elif ch in ('\r', '\n'):
+                    choice = "current"
+                    print("[Текущий]", flush=True)
+                    break
+            time.sleep(0.05)
+    else:
+        import select
+        rlist, _, _ = select.select([sys.stdin], [], [], 5)
+        if rlist:
+            line = sys.stdin.readline().strip()
+            if line == '1':
+                choice = "1"
+            elif line == '2':
+                choice = "2"
+
+    if choice == "current":
+        if time.time() - start_time >= 5:
+            print("\n[Время вышло. Оставлен текущий режим]", flush=True)
+        else:
+            # User chose current by pressing Enter
+            pass
+        print("=" * 45 + "\n", flush=True)
+        return
+
+    new_val = (choice == "2")
+    if new_val == current_val:
+        print("Режим не изменился.", flush=True)
+        print("=" * 45 + "\n", flush=True)
+        return
+
+    # Update config.json
+    cfg_data["test_summary_mode"] = new_val
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(cfg_data, f, ensure_ascii=False, indent=2)
+        print(f"Конфигурация обновлена: test_summary_mode = {new_val}", flush=True)
+    except Exception as e:
+        print(f"  ⚠️ Error writing config.json: {e}", flush=True)
+        print("=" * 45 + "\n", flush=True)
+        return
+
+    # Re-encrypt config.json
+    passphrase = os.environ.get("CONFIG_PASSPHRASE")
+    if passphrase:
+        print("Encrypting config.json...", flush=True)
+        try:
+            sys.path.append(REPO)
+            import config_crypt
+            with open(config_path, "rb") as f:
+                encrypted = config_crypt.encrypt(f.read(), passphrase)
+            with open(os.path.join(REPO, "config.json.enc"), "wb") as f:
+                f.write(encrypted)
+            print("  Config encrypted successfully.", flush=True)
+        except Exception as e:
+            print(f"  ⚠️ Error encrypting config: {e}", flush=True)
+            print("=" * 45 + "\n", flush=True)
+            return
+    else:
+        print("  ⚠️ GITHUB SYNC SKIPPED: CONFIG_PASSPHRASE is not set!", flush=True)
+        print("=" * 45 + "\n", flush=True)
+        return
+
+    # Push to GitHub
+    gh_token = os.environ.get('GITHUB_TOKEN', '')
+    if gh_token:
+        import re
+        remote_url = git("remote", "get-url", "origin")
+        remote_str = (remote_url.stdout or "").strip()
+        if remote_str:
+            fixed = re.sub(r'https://(?:[^@]+@)?github\.com', f'https://{gh_token}@github.com', remote_str)
+            if fixed != remote_str:
+                git("remote", "set-url", "origin", fixed)
+    
+    print("Pushing updated configuration to GitHub...", flush=True)
+    git("add", "config.json.enc")
+    if git_has_staged(["config.json.enc"]):
+        commit_msg = f"Update monitor state (test_summary_mode: {new_val})"
+        commit = git("commit", "-m", commit_msg, "--", "config.json.enc")
+        if commit.returncode == 0:
+            pushed = False
+            for attempt in range(1, 6):
+                push = git("push", visible=True, timeout=30)
+                if push.returncode == 0:
+                    print("✅ Configuration successfully pushed to GitHub!", flush=True)
+                    pushed = True
+                    break
+                delay = attempt * 3
+                print(f"Push attempt {attempt}/5 failed — pulling & retrying in {delay}s...", flush=True)
+                time.sleep(delay)
+                # Pull and rebase
+                state_snapshot = backup_files(["config.json.enc"])
+                env = os.environ.copy()
+                env["GIT_TERMINAL_PROMPT"] = "0"
+                try:
+                    pull = subprocess.run(GIT_BASE + ["pull", "--rebase"], cwd=REPO, env=env, timeout=60)
+                    if pull.returncode != 0 and in_rebase():
+                        print("INFO: state conflict during pull rebase, auto-resolving...", flush=True)
+                        resolve_state_rebase()
+                except Exception:
+                    pass
+                if state_snapshot:
+                    restore_files(state_snapshot)
+                git("add", "config.json.enc")
+                git("commit", "-m", commit_msg, "--", "config.json.enc")
+            if not pushed:
+                print("⚠️ Failed to push changes to GitHub.", flush=True)
+        else:
+            print("⚠️ Commit failed.", flush=True)
+    else:
+        print("No changes staged to push.", flush=True)
+    print("=" * 45 + "\n", flush=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main execution
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -448,6 +615,8 @@ if passphrase and os.path.exists(os.path.join(REPO, "config.json.enc")):
 elif not passphrase and not os.path.exists(os.path.join(REPO, "config.json")) and os.path.exists(os.path.join(REPO, "config.json.enc")):
     print("⚠️ WARNING: config.json.enc exists but CONFIG_PASSPHRASE is not set!")
     print("Please set CONFIG_PASSPHRASE in set_env.bat to decrypt the config.")
+
+prompt_and_sync_mode()
 
 print("\n=== [2/3] Starting bot (Ctrl+C to exit) ===\n")
 
