@@ -1345,6 +1345,7 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
                      f"найдено {len(found_sids)}/{len(skin_searches)} скинов")
 
         # === ШАГ 3: Валидация — открываем детали самых дешёвых кандидатов ===
+        edition_ids = set(config.get_all_editions().keys())
         for sid, keywords, require_pve in skin_searches:
             if time.monotonic() - start_time >= time_budget:
                 logger.warning(f"⏱ Диагностика: лимит {time_budget}с исчерпан")
@@ -1359,6 +1360,7 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
             sorted_cands = sorted(cands, key=lambda x: x['price'])
             pve_tokens = [normalize_match_text(pk) for pk in pve_confirmed]
             is_pve_entry = sid in ('__pve__', '__unconfirmed_pve__')
+            is_edition = sid in edition_ids
 
             best_with_pve = None
             best_without_pve = None
@@ -1412,7 +1414,8 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
                 if full_description:
                     cand_copy['description'] = full_description[:200]
 
-                if is_pve_entry:
+                if is_pve_entry or is_edition:
+                    # PVE-позиции и издания — всегда "с PVE", без разделения
                     best_with_pve = cand_copy
                     break
 
