@@ -2546,12 +2546,14 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 
                 # Check limits
                 original_limit = 0
+                skin_require_pve = False
                 if sid == '__pve__':
                     original_limit = config.confirmed_pve_price
                 elif sid == '__unconfirmed_pve__':
                     original_limit = max_price_override if max_price_override is not None else config.unconfirmed_pve_price
                 elif sid in skins_dict:
                     original_limit = skins_dict[sid].get('price', 0)
+                    skin_require_pve = skins_dict[sid].get('require_pve', False)
                 else:
                     original_limit = config.get_all_editions().get(sid, {}).get('price', 0)
                 
@@ -2593,7 +2595,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         if best_without_pve:
                             p = best_without_pve['price']
                             h = best_without_pve['href']
-                            verdict = f"✅ Подходит (лимит {limit_price}₽)" if p <= limit_price else f"❌ Слишком дорого (лимит {limit_price}₽)"
+                            if skin_require_pve:
+                                verdict = "❌ Не подходит (требуется PVE)"
+                            else:
+                                verdict = f"✅ Подходит (лимит {limit_price}₽)" if p <= limit_price else f"❌ Слишком дорого (лимит {limit_price}₽)"
                             report_lines.append(f"  без PVE: {p}₽ <a href='{h}'>🔗</a>")
                             report_lines.append(f"  Вердикт: {verdict}")
                         else:
