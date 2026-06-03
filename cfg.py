@@ -344,6 +344,7 @@ DEFAULT_CONFIG = {
     'max_price': 5000,
     'confirmed_pve_enabled': True,
     'confirmed_pve_price': 700,
+    'unconfirmed_pve_price': 450,
     'minprice_bundle': {
         'skins': list(DEFAULT_RARE_SKINS.keys()),
         'editions': list(DEFAULT_EDITIONS.keys()),
@@ -683,6 +684,15 @@ class ConfigManager:
     @confirmed_pve_price.setter
     def confirmed_pve_price(self, value):
         self.data['confirmed_pve_price'] = value
+        self.save()
+
+    @property
+    def unconfirmed_pve_price(self):
+        return self.data.get('unconfirmed_pve_price', 450)
+
+    @unconfirmed_pve_price.setter
+    def unconfirmed_pve_price(self, value):
+        self.data['unconfirmed_pve_price'] = value
         self.save()
 
     @property

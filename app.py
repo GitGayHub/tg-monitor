@@ -1578,16 +1578,21 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         positive_keywords = config.get_positive_keywords()
         confirmed_pve_enabled_effective = config.confirmed_pve_enabled if confirmed_pve_enabled_override is None else bool(confirmed_pve_enabled_override)
         confirmed_pve_price_effective = config.confirmed_pve_price if confirmed_pve_price_override is None else int(confirmed_pve_price_override)
+        unconfirmed_pve_price_effective = config.unconfirmed_pve_price
 
         if max_price_override is not None:
             effective_max_price = max_price_override
         elif confirmed_pve_only:
             effective_max_price = confirmed_pve_price_effective
+            if include_unconfirmed_pve:
+                effective_max_price = max(effective_max_price, unconfirmed_pve_price_effective)
         else:
             skin_prices = [s.get('price', 0) for s in skins_dict.values()]
             effective_max_price = max(skin_prices, default=config.max_price) + config.pve_bonus
             if confirmed_pve_enabled_effective:
                 effective_max_price = max(effective_max_price, confirmed_pve_price_effective)
+            if include_unconfirmed_pve:
+                effective_max_price = max(effective_max_price, unconfirmed_pve_price_effective)
 
         if x5_mode:
             effective_max_price *= 5
@@ -2071,7 +2076,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         if has_confirmed_pve_diag:
                             update_recheck_log_offer(log_state['__pve__'], 'pve_offer', seller_price, candidate['price_text'], href)
 
-                pure_unconfirmed_pve_match = include_unconfirmed_pve and max_price_override is not None and has_pve_flag
+                pure_unconfirmed_pve_match = include_unconfirmed_pve and has_pve_flag
                 pure_confirmed_pve_match = (confirmed_pve_only or confirmed_pve_enabled_effective) and has_confirmed_pve_diag
                 should_skip = not found_skins and not pure_confirmed_pve_match and not pure_unconfirmed_pve_match
 
@@ -2096,7 +2101,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     original_my_max_price = max_price_override if max_price_override is not None and confirmed_pve_only else confirmed_pve_price_effective
                     original_price_breakdown = f"Подтв. PVE до {original_my_max_price}₽"
                 elif not found_skins and pure_unconfirmed_pve_match:
-                    original_my_max_price = effective_max_price / 5 if x5_mode else effective_max_price
+                    original_my_max_price = max_price_override if max_price_override is not None else config.unconfirmed_pve_price
                     original_price_breakdown = f"PVE до {original_my_max_price}₽"
                 else:
                     original_my_max_price, original_price_breakdown = calculate_max_price(
@@ -2426,7 +2431,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             # Импортируем дефолтные ключевые слова из cfg для объединения
             from cfg import DEFAULT_RARE_SKINS
             for sid, stat in summary_stats.items():
-                if stat['status'] == 'Не найдено' or stat['status'] == '❌ Найден только без PVE':
+                if stat['status'] in ('Не найдено', '❌ Найден только без PVE') or stat['status'].startswith('💸 Слишком дорого') or sid in ('__pve__', '__unconfirmed_pve__'):
                     keywords = []
                     require_pve = False
                     if sid == '__pve__':
@@ -2469,7 +2474,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             if sid == '__pve__':
                                 original_limit = config.confirmed_pve_price
                             elif sid == '__unconfirmed_pve__':
-                                original_limit = max_price_override if max_price_override is not None else config.confirmed_pve_price
+                                original_limit = max_price_override if max_price_override is not None else config.unconfirmed_pve_price
                             elif sid in skins_dict:
                                 original_limit = skins_dict[sid].get('price', 0)
                             else:
