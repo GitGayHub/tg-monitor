@@ -13,7 +13,7 @@ if hasattr(sys.stderr, "reconfigure"):
 REPO = os.path.dirname(os.path.abspath(__file__))
 MONITOR = os.path.join(REPO, "app.py")
 LOCK_FILE = os.path.join(REPO, ".bot.lock")
-STATE_SYNC = ["seen_ids.txt", "sent_offers.json", "banned_ids.txt", "config.json.enc", "price_history.db", "mode.txt"]
+STATE_SYNC = ["seen_ids.txt", "seen_cache.json", "sent_offers.json", "banned_ids.txt", "config.json.enc", "price_history.db", "mode.txt"]
 STATE_PROTECTED = STATE_SYNC + ["price_history.db-shm", "price_history.db-wal"]
 STATE_SET = {p.replace("\\", "/") for p in STATE_PROTECTED}
 STATE_COMMIT_PREFIXES = ("Sync state after run", "Update monitor state")

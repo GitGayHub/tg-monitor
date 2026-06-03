@@ -159,26 +159,26 @@ jobs:
           git config --global user.email "bot@noreply.github.com"
           # Backup state files before rebase
           backup_dir="$(mktemp -d)"
-          for f in seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
+          for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
             if [ -f "$f" ]; then
               cp "$f" "$backup_dir/$f"
             fi
           done
           # Rebase on latest main to avoid conflicts
-          git checkout -- seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json 2>/dev/null || true
+          git checkout -- seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json 2>/dev/null || true
           git fetch origin main || true
           if ! git rebase origin/main; then
             git rebase --abort || true
           fi
           # Restore state files after rebase
-          for f in seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
+          for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
             if [ -f "$backup_dir/$f" ]; then
               cp "$backup_dir/$f" "$f"
             fi
           done
           # Re-encrypt config before committing
           python config_crypt.py encrypt config.json config.json.enc
-          git add seen_ids.txt sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json || true
+          git add seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json || true
           if git diff --cached --quiet; then
             echo "No runtime state changes"
             exit 0
