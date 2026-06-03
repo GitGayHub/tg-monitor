@@ -1,6 +1,9 @@
 name: Monitor
 
 on:
+  push:
+    paths:
+      - 'config.json'
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
@@ -58,12 +61,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Decrypt config
+      - name: Decrypt or encrypt config
         if: steps.cooldown.outputs.skip != 'true'
         env:
           CONFIG_PASSPHRASE: ${{ secrets.CONFIG_PASSPHRASE }}
         run: |
-          python config_crypt.py decrypt config.json.enc config.json
+          if [ -f "config.json" ]; then
+            echo "Found unencrypted config.json! Encrypting and committing..."
+            python config_crypt.py encrypt config.json config.json.enc
+            git config --global user.name "Monitor Bot"
+            git config --global user.email "bot@noreply.github.com"
+            git add config.json.enc
+            git rm config.json || true
+            git commit -m "🔒 Encrypt and lock config.json" || true
+            git push || true
+          else
+            echo "No unencrypted config.json found. Decrypting config.json.enc..."
+            python config_crypt.py decrypt config.json.enc config.json
+          fi
 
 
       - name: Run monitor once
