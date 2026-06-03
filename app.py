@@ -1304,18 +1304,6 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
             pve_tokens = [normalize_match_text(pk) for pk in pve_confirmed]
             is_pve_entry = sid in ('__pve__', '__unconfirmed_pve__')
 
-            # Для PVE-позиций: не открываем детали, просто берём самый дешёвый
-            if is_pve_entry and sorted_cands:
-                cheapest = sorted_cands[0]
-                results[sid] = {
-                    'validated': [cheapest],
-                    'best_without_pve': None
-                }
-                status_icon = '✅'
-                n_cands = len(cands)
-                logger.info(f"Диаг [{sid}]: {status_icon} ({n_cands} канд, {time.monotonic() - start_time:.1f}с)")
-                continue
-
             best_with_pve = None
             best_without_pve = None
             max_check = 5
@@ -1367,6 +1355,10 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
                 cand_copy = candidate.copy()
                 if full_description:
                     cand_copy['description'] = full_description[:200]
+
+                if is_pve_entry:
+                    best_with_pve = cand_copy
+                    break
 
                 if has_pve_flag:
                     if best_with_pve is None:
