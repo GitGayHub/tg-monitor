@@ -1301,24 +1301,24 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
                 continue
 
             sorted_cands = sorted(cands, key=lambda x: x['price'])
-            pve_tokens = [normalize_match_text(pk) for pk in pve_confirmed] if require_pve else []
-            validated = []
-            best_without_pve = None
+            pve_tokens = [normalize_match_text(pk) for pk in pve_confirmed]
             is_pve_entry = sid in ('__pve__', '__unconfirmed_pve__')
-            max_check = 5 if is_pve_entry else 3
 
             # Для PVE-позиций: не открываем детали, просто берём самый дешёвый
             if is_pve_entry and sorted_cands:
                 cheapest = sorted_cands[0]
-                validated.append(cheapest)
                 results[sid] = {
-                    'validated': validated,
+                    'validated': [cheapest],
                     'best_without_pve': None
                 }
                 status_icon = '✅'
                 n_cands = len(cands)
                 logger.info(f"Диаг [{sid}]: {status_icon} ({n_cands} канд, {time.monotonic() - start_time:.1f}с)")
                 continue
+
+            best_with_pve = None
+            best_without_pve = None
+            max_check = 5
 
             for candidate in sorted_cands[:max_check]:
                 if time.monotonic() - start_time >= time_budget:
@@ -1361,26 +1361,29 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
                 if full_text and contains_exclude_keyword(full_text, exclude_kws, positive_kws):
                     continue
 
-                if require_pve:
-                    combined = f"{normalize_match_text(candidate.get('description', ''))} {full_text}"
-                    has_pve_flag = any(token in combined for token in pve_tokens if token)
-                    if not has_pve_flag:
-                        if best_without_pve is None:
-                            best_without_pve = candidate.copy()
-                            if full_description:
-                                best_without_pve['description'] = full_description[:200]
-                        continue
+                combined = f"{normalize_match_text(candidate.get('description', ''))} {full_text}"
+                has_pve_flag = any(token in combined for token in pve_tokens if token)
 
+                cand_copy = candidate.copy()
                 if full_description:
-                    candidate['description'] = full_description[:200]
-                validated.append(candidate)
-                break  # Нужен только 1 валидный результат
+                    cand_copy['description'] = full_description[:200]
+
+                if has_pve_flag:
+                    if best_with_pve is None:
+                        best_with_pve = cand_copy
+                else:
+                    if best_without_pve is None:
+                        best_without_pve = cand_copy
+
+                # Если нашли обе позиции, прекращаем поиск для этого скина
+                if best_with_pve is not None and best_without_pve is not None:
+                    break
 
             results[sid] = {
-                'validated': validated,
-                'best_without_pve': best_without_pve if require_pve and not validated else None
+                'validated': [best_with_pve] if best_with_pve else [],
+                'best_without_pve': best_without_pve
             }
-            status_icon = '✅' if validated else ('⚠️ без PVE' if best_without_pve else '❌')
+            status_icon = '✅' if best_with_pve else ('⚠️ без PVE' if best_without_pve else '❌')
             n_cands = len(cands)
             logger.info(f"Диаг [{sid}]: {status_icon} ({n_cands} канд, {time.monotonic() - start_time:.1f}с)")
 
@@ -2431,33 +2434,36 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             # Импортируем дефолтные ключевые слова из cfg для объединения
             from cfg import DEFAULT_RARE_SKINS
             for sid, stat in summary_stats.items():
-                if stat['status'] in ('Не найдено', '❌ Найден только без PVE') or stat['status'].startswith('💸 Слишком дорого') or sid in ('__pve__', '__unconfirmed_pve__'):
-                    keywords = []
-                    require_pve = False
-                    if sid == '__pve__':
-                        keywords = config.get_confirmed_pve()
-                    elif sid == '__unconfirmed_pve__':
-                        # Используем все PVE ключевые слова (подтв + неподтв)
-                        keywords = list(config.get_confirmed_pve()) + list(config.get_unconfirmed_pve())
-                    elif sid in skins_dict:
-                        skin_cfg = skins_dict[sid]
-                        keywords = list(skin_cfg.get('keywords', []))
-                        require_pve = skin_cfg.get('require_pve', False)
-                        # Добавляем дефолтные ключевые слова из cfg.py
-                        if sid in DEFAULT_RARE_SKINS:
-                            default_kws = DEFAULT_RARE_SKINS[sid].get('keywords', [])
-                            existing_lower = {k.lower() for k in keywords}
-                            for dk in default_kws:
-                                if dk.lower() not in existing_lower:
-                                    keywords.append(dk)
-                    else:
-                        editions = config.get_all_editions()
-                        if sid in editions:
-                            ed_cfg = editions[sid]
-                            keywords = ed_cfg.get('keywords', [])
-                            require_pve = ed_cfg.get('require_pve', False)
-                    if keywords:
-                        search_list.append((sid, keywords, require_pve))
+                stat['best_with_pve'] = None
+                stat['best_without_pve'] = None
+                
+                # В режиме статистики всегда делаем поиск для всех активных позиций
+                keywords = []
+                require_pve = False
+                if sid == '__pve__':
+                    keywords = config.get_confirmed_pve()
+                elif sid == '__unconfirmed_pve__':
+                    # Используем все PVE ключевые слова (подтв + неподтв)
+                    keywords = list(config.get_confirmed_pve()) + list(config.get_unconfirmed_pve())
+                elif sid in skins_dict:
+                    skin_cfg = skins_dict[sid]
+                    keywords = list(skin_cfg.get('keywords', []))
+                    require_pve = skin_cfg.get('require_pve', False)
+                    # Добавляем дефолтные ключевые слова из cfg.py
+                    if sid in DEFAULT_RARE_SKINS:
+                        default_kws = DEFAULT_RARE_SKINS[sid].get('keywords', [])
+                        existing_lower = {k.lower() for k in keywords}
+                        for dk in default_kws:
+                            if dk.lower() not in existing_lower:
+                                keywords.append(dk)
+                else:
+                    editions = config.get_all_editions()
+                    if sid in editions:
+                        ed_cfg = editions[sid]
+                        keywords = ed_cfg.get('keywords', [])
+                        require_pve = ed_cfg.get('require_pve', False)
+                if keywords:
+                    search_list.append((sid, keywords, require_pve))
 
             if search_list:
                 try:
@@ -2466,33 +2472,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         stat = summary_stats[sid]
                         validated = diag_result['validated']
                         best_no_pve = diag_result.get('best_without_pve')
-
-                        if validated:
-                            cheapest = validated[0]
-                            seller_price = cheapest['price']
-                            original_limit = 0
-                            if sid == '__pve__':
-                                original_limit = config.confirmed_pve_price
-                            elif sid == '__unconfirmed_pve__':
-                                original_limit = max_price_override if max_price_override is not None else config.unconfirmed_pve_price
-                            elif sid in skins_dict:
-                                original_limit = skins_dict[sid].get('price', 0)
-                            else:
-                                original_limit = config.get_all_editions().get(sid, {}).get('price', 0)
-
-                            limit_price = original_limit * 5 if x5_mode else original_limit
-                            if seller_price <= limit_price:
-                                stat['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
-                                stat['min_price'] = seller_price
-                                stat['href'] = cheapest.get('href', '')
-                            else:
-                                stat['status'] = f"💸 Слишком дорого (мин: {seller_price}₽, лимит: {limit_price}₽)"
-                                stat['min_price'] = seller_price
-                                stat['href'] = cheapest.get('href', '')
-                        elif best_no_pve:
-                            stat['status'] = "❌ Найден только без PVE"
-                            stat['min_price'] = best_no_pve['price']
-                            stat['href'] = best_no_pve.get('href', '')
+                        
+                        stat['best_with_pve'] = validated[0] if validated else None
+                        stat['best_without_pve'] = best_no_pve
                 except Exception as e:
                     logger.error(f"Ошибка диагностического поиска: {e}")
 
@@ -2501,30 +2483,57 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             ]
             for sid, stat in summary_stats.items():
                 name = stat['name'].capitalize()
-                status = stat['status']
-                price = stat.get('min_price')
-                href = stat.get('href', '')
-
-                if status == 'Не найдено' and price is not None:
-                    status = f"💸 Слишком дорого (мин: {price}₽)"
-
-                # Формируем строку с ценой и ссылкой
-                line = f"• <b>{name}</b>: {status}"
-
-                # Добавляем цену и ссылку для "без PVE"
-                if "без PVE" in status and price is not None:
-                    line = f"• <b>{name}</b>: ❌ без PVE (мин: {price}₽)"
-                    if href:
-                        line += f' <a href="{href}">🔗</a>'
-
-                # Добавляем ссылку для "Отправлен"
-                elif "Отправлен" in status and href:
-                    line += f' <a href="{href}">🔗</a>'
-
-                # Добавляем ссылку для "Слишком дорого"
-                elif "Слишком дорого" in status and href:
-                    line += f' <a href="{href}">🔗</a>'
-
+                
+                # Check limits
+                original_limit = 0
+                if sid == '__pve__':
+                    original_limit = config.confirmed_pve_price
+                elif sid == '__unconfirmed_pve__':
+                    original_limit = max_price_override if max_price_override is not None else config.unconfirmed_pve_price
+                elif sid in skins_dict:
+                    original_limit = skins_dict[sid].get('price', 0)
+                else:
+                    original_limit = config.get_all_editions().get(sid, {}).get('price', 0)
+                
+                limit_price = original_limit * 5 if x5_mode else original_limit
+                
+                best_with_pve = stat.get('best_with_pve')
+                best_without_pve = stat.get('best_without_pve')
+                
+                if sid in ('__pve__', '__unconfirmed_pve__'):
+                    # PVE-позиции не имеют версии "без PVE"
+                    if best_with_pve:
+                        p = best_with_pve['price']
+                        h = best_with_pve['href']
+                        if p <= limit_price:
+                            line = f"• <b>{name}</b>: ✅ Отправлен (Цена: {p}₽) <a href='{h}'>🔗</a>"
+                        else:
+                            line = f"• <b>{name}</b>: 💸 Слишком дорого (мин: {p}₽, лимит: {limit_price}₽) <a href='{h}'>🔗</a>"
+                    else:
+                        line = f"• <b>{name}</b>: Не найдено"
+                else:
+                    # Скины и издания могут иметь обе версии
+                    parts = []
+                    if best_with_pve:
+                        p = best_with_pve['price']
+                        h = best_with_pve['href']
+                        if p <= limit_price:
+                            parts.append(f"✅ с PVE ({p}₽) <a href='{h}'>🔗</a>")
+                        else:
+                            parts.append(f"💸 с PVE ({p}₽, лимит {limit_price}₽) <a href='{h}'>🔗</a>")
+                    if best_without_pve:
+                        p = best_without_pve['price']
+                        h = best_without_pve['href']
+                        if p <= limit_price:
+                            parts.append(f"✅ без PVE ({p}₽) <a href='{h}'>🔗</a>")
+                        else:
+                            parts.append(f"❌ без PVE ({p}₽, лимит {limit_price}₽) <a href='{h}'>🔗</a>")
+                            
+                    if parts:
+                        line = f"• <b>{name}</b>: {', '.join(parts)}"
+                    else:
+                        line = f"• <b>{name}</b>: Не найдено"
+                        
                 report_lines.append(line)
             
             report_msg = "\n".join(report_lines)
