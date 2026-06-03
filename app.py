@@ -2565,37 +2565,39 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
                 if is_pve_pos or is_edition:
                     # PVE-позиции и издания — только одна строка (всегда с PVE)
+                    report_lines.append(f"• <b>{name}</b>:")
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
-                        if p <= limit_price:
-                            line = f"• <b>{name}</b>: ✅ {p}₽ <a href='{h}'>🔗</a>"
-                        else:
-                            line = f"• <b>{name}</b>: 💸 {p}₽ (лимит {limit_price}₽) <a href='{h}'>🔗</a>"
+                        verdict = f"✅ Подходит (лимит {limit_price}₽)" if p <= limit_price else f"❌ Слишком дорого (лимит {limit_price}₽)"
+                        report_lines.append(f"  Цена: {p}₽ <a href='{h}'>🔗</a>")
+                        report_lines.append(f"  Вердикт: {verdict}")
                     else:
-                        line = f"• <b>{name}</b>: Не найдено"
-                    report_lines.append(line)
+                        report_lines.append(f"  Вердикт: ❌ Не найдено")
                 else:
-                    # Скины — показываем с PVE и без PVE на отдельных строках
+                    # Скины — показываем с PVE и без PVE
                     if not best_with_pve and not best_without_pve:
-                        report_lines.append(f"• <b>{name}</b>: Не найдено")
+                        report_lines.append(f"• <b>{name}</b>:")
+                        report_lines.append(f"  Вердикт: ❌ Не найдено")
                     else:
-                        sub_parts = []
+                        report_lines.append(f"• <b>{name}</b>:")
                         if best_with_pve:
                             p = best_with_pve['price']
                             h = best_with_pve['href']
-                            icon = "✅" if p <= limit_price else "💸"
-                            price_info = f"{p}₽" if p <= limit_price else f"{p}₽ (лимит {limit_price}₽)"
-                            sub_parts.append(f"с PVE: {icon} {price_info} <a href='{h}'>🔗</a>")
+                            verdict = f"✅ Подходит (лимит {limit_price}₽)" if p <= limit_price else f"❌ Слишком дорого (лимит {limit_price}₽)"
+                            report_lines.append(f"  с PVE: {p}₽ <a href='{h}'>🔗</a>")
+                            report_lines.append(f"  Вердикт: {verdict}")
+                        else:
+                            report_lines.append(f"  с PVE: ❌ Не найдено")
+                            
                         if best_without_pve:
                             p = best_without_pve['price']
                             h = best_without_pve['href']
-                            icon = "✅" if p <= limit_price else "❌"
-                            price_info = f"{p}₽" if p <= limit_price else f"{p}₽ (лимит {limit_price}₽)"
-                            sub_parts.append(f"без PVE: {icon} {price_info} <a href='{h}'>🔗</a>")
-                        report_lines.append(f"• <b>{name}</b>:")
-                        for sp in sub_parts:
-                            report_lines.append(f"  {sp}")
+                            verdict = f"✅ Подходит (лимит {limit_price}₽)" if p <= limit_price else f"❌ Слишком дорого (лимит {limit_price}₽)"
+                            report_lines.append(f"  без PVE: {p}₽ <a href='{h}'>🔗</a>")
+                            report_lines.append(f"  Вердикт: {verdict}")
+                        else:
+                            report_lines.append(f"  без PVE: ❌ Не найдено")
                 
             report_msg = "\n".join(report_lines)
             logger.info("📊 Отправляю диагностический отчет в Telegram...")
