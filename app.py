@@ -1524,7 +1524,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         x5_mode = config.x5_mode
         is_git = os.environ.get('GITHUB_ACTIONS') == 'true'
         source_text = "автомониторинг git" if is_git else "автомониторинг local"
-        test_summary_mode = config.data.get('test_summary_mode', False) or os.environ.get('TEST_SUMMARY_MODE') == 'true'
+        test_summary_mode = config.data.get('test_summary_mode', False) or os.environ.get('TEST_SUMMARY_MODE') == 'true' or _get_mode_txt_value()
 
         search_mode = config.search_mode
         confirmed_pve_only = search_mode == 'pve_only'
@@ -2999,6 +2999,54 @@ async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Ошибка синхронизации: {e}")
 
 
+def _get_mode_txt_value():
+    mode_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mode.txt')
+    if os.path.exists(mode_file):
+        try:
+            with open(mode_file, 'r', encoding='utf-8') as f:
+                return f.read().strip().lower() == 'statistics'
+        except Exception:
+            pass
+    return False
+
+def _sync_mode_to_github():
+    """Пушит plaintext mode.txt в GitHub через Contents API."""
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return False
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/mode.txt"
+    headers = {
+        'Authorization': f'token {GITHUB_TOKEN}',
+        'Accept': 'application/vnd.github.v3+json',
+    }
+
+    sha = None
+    resp = requests.get(api_url, headers=headers, timeout=15)
+    if resp.status_code == 200:
+        sha = resp.json().get('sha')
+    elif resp.status_code != 404:
+        raise Exception(f"GitHub API ошибка ({resp.status_code}): {resp.text[:200]}")
+
+    if os.path.exists('mode.txt'):
+        with open('mode.txt', 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+    else:
+        content = 'normal'
+
+    encoded = base64.b64encode(content.encode('utf-8')).decode('ascii')
+
+    payload = {
+        'message': f'🔄 Toggle auto-monitoring mode to {content}',
+        'content': encoded,
+    }
+    if sha:
+        payload['sha'] = sha
+
+    resp = requests.put(api_url, headers=headers, json=payload, timeout=15)
+    if resp.status_code in (200, 201):
+        return True
+    else:
+        raise Exception(f"GitHub PUT ошибка ({resp.status_code}): {resp.text[:200]}")
+
 def _sync_config_to_github():
     """Пушит зашифрованный config.json.enc в GitHub через Contents API."""
     api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/config.json.enc"
@@ -3382,6 +3430,7 @@ def main():
     application.bot_data['build_recheck_log'] = build_cached_recheck_log_async
     if GITHUB_TOKEN and GITHUB_REPO:
         application.bot_data['sync_fn'] = _sync_config_to_github
+        application.bot_data['sync_mode_fn'] = _sync_mode_to_github
 
     # Регистрируем панель настроек
     register_settings_handlers(application, config, chat_id, seen_ids, banned_ids)

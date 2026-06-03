@@ -158,12 +158,23 @@ def _check_control_markup(include_home=True):
     return InlineKeyboardMarkup(keyboard)
 
 
+def _is_statistics_mode(config):
+    import os
+    mode_file = 'mode.txt'
+    if os.path.exists(mode_file):
+        try:
+            with open(mode_file, 'r', encoding='utf-8') as f:
+                return f.read().strip().lower() == 'statistics'
+        except Exception:
+            pass
+    return config.data.get('test_summary_mode', False)
+
 def _build_settings_main_text(config):
     skins = config.get_all_skins()
     editions = config.get_all_editions()
     enabled = sum(1 for s in skins.values() if s.get('enabled', True))
     pve_req = sum(1 for s in skins.values() if s.get('require_pve', False))
-    test_summary_mode = config.data.get('test_summary_mode', False)
+    test_summary_mode = _is_statistics_mode(config)
     mode_str = "Статистика" if test_summary_mode else "Обычный"
     return (
         "⚙️ <b>Панель настроек</b>\n\n"
@@ -177,7 +188,7 @@ def _build_settings_main_text(config):
 
 def _build_settings_main_markup(context):
     config = context.bot_data['config']
-    test_summary_mode = config.data.get('test_summary_mode', False)
+    test_summary_mode = _is_statistics_mode(config)
     mode_label = "📊 Автомониторинг: Статистика" if test_summary_mode else "🔄 Автомониторинг: Обычный"
     keyboard = [
         [InlineKeyboardButton("📋 Список", callback_data="set:skins:menu"),
@@ -2636,19 +2647,26 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             await _show_stats_item_history(query, context, s_item_type, s_item_id)
 
     elif data == "set:toggle_mode":
-        current = config.data.get('test_summary_mode', False)
+        current = _is_statistics_mode(config)
         new_val = not current
         config.data['test_summary_mode'] = new_val
         config.save()
         
+        # Write to mode.txt
+        try:
+            with open('mode.txt', 'w', encoding='utf-8') as f:
+                f.write('statistics' if new_val else 'normal')
+        except Exception as e:
+            logger.error(f"Failed to write mode.txt: {e}")
+        
         mode_str = "Статистика" if new_val else "Обычный"
         await query.answer(f"⚙️ Режим изменен на: {mode_str} (сохранение в GitHub...)", show_alert=False)
         
-        sync_fn = context.bot_data.get('sync_fn')
-        if sync_fn:
+        sync_mode_fn = context.bot_data.get('sync_mode_fn')
+        if sync_mode_fn:
             async def do_sync_bg():
                 try:
-                    await asyncio.to_thread(sync_fn)
+                    await asyncio.to_thread(sync_mode_fn)
                 except Exception as e:
                     logger.error(f"Auto-sync failed on toggle: {e}")
             asyncio.create_task(do_sync_bg())
