@@ -178,7 +178,7 @@ def _build_settings_main_text(config):
 def _build_settings_main_markup(context):
     config = context.bot_data['config']
     test_summary_mode = config.data.get('test_summary_mode', False)
-    mode_label = "📊 Режим: Статистика" if test_summary_mode else "🔄 Режим: Обычный"
+    mode_label = "📊 Автомониторинг: Статистика" if test_summary_mode else "🔄 Автомониторинг: Обычный"
     keyboard = [
         [InlineKeyboardButton("📋 Список", callback_data="set:skins:menu"),
          InlineKeyboardButton("🚫 Фильтры", callback_data="set:filters:menu")],
@@ -2637,8 +2637,13 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
     elif data == "set:toggle_mode":
         current = config.data.get('test_summary_mode', False)
-        config.data['test_summary_mode'] = not current
+        new_val = not current
+        config.data['test_summary_mode'] = new_val
         config.save()
+        
+        mode_str = "Статистика" if new_val else "Обычный"
+        await query.answer(f"⚙️ Режим изменен на: {mode_str} (сохранение в GitHub...)", show_alert=False)
+        
         sync_fn = context.bot_data.get('sync_fn')
         if sync_fn:
             async def do_sync_bg():
