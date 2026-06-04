@@ -26,6 +26,7 @@ INPUT_RECHECK_SKIN_PRICE = 14
 INPUT_RECHECK_ED_PRICE = 15
 INPUT_CONFIRMED_PVE_PRICE = 16
 INPUT_BANNED_LINK = 17
+INPUT_UNCONFIRMED_PVE_PRICE = 18
 
 ITEMS_PER_PAGE = 8  # Элементов на странице (для пагинации)
 
@@ -499,7 +500,7 @@ async def _show_pve_positions_list(query, context, page=0):
     context.user_data['skins_last_page'] = page
     editions = config.get_all_editions()
     edition_order = ['super_deluxe', 'limited', 'ultimate']
-    all_ids = ['pve:confirmed'] + [f'ed:{eid}' for eid in edition_order if eid in editions]
+    all_ids = ['pve:confirmed', 'pve:unconfirmed'] + [f'ed:{eid}' for eid in edition_order if eid in editions]
     total = len(all_ids)
     total_pages = max(1, math.ceil(total / ITEMS_PER_PAGE))
     page = max(0, min(page, total_pages - 1))
@@ -523,6 +524,13 @@ async def _show_pve_positions_list(query, context, page=0):
                 InlineKeyboardButton(f"💰 {config.confirmed_pve_price}₽", callback_data=f"set:skins:pvprice:{page}"),
                 InlineKeyboardButton(icon, callback_data=f"set:skins:pvtoggle:{page}"),
                 InlineKeyboardButton("🔎 Мин", callback_data=f"set:minprice:pveconfirmed:pvlist:{page}"),
+            ])
+        elif item_id == 'pve:unconfirmed':
+            keyboard.append([InlineKeyboardButton("🔓 Неподтв. PVE", callback_data=f"set:skins:unpvdetail:{page}")])
+            keyboard.append([
+                InlineKeyboardButton(f"💰 {config.unconfirmed_pve_price}₽", callback_data=f"set:skins:unpvprice:{page}"),
+                InlineKeyboardButton("⛔", callback_data=f"set:skins:unpvtoggle:{page}"),
+                InlineKeyboardButton("🔎 Мин", callback_data=f"set:minprice:pveunconfirmed:pvlist:{page}"),
             ])
         else:
             eid = item_id[3:]
@@ -1125,6 +1133,25 @@ async def _show_confirmed_pve_detail(query, context, page=0):
         [InlineKeyboardButton("✅/⛔ Вкл/выкл", callback_data=f"set:skins:pvtoggle:d:{page}")],
         [InlineKeyboardButton("💰 Цена", callback_data=f"set:skins:pvprice:detail:{page}")],
         [InlineKeyboardButton("📈 История цен", callback_data="set:hist:pve:confirmed:confirmed:0:pd")],
+        [InlineKeyboardButton("🔙 К PVE", callback_data=f"set:skins:pvelist:{page}")],
+    ]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+
+async def _show_unconfirmed_pve_detail(query, context, page=0):
+    config = context.bot_data['config']
+    context.user_data['skins_last_page'] = page
+    keywords = config.get_unconfirmed_pve()
+    text = (
+        "🔓 <b>Неподтверждённое PVE</b>\n\n"
+        "Статус: ⛔ выключен (поиск в мониторинге отключён)\n"
+        f"💰 Цена: {config.unconfirmed_pve_price}₽\n"
+        f"🧩 Слов неподтверждения: {len(keywords)}\n\n"
+        "Поиск неподтверждённого PVE отключён для фонового и автомониторинга. Вы можете запустить его вручную через меню 'Мин. цена'."
+    )
+    keyboard = [
+        [InlineKeyboardButton("💰 Цена", callback_data=f"set:skins:unpvprice:detail:{page}")],
+        [InlineKeyboardButton("📈 История цен", callback_data="set:hist:pve:unconfirmed:unconfirmed:0:pd")],
         [InlineKeyboardButton("🔙 К PVE", callback_data=f"set:skins:pvelist:{page}")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -1742,11 +1769,11 @@ async def _launch_minprice_bundle_run(query, context, config):
             except Exception:
                 pass
 
-        async def _search_step(label, keywords, require_pve=False):
+        async def _search_step(label, keywords, require_pve=False, exclude_confirmed_pve=False):
             return await _run_minprice_search_with_watchdog(
                 context,
                 label,
-                lambda: search_min_price(keywords, require_pve=require_pve),
+                lambda: search_min_price(keywords, require_pve=require_pve, exclude_confirmed_pve=exclude_confirmed_pve),
                 heartbeat_callback=lambda elapsed: _update_progress(f"{label} ({elapsed}с)")
             )
 
@@ -1834,7 +1861,7 @@ async def _launch_minprice_bundle_run(query, context, config):
                 await _stop_bundle()
                 return
             await _update_progress("🔓 Неподтв. PVE")
-            results = await _search_step("🔓 Неподтв. PVE", config.get_unconfirmed_pve(), require_pve=False)
+            results = await _search_step("🔓 Неподтв. PVE", config.get_unconfirmed_pve(), require_pve=False, exclude_confirmed_pve=True)
             step_done += 1
             done += 1
             await _update_progress("🔓 Неподтв. PVE")
@@ -1867,16 +1894,18 @@ async def _launch_minprice_bundle_run(query, context, config):
             summary_data.append(('simple', f"🏆 {name}", price_markup, ''))
             await _send_simple_partial_result(f"🏆 {name}", results, 'ed', eid)
 
-        summary = "📊 <b>Сводка мін. цен:</b>\n\n"
-        for item_kind, label, first_markup, second_markup in summary_data:
+        summary = "📊 <b>Сводка минимальных цен:</b>\n\n"
+        for idx, (item_kind, label, first_markup, second_markup) in enumerate(summary_data, 1):
+            if idx > 1:
+                summary += "───────────────────\n"
             if item_kind == 'skin':
                 summary += (
                     f"{label}\n"
-                    f"🔒 Без PVE: <b>{first_markup}</b>\n"
-                    f"🧟 С PVE: <b>{second_markup}</b>\n\n"
+                    f"  ├ 🔒 Без PVE: <b>{first_markup}</b>\n"
+                    f"  └ 🧟 С PVE: <b>{second_markup}</b>\n\n"
                 )
             else:
-                summary += f"{label} — <b>{first_markup}</b>\n"
+                summary += f"{label} — <b>{first_markup}</b>\n\n"
         bar, pct = _make_progress_bar(step_done, max(total_steps, 1))
         keyboard = [
             [InlineKeyboardButton("🔄 Повторить", callback_data="set:minprice:crun")],
@@ -3247,6 +3276,36 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 reply_markup=_get_input_return_markup(context, "set:skins:pvelist:0", "🔙 К PVE")
             )
 
+        elif action == 'unpvdetail':
+            page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+            await _show_unconfirmed_pve_detail(query, context, page)
+
+        elif action == 'unpvtoggle':
+            await query.answer("ℹ️ Поиск неподтвержденного PVE отключен в мониторинге.", show_alert=True)
+
+        elif action == 'unpvprice':
+            ret_marker = parts[3] if len(parts) > 3 else '0'
+            context.user_data['input_state'] = INPUT_UNCONFIRMED_PVE_PRICE
+            context.user_data['editing_unconfirmed_pve'] = True
+            if ret_marker == 'detail':
+                detail_page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else context.user_data.get('skins_last_page', 0)
+                _set_input_return(
+                    context,
+                    f"set:skins:unpvdetail:{detail_page}",
+                    "🔙 Назад к Неподтв. PVE",
+                    extra_buttons=[("🧟 К PVE", f"set:skins:pvelist:{detail_page}")]
+                )
+            else:
+                ret_page = int(ret_marker) if ret_marker.isdigit() else 0
+                _set_input_return(context, f"set:skins:pvelist:{ret_page}", "🔙 К PVE")
+            await query.edit_message_text(
+                f"💸 <b>Введите новую цену для Неподтв. PVE</b>\n\n"
+                f"Текущая: {config.unconfirmed_pve_price}₽\n"
+                f"Отправьте число или нажмите кнопку ниже:",
+                parse_mode='HTML',
+                reply_markup=_get_input_return_markup(context, "set:skins:pvelist:0", "🔙 К PVE")
+            )
+
         elif action == 'toggle':
             skin_id = parts[3]
             new_state = config.toggle_skin(skin_id)
@@ -3757,6 +3816,22 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f'✅ Цена подтверждённого PVE: {val}₽',
                 reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '🔙 К ценам')
             )
+
+    elif state == INPUT_UNCONFIRMED_PVE_PRICE:
+        try:
+            val = int(text)
+            if val <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text('❌ Введите положительное число или /cancel:')
+            return
+        context.user_data.pop('input_state', None)
+        config.unconfirmed_pve_price = val
+        context.user_data.pop('editing_unconfirmed_pve', None)
+        await update.message.reply_text(
+            f'✅ Цена неподтверждённого PVE: {val}₽',
+            reply_markup=_pop_input_return_markup(context, 'set:prices:menu', '🔙 К ценам')
+        )
 
     elif state == INPUT_PVE_BONUS:
         try:

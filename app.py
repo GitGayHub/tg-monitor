@@ -1122,7 +1122,7 @@ async def get_offer_details(offer_url):
     return full_desc, rating
 
 
-def _sync_search_min_price(keywords, require_pve=False):
+def _sync_search_min_price(keywords, require_pve=False, exclude_confirmed_pve=False):
     """Ищет минимальную цену по ВСЕМ ключевым словам через поиск FunPay."""
     all_results = {}  # href → result (дедупликация)
     normalized_keywords = [normalize_match_text(kw) for kw in keywords if normalize_match_text(kw)]
@@ -1254,7 +1254,7 @@ def _sync_search_min_price(keywords, require_pve=False):
     # This keeps the search fast: only top-N get HTTP requests, not all matches.
     exclude_kws = config.get_exclude_keywords()
     positive_kws = config.get_positive_keywords()
-    pve_tokens = [normalize_match_text(pk) for pk in config.get_confirmed_pve()] if require_pve else []
+    pve_tokens = [normalize_match_text(pk) for pk in config.get_confirmed_pve()] if (require_pve or exclude_confirmed_pve) else []
     validated = []
     for candidate in results[:8]:
         href = candidate['href']
@@ -1268,10 +1268,15 @@ def _sync_search_min_price(keywords, require_pve=False):
         if full_text and contains_exclude_keyword(full_text, exclude_kws, positive_kws):
             logger.debug(f"Мін. прайс: отфильтровано по описанию — {href}")
             continue
+
+        combined = f"{normalize_match_text(candidate.get('description',''))} {full_text}"
         if require_pve:
-            combined = f"{normalize_match_text(candidate.get('description',''))} {full_text}"
             if not any(token in combined for token in pve_tokens if token):
                 continue
+        if exclude_confirmed_pve:
+            if any(token in combined for token in pve_tokens if token):
+                continue
+
         if full_desc:
             candidate['description'] = full_desc[:200]
         validated.append(candidate)
@@ -1280,9 +1285,9 @@ def _sync_search_min_price(keywords, require_pve=False):
     return validated
 
 
-async def search_min_price(keywords, require_pve=False):
+async def search_min_price(keywords, require_pve=False, exclude_confirmed_pve=False):
     """Поиск минимальной цены по всем ключевым словам — НЕ блокирует event loop."""
-    return await asyncio.to_thread(_sync_search_min_price, keywords, require_pve)
+    return await asyncio.to_thread(_sync_search_min_price, keywords, require_pve, exclude_confirmed_pve)
 
 
 def _sync_diagnostic_search(skin_searches, time_budget=120):
@@ -2663,7 +2668,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             item_lines.append("  ↳ без PVE: ❌ Не найдено")
                     report_lines.append("\n".join(item_lines))
                 
-            report_msg = "\n\n".join(report_lines)
+            report_msg = "\n\n───────────────────\n\n".join(report_lines)
             logger.info("📊 Отправляю диагностический отчет в Telegram...")
             try:
                 if context:

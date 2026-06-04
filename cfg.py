@@ -114,7 +114,7 @@ DEFAULT_RARE_SKINS = {
 }
 
 DEFAULT_CONFIRMED_PVE = [
-    'og stw', 'og pve', 'старое пве', 'old pve', 'save the world',
+    'og stw', 'og pve', 'ог пве', 'ог ств', 'ог stw', 'ог pve', 'og ств', 'старое пве', 'old pve', 'save the world',
     'олд пве', 'олд ств', 'олд stw', 'олд pve',
     'old stw', 'old save the world', 'старое ств',
     'лидер в розовом', 'боевая раскраска', 'rose team leader', 'warpaint',
