@@ -157,37 +157,70 @@ jobs:
           set -e
           git config --global user.name "Monitor Bot"
           git config --global user.email "bot@noreply.github.com"
-          # Backup state files before rebase
+          
+          # Backup state files before rebase/pull
           backup_dir="$(mktemp -d)"
           for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
             if [ -f "$f" ]; then
               cp "$f" "$backup_dir/$f"
             fi
           done
-          # Rebase on latest main to avoid conflicts
-          git checkout -- seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json 2>/dev/null || true
-          git fetch origin main || true
-          if ! git rebase origin/main; then
-            git rebase --abort || true
-          fi
-          # Restore state files after rebase
-          for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
-            if [ -f "$backup_dir/$f" ]; then
-              cp "$backup_dir/$f" "$f"
+
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          PUSH_SUCCESS=false
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "Attempt $((RETRY_COUNT+1)) to commit and push state..."
+            
+            # Reset local state files to latest origin tracking to avoid conflicts during checkout/rebase
+            git checkout -- seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json 2>/dev/null || true
+            
+            # Fetch latest commits
+            git fetch origin main || true
+            
+            # Reset current HEAD to origin/main (equivalent to a clean pull)
+            git reset --hard origin/main
+            
+            # Restore state files from our local run backup
+            for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
+              if [ -f "$backup_dir/$f" ]; then
+                cp "$backup_dir/$f" "$f"
+              fi
+            done
+            
+            # Re-encrypt config
+            python config_crypt.py encrypt config.json config.json.enc
+            
+            # Add files to commit staging
+            git add seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json || true
+            
+            # Check if there are actual runtime state changes to commit
+            if git diff --cached --quiet; then
+              echo "No runtime state changes to commit."
+              PUSH_SUCCESS=true
+              break
             fi
+            
+            # Commit the changes
+            git commit -m "Update monitor state" || true
+            
+            # Attempt to push to the remote branch
+            if git push origin HEAD:main; then
+              echo "State successfully committed and pushed to remote branch."
+              PUSH_SUCCESS=true
+              break
+            fi
+            
+            echo "Push failed. Re-trying in 5 seconds..."
+            git reset --mixed HEAD~1 || true
+            RETRY_COUNT=$((RETRY_COUNT+1))
+            sleep 5
           done
-          # Re-encrypt config before committing
-          python config_crypt.py encrypt config.json config.json.enc
-          git add seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json || true
-          if git diff --cached --quiet; then
-            echo "No runtime state changes"
-            exit 0
-          fi
-          git commit -m "Update monitor state"
-          if ! git push; then
-            git reset --mixed HEAD~1
-            echo "WARNING: push failed; state kept in working tree"
-            exit 0
+
+          if [ "$PUSH_SUCCESS" = "false" ]; then
+            echo "ERROR: Failed to push state updates to GitHub after $MAX_RETRIES attempts."
+            exit 1
           fi
 
       - name: Trigger next run

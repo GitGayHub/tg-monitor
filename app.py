@@ -276,43 +276,64 @@ def normalize_match_text(text):
 
 
 def is_recently_sent(offer_id, seller, description, price_value, max_days=7):
-    """Returns True if this exact offer (same ID, price, and description) or an identical re-post
-    by the same seller (different ID but identical description) was already sent within max_days days."""
+    """Returns True if this offer (same ID or an identical re-post by the same seller)
+    was already sent within max_days days and the price hasn't dropped significantly (>= 2%)."""
     global sent_offers, sent_by_seller
     now = time.time()
     seconds_limit = max_days * 24 * 3600
+    norm_desc = normalize_match_text(description)
 
-    # 1. Check by exact offer_id: if price and description are unchanged, skip it.
-    # If the price or description has changed, we treat it as new and don't skip.
+    # Gather all matching previously sent records
+    matching_prices = []
+
+    # 1. Check by exact offer_id
     if offer_id in sent_offers:
         sent = sent_offers[offer_id]
         sent_time = sent.get('timestamp', 0)
         if now - sent_time < seconds_limit:
-            if sent.get('price') == price_value and normalize_match_text(sent.get('description', '')) == normalize_match_text(description):
-                return True
+            price = sent.get('price')
+            if price is not None:
+                matching_prices.append(price)
 
-    # 2. Check by seller (re-post detection): if same seller, different ID, and identical title, skip it.
+    # 2. Check by seller (re-post detection)
     if seller:
         seller_key = seller.strip().lower()
-        norm_desc = normalize_match_text(description)
         if seller_key in sent_by_seller:
             for sent in sent_by_seller[seller_key]:
-                # Only match if it's a DIFFERENT offer_id (re-posted)
-                if sent.get('offer_id') != offer_id:
-                    sent_time = sent.get('timestamp', 0)
-                    if now - sent_time < seconds_limit:
-                        if normalize_match_text(sent.get('description', '')) == norm_desc:
-                            return True
+                sent_time = sent.get('timestamp', 0)
+                if now - sent_time < seconds_limit:
+                    if normalize_match_text(sent.get('description', '')) == norm_desc:
+                        price = sent.get('price')
+                        if price is not None:
+                            matching_prices.append(price)
     else:
-        # Fallback for empty/unknown seller: compare description against all sent offers (legacy/unknown)
-        norm_desc = normalize_match_text(description)
+        # Fallback for empty/unknown seller: compare description against all sent offers
         for oid, sent in sent_offers.items():
             sent_time = sent.get('timestamp', 0)
             if now - sent_time < seconds_limit:
                 sent_seller = sent.get('seller')
                 if not sent_seller:
                     if normalize_match_text(sent.get('description', '')) == norm_desc:
-                        return True
+                        price = sent.get('price')
+                        if price is not None:
+                            matching_prices.append(price)
+
+    # If no matching offers were sent, then it is NOT recently sent
+    if not matching_prices:
+        return False
+
+    # Find the minimum price among all sent matches
+    min_sent_price = min(matching_prices)
+
+    # Skip if current price is higher or equal to the minimum sent price
+    if price_value >= min_sent_price:
+        return True
+
+    # If the price dropped, check if it dropped by at least 2% to filter out minor exchange rate fluctuations
+    price_drop = min_sent_price - price_value
+    percent_drop = price_drop / min_sent_price
+    if percent_drop < 0.02:
+        return True
 
     return False
 
