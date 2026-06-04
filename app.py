@@ -328,10 +328,10 @@ def is_recently_sent(offer_id, seller, description, price_value, max_days=7):
     if price_value >= min_sent_price:
         return True
 
-    # If the price dropped, check if it dropped by at least 2% to filter out minor exchange rate fluctuations
+    # If the price dropped, check if it dropped by at least 10% to filter out minor fluctuations
     price_drop = min_sent_price - price_value
     percent_drop = price_drop / min_sent_price
-    if percent_drop < 0.02:
+    if percent_drop < 0.10:
         return True
 
     return False
@@ -343,6 +343,18 @@ def contains_exclude_keyword(text, exclude_keywords, positive_keywords=None):
     Exception: if the positive match is a substring of the exclude match
     (e.g. 'full access' inside 'no full access'), the exclude still wins."""
     normalized_text = normalize_match_text(text)
+
+    # Robust regex negation check for "no email/no access/no changes" to prevent any bypasses
+    negation_patterns = [
+        r'(?:не|нет|без|нету|no|not|without|оставляю|остается|остаётся|у продавца)\s+(?:доступ\w*\s+)?(?:к\s+)?(?:родительск\w*\s+)?(?:почт\w+|mail|email|емейл\w*|мыл\w+|данн\w*|перепривяз\w*|смен\w*)',
+        r'(?:почт\w+|mail|email|емейл\w*|мыл\w*|парол\w*|данн\w*|перепривяз\w*|смен\w*)\s+(?:от\s+почты\s+)?(?:к\s+аккаунт\w*\s+)?(?:не\s+)?(?:нет|нету|идет|идёт|передается|передаётся|дается|даётся|предоставляется|доступна|будет|у меня|себе|отдаю|даю|меняется|меняются|возможна|невозможна|включен\w*|у\s+продавца|моя|остается|остаётся)'
+    ]
+    for pattern in negation_patterns:
+        match = re.search(pattern, normalized_text)
+        if match:
+            # Critical blockers found, skip positive keyword overrides
+            return match.group(0)
+
     # First: find if any exclude keyword matches
     matched_exclude = None
     normalized_exclude_str = None
