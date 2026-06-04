@@ -455,6 +455,7 @@ elif not passphrase and not os.path.exists(os.path.join(REPO, "config.json")) an
 
 print("\n=== [2/3] Starting bot (Ctrl+C to exit) ===\n")
 
+os.environ["BOT_RUNNING_UNDER_LAUNCHER"] = "1"
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 try:
     subprocess.run([sys.executable, MONITOR] + sys.argv[1:], cwd=REPO)
@@ -495,11 +496,9 @@ finally:
                 files_to_sync.append("config.json")
             print("No passphrase set, staging unencrypted config.json directly...")
             git("add", "-f", "config.json")
-            git("rm", "--cached", "config.json.enc", visible=False)
         else:
             if "config.json" in files_to_sync:
                 files_to_sync.remove("config.json")
-            git("rm", "--cached", "config.json", visible=False)
 
         git("add", *files_to_sync)
         if git_has_staged(files_to_sync):
@@ -550,7 +549,6 @@ finally:
                         pass
                 elif not passphrase and os.path.exists(os.path.join(REPO, "config.json")):
                     git("add", "-f", "config.json")
-                    git("rm", "--cached", "config.json.enc", visible=False)
                 # Re-add and amend/re-commit
                 git("add", *files_to_sync)
                 if git_has_staged(files_to_sync):

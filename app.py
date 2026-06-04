@@ -3139,6 +3139,9 @@ def _get_mode_txt_value():
 
 def _sync_mode_to_github():
     """Пушит plaintext mode.txt в GitHub через Contents API."""
+    if os.environ.get("BOT_RUNNING_UNDER_LAUNCHER") == "1":
+        logger.info("Режим изменен локально, пропуск API-синхронизации с GitHub (будет отправлено при выходе)")
+        return True
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return False
     api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/mode.txt"
@@ -3179,6 +3182,9 @@ def _sync_config_to_github():
     """Пушит config в GitHub через Contents API.
     Если CONFIG_PASSPHRASE задан — шифрует и пушит config.json.enc.
     Если нет — пушит config.json напрямую (для локального режима)."""
+    if os.environ.get("BOT_RUNNING_UNDER_LAUNCHER") == "1":
+        logger.info("Конфиг сохранен локально, пропуск API-синхронизации с GitHub (будет отправлено при выходе)")
+        return True
     passphrase = os.environ.get("CONFIG_PASSPHRASE")
 
     if passphrase:
