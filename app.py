@@ -1457,10 +1457,21 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
                 if full_description:
                     cand_copy['description'] = full_description[:200]
 
-                if is_pve_entry or is_edition:
-                    # PVE-позиции и издания — всегда "с PVE", без разделения
+                if is_edition:
                     best_with_pve = cand_copy
                     break
+
+                if sid == '__pve__':
+                    if has_pve(combined, include_unconfirmed=False):
+                        best_with_pve = cand_copy
+                        break
+                    continue
+
+                if sid == '__unconfirmed_pve__':
+                    if has_pve(combined, include_unconfirmed=True) and not has_pve(combined, include_unconfirmed=False):
+                        best_with_pve = cand_copy
+                        break
+                    continue
 
                 if has_pve_flag:
                     if best_with_pve is None:
@@ -2178,8 +2189,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         if has_confirmed_pve_diag:
                             update_recheck_log_offer(log_state['__pve__'], 'pve_offer', seller_price, candidate['price_text'], href)
 
-                pure_unconfirmed_pve_match = include_unconfirmed_pve and has_pve_flag
                 pure_confirmed_pve_match = (confirmed_pve_only or confirmed_pve_enabled_effective) and has_confirmed_pve_diag
+                pure_unconfirmed_pve_match = include_unconfirmed_pve and has_pve_flag and not has_confirmed_pve_diag
                 should_skip = not found_skins and not pure_confirmed_pve_match and not pure_unconfirmed_pve_match
 
                 if should_skip:
@@ -2239,7 +2250,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                                 stat['href'] = candidate.get('href', '')
                             if stat['status'].startswith('Не найдено') or stat['status'].startswith('💸 Слишком дорого'):
                                 stat['status'] = f"💸 Слишком дорого (мин: {seller_price}₽, лимит: {x5_my_max_price}₽)"
-                    if not found_skins and (pure_confirmed_pve_match or pure_unconfirmed_pve_match):
+                    if not found_skins and pure_unconfirmed_pve_match:
                         if '__unconfirmed_pve__' in summary_stats:
                             stat = summary_stats['__unconfirmed_pve__']
                             if stat['min_price'] is None or seller_price < stat['min_price']:
@@ -2254,11 +2265,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     if skin['id'] in summary_stats:
                         summary_stats[skin['id']]['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
                         summary_stats[skin['id']]['href'] = candidate.get('href', '')
-                if not found_skins and (pure_confirmed_pve_match or pure_unconfirmed_pve_match):
+                if not found_skins:
                     if pure_confirmed_pve_match and '__pve__' in summary_stats:
                         summary_stats['__pve__']['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
                         summary_stats['__pve__']['href'] = candidate.get('href', '')
-                    if '__unconfirmed_pve__' in summary_stats:
+                    if pure_unconfirmed_pve_match and '__unconfirmed_pve__' in summary_stats:
                         summary_stats['__unconfirmed_pve__']['status'] = f"✅ Отправлен (Цена: {seller_price}₽)"
                         summary_stats['__unconfirmed_pve__']['href'] = candidate.get('href', '')
 
