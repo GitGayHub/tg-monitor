@@ -291,9 +291,8 @@ def is_recently_sent(offer_id, seller, description, price_value, max_days=7):
         sent = sent_offers[offer_id]
         sent_time = sent.get('timestamp', 0)
         if now - sent_time < seconds_limit:
-            price = sent.get('price')
-            if price is not None:
-                matching_prices.append(price)
+            # Skip completely if the exact same offer ID was already sent
+            return True
 
     # 2. Check by seller (re-post detection)
     if seller:
@@ -355,6 +354,12 @@ def contains_exclude_keyword(text, exclude_keywords, positive_keywords=None):
             break
     if matched_exclude is None:
         return None
+    
+    # Absolute blocker check: if exclude is critical (mail/linking/login), ignore positive overrides
+    blocker_terms = ["почт", "mail", "привяз", "мыл", "эпик", "epic", "вход", "данные", "логин", "парол", "доступ", "емейл"]
+    if any(term in normalized_exclude_str for term in blocker_terms):
+        return matched_exclude
+
     # Second: check if a positive keyword overrides the exclude
     if positive_keywords:
         for pos_word in positive_keywords:
@@ -363,6 +368,10 @@ def contains_exclude_keyword(text, exclude_keywords, positive_keywords=None):
                 # Don't let positive override if it's a substring of the matched exclude
                 # e.g. 'full access' should NOT override 'no full access'
                 if normalized_pos in normalized_exclude_str:
+                    continue
+                # Negation check: if positive is preceded by negation (не, нет, без, no, not, without), it cannot override
+                pattern = r'\b(?:не|нет|без|no|not|without)\s+' + re.escape(normalized_pos)
+                if re.search(pattern, normalized_text):
                     continue
                 return None  # Positive overrides exclude
     return matched_exclude
