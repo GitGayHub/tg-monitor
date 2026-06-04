@@ -2592,14 +2592,16 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     logger.error(f"Ошибка диагностического поиска: {e}")
 
             report_lines = [
-                f"📋 <b>Диагностический отчет ({source_text})</b>\n"
+                f"📋 <b>Диагностический отчет ({source_text})</b>"
             ]
 
             # Determine which sids are editions
             edition_ids = set(config.get_all_editions().keys())
 
             for sid, stat in summary_stats.items():
-                name = stat['name'].capitalize()
+                name = stat['name']
+                if name and name[0].isalpha():
+                    name = name[0].upper() + name[1:]
                 
                 # Check limits
                 original_limit = 0
@@ -2624,44 +2626,44 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
                 if is_pve_pos or is_edition:
                     # PVE-позиции и издания — только одна строка (всегда с PVE)
-                    report_lines.append(f"• <b>{name}</b>:")
+                    item_lines = []
+                    item_lines.append(f"• <b>{name}</b> (лимит {limit_price}₽)")
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
-                        verdict = f"✅ Подходит (лимит {limit_price}₽)" if p <= limit_price else f"❌ Слишком дорого (лимит {limit_price}₽)"
-                        report_lines.append(f"  Цена: {p}₽ <a href='{h}'>🔗</a>")
-                        report_lines.append(f"  Вердикт: {verdict}")
+                        verdict = "✅ Подходит" if p <= limit_price else "❌ Слишком дорого"
+                        item_lines.append(f"  ↳ Цена: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
                     else:
-                        report_lines.append(f"  Вердикт: ❌ Не найдено")
+                        item_lines.append("  ↳ Цена: ❌ Не найдено")
+                    report_lines.append("\n".join(item_lines))
                 else:
                     # Скины — показываем с PVE и без PVE
+                    item_lines = []
+                    item_lines.append(f"• <b>{name}</b> (лимит {limit_price}₽)")
                     if not best_with_pve and not best_without_pve:
-                        report_lines.append(f"• <b>{name}</b>:")
-                        report_lines.append(f"  Вердикт: ❌ Не найдено")
+                        item_lines.append("  ↳ ❌ Не найдено")
                     else:
-                        report_lines.append(f"• <b>{name}</b>:")
                         if best_with_pve:
                             p = best_with_pve['price']
                             h = best_with_pve['href']
-                            verdict = f"✅ Подходит (лимит {limit_price}₽)" if p <= limit_price else f"❌ Слишком дорого (лимит {limit_price}₽)"
-                            report_lines.append(f"  с PVE: {p}₽ <a href='{h}'>🔗</a>")
-                            report_lines.append(f"  Вердикт: {verdict}")
+                            verdict = "✅ Подходит" if p <= limit_price else "❌ Слишком дорого"
+                            item_lines.append(f"  ↳ с PVE: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
                         else:
-                            report_lines.append(f"  с PVE: ❌ Не найдено")
-                            
+                            item_lines.append("  ↳ с PVE: ❌ Не найдено")
+
                         if best_without_pve:
                             p = best_without_pve['price']
                             h = best_without_pve['href']
                             if skin_require_pve:
                                 verdict = "❌ Требуется PVE"
                             else:
-                                verdict = f"✅ Подходит (лимит {limit_price}₽)" if p <= limit_price else f"❌ Слишком дорого (лимит {limit_price}₽)"
-                            report_lines.append(f"  без PVE: {p}₽ <a href='{h}'>🔗</a>")
-                            report_lines.append(f"  Вердикт: {verdict}")
+                                verdict = "✅ Подходит" if p <= limit_price else "❌ Слишком дорого"
+                            item_lines.append(f"  ↳ без PVE: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
                         else:
-                            report_lines.append(f"  без PVE: ❌ Не найдено")
+                            item_lines.append("  ↳ без PVE: ❌ Не найдено")
+                    report_lines.append("\n".join(item_lines))
                 
-            report_msg = "\n".join(report_lines)
+            report_msg = "\n\n".join(report_lines)
             logger.info("📊 Отправляю диагностический отчет в Telegram...")
             try:
                 if context:
