@@ -1598,7 +1598,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
         x5_mode = config.x5_mode
         is_git = os.environ.get('GITHUB_ACTIONS') == 'true'
-        source_text = "автомониторинг git" if is_git else "автомониторинг local"
+        source_text = "GitHub автомониторинг" if is_git else "Локальный автомониторинг"
         test_summary_mode = config.data.get('test_summary_mode', False) or os.environ.get('TEST_SUMMARY_MODE') == 'true' or _get_mode_txt_value()
 
         search_mode = config.search_mode
@@ -2275,7 +2275,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             ban_href = build_ban_link(offer_id)
             ban_line = f"🚫 <a href='{ban_href}'>Бан</a>" if ban_href else f"🚫 Бан: /ban {offer_id}"
             
-            source_line = f"🖥️ <b>Источник:</b> {source_text}\n"
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                source_line = "🤖 <b>GitHub автомониторинг</b>\n"
+            else:
+                source_line = "💻 <b>Локальный автомониторинг</b>\n"
             
             if x5_mode:
                 passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
