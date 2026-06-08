@@ -160,7 +160,7 @@ jobs:
           
           # Backup state files before rebase/pull
           backup_dir="$(mktemp -d)"
-          for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
+          for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db run_log.json; do
             if [ -f "$f" ]; then
               cp "$f" "$backup_dir/$f"
             fi
@@ -174,7 +174,7 @@ jobs:
             echo "Attempt $((RETRY_COUNT+1)) to commit and push state..."
             
             # Reset local state files to latest origin tracking to avoid conflicts during checkout/rebase
-            git checkout -- seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json 2>/dev/null || true
+            git checkout -- seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db run_log.json 2>/dev/null || true
             
             # Fetch latest commits
             git fetch origin main || true
@@ -183,17 +183,14 @@ jobs:
             git reset --hard origin/main
             
             # Restore state files from our local run backup
-            for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json config.json.enc run_log.json; do
+            for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db run_log.json; do
               if [ -f "$backup_dir/$f" ]; then
                 cp "$backup_dir/$f" "$f"
               fi
             done
             
-            # Re-encrypt config
-            python config_crypt.py encrypt config.json config.json.enc
-            
             # Add files to commit staging
-            git add seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db config.json.enc run_log.json || true
+            git add seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db run_log.json || true
             
             # Check if there are actual runtime state changes to commit
             if git diff --cached --quiet; then
