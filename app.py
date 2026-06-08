@@ -3155,11 +3155,89 @@ def _get_mode_txt_value():
             pass
     return False
 
+def _git_commit_and_push(files_to_sync, commit_msg):
+    """Коммитит и пушит файлы напрямую через локальный Git CLI.
+    Используется, когда бот запущен под лаунчером."""
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_dir_safe = repo_dir.replace("\\", "/")
+    git_base = ["git", "-c", f"safe.directory={repo_dir_safe}"]
+    
+    def git_run(*args):
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        try:
+            return subprocess.run(
+                git_base + list(args),
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env
+            )
+        except FileNotFoundError:
+            class DummyResult:
+                returncode = 127
+                stdout = ""
+                stderr = "Git executable not found in PATH"
+            return DummyResult()
+
+    # 1. Исправляем remote URL с использованием GITHUB_TOKEN для неинтерактивного пуша
+    gh_token = os.environ.get('GITHUB_TOKEN', '')
+    if gh_token:
+        r_url = git_run("remote", "get-url", "origin")
+        r_str = (r_url.stdout or "").strip()
+        if r_str:
+            fixed = re.sub(r'https://(?:[^@]+@)?github\.com', f'https://{gh_token}@github.com', r_str)
+            if fixed != r_str:
+                git_run("remote", "set-url", "origin", fixed)
+
+    # 2. Добавляем файлы
+    git_run("add", *files_to_sync)
+
+    # 3. Проверяем, есть ли изменения в индексе
+    diff = git_run("diff", "--cached", "--quiet")
+    if diff.returncode != 0:
+        # Есть изменения для коммита
+        commit = git_run("commit", "-m", commit_msg, "--", *files_to_sync)
+        if commit.returncode != 0:
+            logger.error(f"Git commit failed: {commit.stderr}")
+            return False
+        
+        # 4. Пушим изменения
+        push = git_run("push")
+        if push.returncode == 0:
+            logger.info(f"Git push successful for: {files_to_sync}")
+            return True
+        else:
+            logger.error(f"Git push failed: {push.stderr}")
+            # Пробуем сделать pull --rebase и повторить пуш
+            pull = git_run("pull", "--rebase", "--autostash")
+            if pull.returncode == 0:
+                push = git_run("push")
+                if push.returncode == 0:
+                    logger.info(f"Git push successful after rebase for: {files_to_sync}")
+                    return True
+            logger.error(f"Git pull/push retry failed. Pull: {pull.stderr if pull.returncode != 0 else 'ok'}. Push: {push.stderr}")
+            # Если ребейс завис или завершился ошибкой, прерываем его
+            git_run("rebase", "--abort")
+            return False
+    else:
+        logger.info(f"No changes staged for: {files_to_sync}")
+        return False
+
 def _sync_mode_to_github():
-    """Пушит plaintext mode.txt в GitHub через Contents API."""
+    """Пушит plaintext mode.txt в GitHub через Contents API (или напрямую через Git если под лаунчером)."""
+    if os.path.exists('mode.txt'):
+        with open('mode.txt', 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+    else:
+        content = 'normal'
+
     if os.environ.get("BOT_RUNNING_UNDER_LAUNCHER") == "1":
-        logger.info("Режим изменен локально, пропуск API-синхронизации с GitHub (будет отправлено при выходе)")
-        return True
+        logger.info("Бот запущен под лаунчером. Выполняю прямую синхронизацию mode.txt через Git...")
+        return _git_commit_and_push(["mode.txt"], f"Toggle auto-monitoring mode to {content}")
+
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return False
     api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/mode.txt"
@@ -3174,12 +3252,6 @@ def _sync_mode_to_github():
         sha = resp.json().get('sha')
     elif resp.status_code != 404:
         raise Exception(f"GitHub API ошибка ({resp.status_code}): {resp.text[:200]}")
-
-    if os.path.exists('mode.txt'):
-        with open('mode.txt', 'r', encoding='utf-8') as f:
-            content = f.read().strip()
-    else:
-        content = 'normal'
 
     encoded = base64.b64encode(content.encode('utf-8')).decode('ascii')
 
@@ -3197,19 +3269,40 @@ def _sync_mode_to_github():
         raise Exception(f"GitHub PUT ошибка ({resp.status_code}): {resp.text[:200]}")
 
 def _sync_config_to_github():
-    """Пушит config в GitHub через Contents API.
+    """Пушит config в GitHub через Contents API (или напрямую через Git если под лаунчером).
     Если CONFIG_PASSPHRASE задан — шифрует и пушит config.json.enc.
-    Если нет — пушит config.json напрямую (для локального режима)."""
-    if os.environ.get("BOT_RUNNING_UNDER_LAUNCHER") == "1":
-        logger.info("Конфиг сохранен локально, пропуск API-синхронизации с GitHub (будет отправлено при выходе)")
-        return True
+    Если нет — пушит config.json напрямую."""
     passphrase = os.environ.get("CONFIG_PASSPHRASE")
+
+    # Ре-шифруем конфиг локально перед синхронизацией, если есть пароль
+    if passphrase and os.path.exists("config.json"):
+        try:
+            import config_crypt
+            with open("config.json", "rb") as f:
+                content = f.read()
+            encrypted_data = config_crypt.encrypt(content, passphrase)
+            with open("config.json.enc", "wb") as f:
+                f.write(encrypted_data)
+            logger.info("config.json зашифрован в config.json.enc для синхронизации.")
+        except Exception as e:
+            logger.error(f"Ошибка шифрования конфига перед синхронизацией: {e}")
+            raise
+
+    if os.environ.get("BOT_RUNNING_UNDER_LAUNCHER") == "1":
+        logger.info("Бот запущен под лаунчером. Выполняю прямую синхронизацию config через Git...")
+        if passphrase:
+            files = ["config.json.enc"]
+        else:
+            files = ["config.json"]
+        return _git_commit_and_push(files, "Sync config from Telegram bot")
 
     if passphrase:
         target_file = "config.json.enc"
     else:
         target_file = "config.json"
 
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return False
     api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{target_file}"
     headers = {
         'Authorization': f'token {GITHUB_TOKEN}',
