@@ -351,6 +351,25 @@ def sync_from_remote():
             restore_files(state_snapshot)
             print("INFO: local state restored after git sync.")
 
+    # Разрешаем любые конфликты слияния/autostash в рабочей директории
+    status = git("status", "--porcelain")
+    unmerged = []
+    for line in (status.stdout or "").splitlines():
+        if len(line) >= 2 and ('U' in line[:2] or line[:2] in ('AA', 'DD')):
+            path_part = line[3:].strip()
+            if " -> " in path_part:
+                path_part = path_part.split(" -> ")[-1].strip()
+            unmerged.append(path_part.strip('"'))
+            
+    if unmerged:
+        print(f"INFO: resolving conflicts in working tree: {unmerged}")
+        for f in unmerged:
+            pick = git("checkout", "--theirs", "--", f)
+            if pick.returncode != 0:
+                git("checkout", "--ours", "--", f)
+            git("add", "--", f)
+            git("reset", "--", f)
+
 
 
 
