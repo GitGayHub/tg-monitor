@@ -2703,18 +2703,19 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
     elif data == "set:sync":
         sync_fn = context.bot_data.get('sync_fn')
+        markup = _build_settings_main_markup(context)
         if sync_fn:
-            await query.edit_message_text("🔄 Синхронизирую config.json с GitHub...")
+            await query.edit_message_text("🔄 Синхронизирую config.json с GitHub...", reply_markup=markup)
             try:
                 result = await asyncio.to_thread(sync_fn)
                 if result:
-                    await query.edit_message_text("✅ config.json успешно загружен в GitHub!")
+                    await query.edit_message_text("✅ config.json успешно загружен в GitHub!", reply_markup=markup)
                 else:
-                    await query.edit_message_text("ℹ️ config.json не изменился, пуш не нужен.")
+                    await query.edit_message_text("ℹ️ config.json не изменился, пуш не нужен.", reply_markup=markup)
             except Exception as e:
-                await query.edit_message_text(f"❌ Ошибка синхронизации: {e}")
+                await query.edit_message_text(f"❌ Ошибка синхронизации: {e}", reply_markup=markup)
         else:
-            await query.edit_message_text("❌ GitHub не настроен: нет GITHUB_TOKEN/GITHUB_REPO.")
+            await query.edit_message_text("❌ GitHub не настроен: нет GITHUB_TOKEN/GITHUB_REPO.", reply_markup=markup)
 
     # === Unified Check ===
     elif parts[1] == 'check':
