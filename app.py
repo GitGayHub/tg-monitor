@@ -3192,6 +3192,25 @@ def _git_commit_and_push(files_to_sync, commit_msg):
             if fixed != r_str:
                 git_run("remote", "set-url", "origin", fixed)
 
+    # 1.5 Разрешаем любые конфликты слияния/autostash в рабочей директории ДО коммита
+    status = git_run("status", "--porcelain")
+    unmerged = []
+    for line in (status.stdout or "").splitlines():
+        if len(line) >= 2 and ('U' in line[:2] or line[:2] in ('AA', 'DD')):
+            path_part = line[3:].strip()
+            if " -> " in path_part:
+                path_part = path_part.split(" -> ")[-1].strip()
+            unmerged.append(path_part.strip('"'))
+    
+    if unmerged:
+        logger.info(f"Resolving conflicts on paths before commit: {unmerged}")
+        for f in unmerged:
+            pick = git_run("checkout", "--theirs", "--", f)
+            if pick.returncode != 0:
+                git_run("checkout", "--ours", "--", f)
+            git_run("add", "--", f)
+            git_run("reset", "--", f)
+
     # 2. Добавляем файлы
     git_run("add", *files_to_sync)
 
@@ -3201,7 +3220,8 @@ def _git_commit_and_push(files_to_sync, commit_msg):
         # Есть изменения для коммита
         commit = git_run("commit", "-m", commit_msg, "--", *files_to_sync)
         if commit.returncode != 0:
-            raise Exception(f"Git commit failed: {commit.stderr.strip()}")
+            err_msg = (commit.stderr or "").strip() or (commit.stdout or "").strip()
+            raise Exception(f"Git commit failed: {err_msg}")
         
         # 4. Пушим изменения
         push = git_run("push")
