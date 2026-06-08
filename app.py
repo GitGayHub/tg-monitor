@@ -3309,10 +3309,26 @@ def _sync_config_to_github():
             import config_crypt
             with open("config.json", "rb") as f:
                 content = f.read()
-            encrypted_data = config_crypt.encrypt(content, passphrase)
-            with open("config.json.enc", "wb") as f:
-                f.write(encrypted_data)
-            logger.info("config.json зашифрован в config.json.enc для синхронизации.")
+            
+            # Проверяем, изменился ли контент
+            has_changes = True
+            if os.path.exists("config.json.enc"):
+                try:
+                    with open("config.json.enc", "rb") as f_enc:
+                        existing_enc = f_enc.read()
+                    existing_dec = config_crypt.decrypt(existing_enc, passphrase)
+                    if existing_dec == content:
+                        has_changes = False
+                except Exception:
+                    pass
+            
+            if has_changes:
+                encrypted_data = config_crypt.encrypt(content, passphrase)
+                with open("config.json.enc", "wb") as f:
+                    f.write(encrypted_data)
+                logger.info("config.json зашифрован в config.json.enc для синхронизации.")
+            else:
+                logger.info("Конфиг не изменился, шифрование пропущено.")
         except Exception as e:
             logger.error(f"Ошибка шифрования конфига перед синхронизацией: {e}")
             raise

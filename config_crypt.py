@@ -59,6 +59,18 @@ def main():
             data = f.read()
 
         if action == "encrypt":
+            # Проверяем, существует ли уже зашифрованный файл и равен ли его расшифрованный контент новому
+            if os.path.exists(output_file):
+                try:
+                    with open(output_file, "rb") as f_out:
+                        existing_encrypted = f_out.read()
+                    existing_decrypted = decrypt(existing_encrypted, passphrase)
+                    if existing_decrypted == data:
+                        print(f"No changes: '{output_file}' decrypted content is identical to '{input_file}'. Skipping write.")
+                        sys.exit(0)
+                except Exception:
+                    # Если расшифровать не удалось (например, неверный пароль или пустой файл), просто перезапишем
+                    pass
             out_data = encrypt(data, passphrase)
         else:
             out_data = decrypt(data, passphrase)
