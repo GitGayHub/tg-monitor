@@ -3201,8 +3201,7 @@ def _git_commit_and_push(files_to_sync, commit_msg):
         # Есть изменения для коммита
         commit = git_run("commit", "-m", commit_msg, "--", *files_to_sync)
         if commit.returncode != 0:
-            logger.error(f"Git commit failed: {commit.stderr}")
-            return False
+            raise Exception(f"Git commit failed: {commit.stderr.strip()}")
         
         # 4. Пушим изменения
         push = git_run("push")
@@ -3210,18 +3209,48 @@ def _git_commit_and_push(files_to_sync, commit_msg):
             logger.info(f"Git push successful for: {files_to_sync}")
             return True
         else:
-            logger.error(f"Git push failed: {push.stderr}")
+            logger.info(f"First git push failed, trying to pull & rebase... Error: {push.stderr.strip()}")
             # Пробуем сделать pull --rebase и повторить пуш
             pull = git_run("pull", "--rebase", "--autostash")
-            if pull.returncode == 0:
-                push = git_run("push")
-                if push.returncode == 0:
-                    logger.info(f"Git push successful after rebase for: {files_to_sync}")
-                    return True
-            logger.error(f"Git pull/push retry failed. Pull: {pull.stderr if pull.returncode != 0 else 'ok'}. Push: {push.stderr}")
-            # Если ребейс завис или завершился ошибкой, прерываем его
-            git_run("rebase", "--abort")
-            return False
+            if pull.returncode != 0:
+                # Конфликт ребейса
+                resolved = True
+                for attempt in range(10):
+                    status = git_run("status", "--porcelain")
+                    unmerged = []
+                    for line in (status.stdout or "").splitlines():
+                        if len(line) >= 2 and line[:2] in ("UU", "AA", "DD", "AU", "UA", "DU", "UD"):
+                            unmerged.append(line[3:].strip().strip('"'))
+                    if not unmerged:
+                        break
+                    
+                    for f in unmerged:
+                        # Так как мы хотим, чтобы наши настройки победили, берем --theirs при rebase
+                        pick = git_run("checkout", "--theirs", "--", f)
+                        if pick.returncode != 0:
+                            git_run("checkout", "--ours", "--", f)
+                        git_run("add", "--", f)
+                    
+                    env = os.environ.copy()
+                    env["GIT_EDITOR"] = "true"
+                    env["GIT_TERMINAL_PROMPT"] = "0"
+                    cont = subprocess.run(git_base + ["rebase", "--continue"], cwd=repo_dir, capture_output=True, text=True, env=env)
+                    if cont.returncode == 0:
+                        break
+                else:
+                    resolved = False
+                
+                if not resolved:
+                    git_run("rebase", "--abort")
+                    raise Exception(f"Git rebase conflict could not be resolved automatically. Pull error: {pull.stderr.strip()}")
+
+            # Пробуем пушить снова
+            push = git_run("push")
+            if push.returncode == 0:
+                logger.info(f"Git push successful after rebase for: {files_to_sync}")
+                return True
+            else:
+                raise Exception(f"Git push failed after rebase: {push.stderr.strip()}")
     else:
         logger.info(f"No changes staged for: {files_to_sync}")
         return False
