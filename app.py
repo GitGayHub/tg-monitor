@@ -3244,6 +3244,23 @@ def _git_commit_and_push(files_to_sync, commit_msg):
                     git_run("rebase", "--abort")
                     raise Exception(f"Git rebase conflict could not be resolved automatically. Pull error: {pull.stderr.strip()}")
 
+            # Разрешаем любые конфликты слияния/autostash в рабочей директории
+            status = git_run("status", "--porcelain")
+            unmerged = []
+            for line in (status.stdout or "").splitlines():
+                if len(line) >= 2 and ('U' in line[:2] or line[:2] in ('AA', 'DD')):
+                    path_part = line[3:].strip()
+                    if " -> " in path_part:
+                        path_part = path_part.split(" -> ")[-1].strip()
+                    unmerged.append(path_part.strip('"'))
+            
+            if unmerged:
+                logger.info(f"Resolving conflicts on paths: {unmerged}")
+                for f in unmerged:
+                    git_run("checkout", "--theirs", "--", f)
+                    git_run("add", "--", f)
+                    git_run("reset", "--", f)
+
             # Пробуем пушить снова
             push = git_run("push")
             if push.returncode == 0:
