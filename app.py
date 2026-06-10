@@ -2674,9 +2674,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"🧟 <code>+PVE  {p_str:<10}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
+                        item_lines.append(f"🧟 <code>+PVE  {p_str:<10}  | {verdict}</code> <a href='{h}'>🔗</a>")
                     else:
-                        item_lines.append("🧟 <code>+PVE  Не найдено   | ❌</code>")
+                        item_lines.append("🧟 <code>+PVE  Не найдено  | ❌</code>")
                     report_lines.append("\n".join(item_lines))
                 else:
                     # Скины — показываем PVE и без PVE
@@ -2691,9 +2691,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"🧟 <code>+PVE  {p_str:<10}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
+                        item_lines.append(f"🧟 <code>+PVE  {p_str:<10}  | {verdict}</code> <a href='{h}'>🔗</a>")
                     else:
-                        item_lines.append("🧟 <code>+PVE  Не найдено   | ❌</code>")
+                        item_lines.append("🧟 <code>+PVE  Не найдено  | ❌</code>")
 
                     if best_without_pve:
                         p = best_without_pve['price']
@@ -2703,9 +2703,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"👤 <code>-PVE  {p_str:<10}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
+                        item_lines.append(f"👤 <code>-PVE  {p_str:<10}  | {verdict}</code> <a href='{h}'>🔗</a>")
                     else:
-                        item_lines.append("👤 <code>-PVE  Не найдено   | ❌</code>")
+                        item_lines.append("👤 <code>-PVE  Не найдено  | ❌</code>")
                     report_lines.append("\n".join(item_lines))
 
             # Добавляем в самый конец источник мониторинга
