@@ -2666,30 +2666,34 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     # PVE-позиции и издания — только одна строка (всегда с PVE)
                     item_lines = []
                     item_lines.append(f"<b>{name}</b>")
+                    item_lines.append("")
                     item_lines.append(f"💸 Лимит: {limit_price}₽")
+                    item_lines.append("")
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"🧟 <code>{p_str:<6}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
+                        item_lines.append(f"🧟 <code>+PVE  {p_str:<10}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
                     else:
-                        item_lines.append("🧟 <code>❌ Не найдено</code>")
+                        item_lines.append("🧟 <code>+PVE  Не найдено  | ❌</code>")
                     report_lines.append("\n".join(item_lines))
                 else:
                     # Скины — показываем PVE и без PVE
                     item_lines = []
                     item_lines.append(f"<b>{name}</b>")
+                    item_lines.append("")
                     item_lines.append(f"💸 Лимит: {limit_price}₽")
+                    item_lines.append("")
                     
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"🧟 <code>{p_str:<6}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
+                        item_lines.append(f"🧟 <code>+PVE  {p_str:<10}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
                     else:
-                        item_lines.append("🧟 <code>❌ Не найдено</code>")
+                        item_lines.append("🧟 <code>+PVE  Не найдено  | ❌</code>")
 
                     if best_without_pve:
                         p = best_without_pve['price']
@@ -2699,14 +2703,14 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"👤 <code>{p_str:<6}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
+                        item_lines.append(f"👤 <code>-PVE  {p_str:<10}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
                     else:
-                        item_lines.append("👤 <code>❌ Не найдено</code>")
+                        item_lines.append("👤 <code>-PVE  Не найдено  | ❌</code>")
                     report_lines.append("\n".join(item_lines))
 
             # Добавляем в самый конец источник мониторинга
             is_git = os.environ.get('GITHUB_ACTIONS') == 'true'
-            source_line = "📋 <b>Автомониторинг - Git 🤖</b>" if is_git else "📋 <b>Автомониторинг - Локальный 💻</b>"
+            source_line = "📋 <b>Автомониторинг: Git 🤖</b>" if is_git else "📋 <b>Автомониторинг: Локальный 💻</b>"
             report_lines.append(source_line)
                 
             report_msg = "\n\n───────────────────\n\n".join(report_lines)
