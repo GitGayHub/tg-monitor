@@ -193,8 +193,8 @@ def release_lock():
     try:
         if os.path.exists(LOCK_FILE):
             with open(LOCK_FILE, "r") as f:
-                pid = f.read().strip()
-            if pid == str(os.getpid()):
+                lines = f.read().splitlines()
+            if lines and lines[0].strip() == str(os.getpid()):
                 os.remove(LOCK_FILE)
     except OSError:
         pass
@@ -205,24 +205,25 @@ def acquire_lock():
     if os.path.exists(LOCK_FILE):
         try:
             with open(LOCK_FILE, "r") as f:
-                old_pid = f.read().strip()
+                pids = [line.strip() for line in f.read().splitlines() if line.strip()]
         except OSError:
-            old_pid = ""
-        if old_pid and old_pid != str(os.getpid()) and pid_alive(old_pid):
-            print(f"Stopping old bot process PID {old_pid}...")
-            try:
-                if os.name == "nt":
-                    subprocess.run(["taskkill", "/F", "/PID", old_pid], capture_output=True)
-                else:
-                    os.kill(int(old_pid), signal.SIGTERM)
-            except Exception as e:
-                print(f"WARNING: could not stop old process: {e}")
+            pids = []
+        for old_pid in pids:
+            if old_pid and old_pid != str(os.getpid()) and pid_alive(old_pid):
+                print(f"Stopping old bot process PID {old_pid}...")
+                try:
+                    if os.name == "nt":
+                        subprocess.run(["taskkill", "/F", "/PID", old_pid], capture_output=True)
+                    else:
+                        os.kill(int(old_pid), signal.SIGTERM)
+                except Exception as e:
+                    print(f"WARNING: could not stop old process: {e}")
         try:
             os.remove(LOCK_FILE)
         except OSError:
             pass
     with open(LOCK_FILE, "w") as f:
-        f.write(str(os.getpid()))
+        f.write(f"{os.getpid()}\n")
     atexit.register(release_lock)
 
 
@@ -544,7 +545,13 @@ print("\n=== [2/3] Starting bot (Ctrl+C to exit) ===\n")
 os.environ["BOT_RUNNING_UNDER_LAUNCHER"] = "1"
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 try:
-    subprocess.run([sys.executable, MONITOR] + sys.argv[1:], cwd=REPO)
+    proc = subprocess.Popen([sys.executable, MONITOR] + sys.argv[1:], cwd=REPO)
+    try:
+        with open(LOCK_FILE, "w") as f:
+            f.write(f"{os.getpid()}\n{proc.pid}\n")
+    except OSError as e:
+        print(f"WARNING: could not update lock file with child PID: {e}")
+    proc.wait()
 finally:
     print("\n=== [3/3] Pushing state updates to GitHub ===")
     try:
