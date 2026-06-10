@@ -2641,7 +2641,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
-                        verdict = "✅ Подходит" if p <= limit_price else "❌ Слишком дорого"
+                        verdict = "✅ Подходит" if p <= limit_price else "🟣 Слишком дорого"
                         item_lines.append(f"  ↳ Цена: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
                     else:
                         item_lines.append("  ↳ Цена: ❌ Не найдено")
@@ -2656,7 +2656,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         if best_with_pve:
                             p = best_with_pve['price']
                             h = best_with_pve['href']
-                            verdict = "✅ Подходит" if p <= limit_price else "❌ Слишком дорого"
+                            verdict = "✅ Подходит" if p <= limit_price else "🟣 Слишком дорого"
                             item_lines.append(f"  ↳ с PVE: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
                         else:
                             item_lines.append("  ↳ с PVE: ❌ Не найдено")
@@ -2665,13 +2665,14 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             p = best_without_pve['price']
                             h = best_without_pve['href']
                             if skin_require_pve:
-                                verdict = "❌ Требуется PVE"
+                                verdict = "🟣 Требуется PVE"
                             else:
-                                verdict = "✅ Подходит" if p <= limit_price else "❌ Слишком дорого"
+                                verdict = "✅ Подходит" if p <= limit_price else "🟣 Слишком дорого"
                             item_lines.append(f"  ↳ без PVE: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
                         else:
                             item_lines.append("  ↳ без PVE: ❌ Не найдено")
                     report_lines.append("\n".join(item_lines))
+
                 
             report_msg = "\n\n───────────────────\n\n".join(report_lines)
             logger.info("📊 Отправляю диагностический отчет в Telegram...")
