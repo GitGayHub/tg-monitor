@@ -2665,7 +2665,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 if is_pve_pos or is_edition:
                     # PVE-позиции и издания — только одна строка (всегда с PVE)
                     item_lines = []
-                    item_lines.append(f"• <b>{name}</b>")
+                    item_lines.append(f"  • <b>{name}</b>")
                     item_lines.append(f"  ├ 💸 Лимит: {limit_price}₽")
                     if best_with_pve:
                         p = best_with_pve['price']
@@ -2679,7 +2679,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 else:
                     # Скины — показываем PVE и без PVE
                     item_lines = []
-                    item_lines.append(f"• <b>{name}</b>")
+                    item_lines.append(f"  • <b>{name}</b>")
                     item_lines.append(f"  ├ 💸 Лимит: {limit_price}₽")
                     
                     if best_with_pve:
