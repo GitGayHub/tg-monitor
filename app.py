@@ -2620,9 +2620,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 except Exception as e:
                     logger.error(f"Ошибка диагностического поиска: {e}")
 
-            report_lines = [
-                f"📋 <b>Диагностический отчет ({source_text})</b>"
-            ]
+            report_lines = []
 
             # Determine which sids are editions
             edition_ids = set(config.get_all_editions().keys())
@@ -2674,12 +2672,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"  └ 🧟 <code>с PVE:    {p_str:<6}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
+                        item_lines.append(f"  └ 🧟 <code>    PVE:  {p_str:<6}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
                     else:
-                        item_lines.append("  └ 🧟 ❌")
+                        item_lines.append("  └ 🧟 <code>    PVE:  ❌</code>")
                     report_lines.append("\n".join(item_lines))
                 else:
-                    # Скины — показываем с PVE и без PVE
+                    # Скины — показываем PVE и без PVE
                     item_lines = []
                     item_lines.append(f"• <b>{name}</b>")
                     item_lines.append(f"  ├ 💸 Лимит: {limit_price}₽")
@@ -2689,9 +2687,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"  ├ 🧟 <code>с PVE:    {p_str:<6}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
+                        item_lines.append(f"  ├ 🧟 <code>    PVE:  {p_str:<6}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
                     else:
-                        item_lines.append("  ├ 🧟 ❌")
+                        item_lines.append("  ├ 🧟 <code>    PVE:  ❌</code>")
 
                     if best_without_pve:
                         p = best_without_pve['price']
@@ -2703,10 +2701,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         p_str = f"{int(p)}₽"
                         item_lines.append(f"  └ 👤 <code>без PVE:  {p_str:<6}</code><a href='{h}'>🔗</a><code> | {verdict}</code>")
                     else:
-                        item_lines.append("  └ 👤 ❌")
+                        item_lines.append("  └ 👤 <code>без PVE:  ❌</code>")
                     report_lines.append("\n".join(item_lines))
 
-
+            # Добавляем в самый конец источник мониторинга
+            is_git = os.environ.get('GITHUB_ACTIONS') == 'true'
+            source_line = "📋 <b>Статистика - Git 🤖</b>" if is_git else "📋 <b>Статистика - Локальный 💻</b>"
+            report_lines.append(source_line)
                 
             report_msg = "\n\n───────────────────\n\n".join(report_lines)
             logger.info("📊 Отправляю диагностический отчет в Telegram...")
