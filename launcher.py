@@ -372,6 +372,89 @@ def sync_from_remote():
 
 
 
+def resolve_config_after_sync():
+    """Smart config resolution: compare local config.json with GitHub's
+    config.json.enc and use whichever is newer.  Prevents stale config when
+    switching between PCs."""
+    passphrase = os.environ.get("CONFIG_PASSPHRASE")
+    enc_path = os.path.join(REPO, "config.json.enc")
+    cfg_path = os.path.join(REPO, "config.json")
+
+    if not passphrase:
+        if not os.path.exists(cfg_path) and os.path.exists(enc_path):
+            print("⚠️  WARNING: config.json.enc exists but CONFIG_PASSPHRASE is not set!")
+            print("   Set CONFIG_PASSPHRASE in set_env.bat to decrypt the config.")
+        return
+
+    # Reset config.json.enc to the latest git HEAD version.
+    # protect_state_for_sync() may have restored an old backup over the
+    # freshly-pulled version — undo that so we compare against the real remote.
+    r = git("checkout", "HEAD", "--", "config.json.enc")
+    if r.returncode != 0:
+        print("  ⚠️  Could not reset config.json.enc to HEAD, using working-tree version.")
+
+    if not os.path.exists(enc_path):
+        print("  No config.json.enc found — skipping config resolution.")
+        return
+
+    print("Resolving config: local config.json vs GitHub config.json.enc...")
+
+    # ── Decrypt remote .enc ──────────────────────────────────────────────────
+    try:
+        if REPO not in sys.path:
+            sys.path.append(REPO)
+        import config_crypt
+        with open(enc_path, "rb") as f:
+            remote_config = config_crypt.decrypt(f.read(), passphrase)
+    except Exception as e:
+        print(f"  ⚠️  Error decrypting config.json.enc: {e}")
+        return
+
+    # ── No local config → just use remote ────────────────────────────────────
+    if not os.path.exists(cfg_path):
+        print("  No local config.json found — using GitHub version.")
+        with open(cfg_path, "wb") as f:
+            f.write(remote_config)
+        print("  ✅ Config decrypted from GitHub.")
+        return
+
+    # ── Read local config ────────────────────────────────────────────────────
+    with open(cfg_path, "rb") as f:
+        local_config = f.read()
+
+    if local_config == remote_config:
+        print("  ✅ Config identical on both sides — no update needed.")
+        return
+
+    # ── Content differs — compare timestamps ─────────────────────────────────
+    # Remote: last git-commit time that touched config.json.enc
+    r = git("log", "-1", "--format=%ct", "--", "config.json.enc")
+    remote_ts = 0
+    if r.returncode == 0 and (r.stdout or "").strip():
+        try:
+            remote_ts = int((r.stdout or "").strip())
+        except ValueError:
+            pass
+
+    # Local: file modification time of config.json
+    try:
+        local_ts = int(os.path.getmtime(cfg_path))
+    except OSError:
+        local_ts = 0
+
+    import datetime
+    remote_dt = datetime.datetime.fromtimestamp(remote_ts).strftime("%Y-%m-%d %H:%M:%S") if remote_ts else "unknown"
+    local_dt  = datetime.datetime.fromtimestamp(local_ts).strftime("%Y-%m-%d %H:%M:%S")  if local_ts  else "unknown"
+
+    print(f"  Local  config.json    : {local_dt}")
+    print(f"  GitHub config.json.enc: {remote_dt}")
+
+    if remote_ts >= local_ts:
+        print(f"  ✅ GitHub version is NEWER — updating local config.json")
+        with open(cfg_path, "wb") as f:
+            f.write(remote_config)
+    else:
+        print(f"  ✅ Local version is NEWER — keeping local config.json")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -453,23 +536,7 @@ git("config", "rebase.autoStash", "true")
 
 sync_from_remote()
 
-# Decrypt config if passphrase is provided
-passphrase = os.environ.get("CONFIG_PASSPHRASE")
-if passphrase and os.path.exists(os.path.join(REPO, "config.json.enc")):
-    print("Decrypting config.json.enc...")
-    try:
-        sys.path.append(REPO)
-        import config_crypt
-        with open(os.path.join(REPO, "config.json.enc"), "rb") as f:
-            decrypted = config_crypt.decrypt(f.read(), passphrase)
-        with open(os.path.join(REPO, "config.json"), "wb") as f:
-            f.write(decrypted)
-        print("  Config decrypted successfully.")
-    except Exception as e:
-        print(f"  ⚠️ Error decrypting config: {e}")
-elif not passphrase and not os.path.exists(os.path.join(REPO, "config.json")) and os.path.exists(os.path.join(REPO, "config.json.enc")):
-    print("⚠️ WARNING: config.json.enc exists but CONFIG_PASSPHRASE is not set!")
-    print("Please set CONFIG_PASSPHRASE in set_env.bat to decrypt the config.")
+resolve_config_after_sync()
 
 
 print("\n=== [2/3] Starting bot (Ctrl+C to exit) ===\n")

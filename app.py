@@ -417,8 +417,13 @@ def find_skins_in_text(text, skins_dict=None):
 
     for skin_id, skin_data in skins_dict.items():
         for keyword in skin_data['keywords']:
-            pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+            kw_lower = keyword.lower()
+            if kw_lower in ('еон', 'eon', 'эон'):
+                pattern = r'\b(?<![нn])' + re.escape(kw_lower) + r'(?![оo])\b'
+            else:
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
             if re.search(pattern, text_lower):
+
                 found_skins.append({
                     'id': skin_id,
                     'keyword': keyword,
