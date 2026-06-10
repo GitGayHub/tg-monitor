@@ -1375,11 +1375,19 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
             matched_sids = set()
             matched_kw_for_sid = {}
             for nkw, sid_list in keyword_index.items():
-                if nkw in item_text:
+                if nkw in ('еон', 'eon', 'эон'):
+                    pattern = r'(?:^|\b|\s|[^\w])(?<![нn])' + re.escape(nkw) + r'(?![оo])(?:$|\b|\s|[^\w])'
+                    matches = bool(re.search(pattern, item_text))
+                else:
+                    pattern = r'(?:^|\b|\s|[^\w])' + re.escape(nkw) + r'(?:$|\b|\s|[^\w])'
+                    matches = bool(re.search(pattern, item_text))
+                
+                if matches:
                     for sid, _ in sid_list:
                         if sid not in matched_sids:
                             matched_sids.add(sid)
                             matched_kw_for_sid[sid] = nkw
+
 
             # Добавляем кандидата для каждого совпавшего скина
             for sid in matched_sids:
@@ -1461,9 +1469,20 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
                     continue
 
                 combined = f"{normalize_match_text(candidate.get('description', ''))} {full_text}"
+                if not is_pve_entry and not is_edition:
+                    # Verify that the skin is actually present in the combined description
+                    # using the proper find_skins_in_text logic!
+                    skins_dict_for_validation = config.get_enabled_skins_dict()
+                    if sid in skins_dict_for_validation:
+                        found_skins = find_skins_in_text(combined, {sid: skins_dict_for_validation[sid]})
+                        if not found_skins:
+                            logger.debug(f"Диаг [{sid}]: отфильтровано по валидации скина — {href}")
+                            continue
+
                 has_pve_flag = any(token in combined for token in pve_tokens if token)
 
                 cand_copy = candidate.copy()
+
                 if full_description:
                     cand_copy['description'] = full_description[:200]
 
@@ -2637,29 +2656,31 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 if is_pve_pos or is_edition:
                     # PVE-позиции и издания — только одна строка (всегда с PVE)
                     item_lines = []
-                    item_lines.append(f"• <b>{name}</b> (лимит {limit_price}₽)")
+                    item_lines.append(f"• <b>{name}</b>")
+                    item_lines.append(f"  ├ 💰 Лимит: {limit_price}₽")
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Слишком дорого"
-                        item_lines.append(f"  ↳ Цена: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
+                        item_lines.append(f"  └ 🧟 Цена: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
                     else:
-                        item_lines.append("  ↳ Цена: ❌ Не найдено")
+                        item_lines.append("  └ ❌ Не найдено")
                     report_lines.append("\n".join(item_lines))
                 else:
                     # Скины — показываем с PVE и без PVE
                     item_lines = []
-                    item_lines.append(f"• <b>{name}</b> (лимит {limit_price}₽)")
+                    item_lines.append(f"• <b>{name}</b>")
+                    item_lines.append(f"  ├ 💰 Лимит: {limit_price}₽")
                     if not best_with_pve and not best_without_pve:
-                        item_lines.append("  ↳ ❌ Не найдено")
+                        item_lines.append("  └ ❌ Не найдено")
                     else:
                         if best_with_pve:
                             p = best_with_pve['price']
                             h = best_with_pve['href']
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Слишком дорого"
-                            item_lines.append(f"  ↳ с PVE: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
+                            item_lines.append(f"  ├ 🧟 с PVE: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
                         else:
-                            item_lines.append("  ↳ с PVE: ❌ Не найдено")
+                            item_lines.append("  ├ 🧟 с PVE: ❌ Не найдено")
 
                         if best_without_pve:
                             p = best_without_pve['price']
@@ -2668,10 +2689,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                                 verdict = "🟣 Требуется PVE"
                             else:
                                 verdict = "✅ Подходит" if p <= limit_price else "🟣 Слишком дорого"
-                            item_lines.append(f"  ↳ без PVE: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
+                            item_lines.append(f"  └ 👤 без PVE: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
                         else:
-                            item_lines.append("  ↳ без PVE: ❌ Не найдено")
+                            item_lines.append("  └ 👤 без PVE: ❌ Не найдено")
                     report_lines.append("\n".join(item_lines))
+
 
                 
             report_msg = "\n\n───────────────────\n\n".join(report_lines)
