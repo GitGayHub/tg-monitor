@@ -16,31 +16,31 @@ with open(config_path, "r", encoding="utf-8") as f:
 # Original skin prices
 original_skin_prices = {
     'royale_bomber': 1800,
-    'eon': 1500,
+    'eon': 1800,
     'double_helix': 1800,
-    'dark_vertex': 2200,
+    'dark_vertex': 2250,
     'neo_versa': 1500,
     'rogue_spider_knight': 1500,
     'stealth_reflex': 2000,
     'surf_strider': 1500,
-    'wildcat': 2500,
-    'dark_skully': 1800,
+    'wildcat': 2400,
+    'dark_skully': 1500,
     'huntmaster_saber': 1500,
     'thrilldiver': 1500,
     'freediver': 1500,
     'cobalt_snowfoot': 1500,
     'florin': 1500,
-    'twitch_prime': 1500,
-    'black_knight': 5000,
-    'sparkle_specialist': 3000,
-    'floss': 1500,
+    'twitch_prime': 1000,
+    'black_knight': 2250,
+    'sparkle_specialist': 1800,
+    'floss': 1800,
 }
 
 # Original edition prices
 original_edition_prices = {
-    'super_deluxe': 1500,
-    'limited': 2000,
-    'ultimate': 2250,
+    'super_deluxe': 900,
+    'limited': 1350,
+    'ultimate': 1650,
 }
 
 # 1. Restore skin prices

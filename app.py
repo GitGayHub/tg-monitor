@@ -2627,10 +2627,21 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             # Determine which sids are editions
             edition_ids = set(config.get_all_editions().keys())
 
+            from handlers import _skin_emoji as _get_skin_emoji
             for sid, stat in summary_stats.items():
                 name = stat['name']
                 if name and name[0].isalpha():
                     name = name[0].upper() + name[1:]
+
+                # Add skin emoji prefix to name
+                if sid in ('__pve__', '__unconfirmed_pve__'):
+                    skin_icon = ''
+                elif sid in edition_ids:
+                    skin_icon = '🏆'
+                else:
+                    skin_icon = _get_skin_emoji(sid)
+                if skin_icon:
+                    name = f"{skin_icon} {name}"
                 
                 # Check limits
                 original_limit = 0
@@ -2657,7 +2668,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     # PVE-позиции и издания — только одна строка (всегда с PVE)
                     item_lines = []
                     item_lines.append(f"• <b>{name}</b>")
-                    item_lines.append(f"  ├ 💶 Лимит: {limit_price}₽")
+                    item_lines.append(f"  ├ 💸 Лимит: {limit_price}₽")
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
@@ -2671,7 +2682,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     # Скины — показываем с PVE и без PVE
                     item_lines = []
                     item_lines.append(f"• <b>{name}</b>")
-                    item_lines.append(f"  ├ 💶 Лимит: {limit_price}₽")
+                    item_lines.append(f"  ├ 💸 Лимит: {limit_price}₽")
                     
                     if best_with_pve:
                         p = best_with_pve['price']

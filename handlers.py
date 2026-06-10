@@ -455,7 +455,7 @@ async def _show_skins_list(query, context, page=0):
             sid = item_id
             skin = config.get_skin(sid)
             icon = "✅" if skin.get('enabled', True) else "⛔"
-            pve_icon = "🧟 PVE" if skin.get('require_pve', False) else "🔒 Без"
+            pve_icon = "🧟 PVE" if skin.get('require_pve', False) else "👤 Без"
             name = sid.replace('_', ' ').title()
             price = skin.get('price', 0)
             keyboard.append([
@@ -472,7 +472,7 @@ async def _show_skins_list(query, context, page=0):
     all_enabled = bool(all_skins) and all(s.get('enabled', True) for s in all_skins.values())
     all_pve = bool(all_skins) and all(s.get('require_pve', False) for s in all_skins.values())
     skins_all_btn = "⛔ Все выкл" if all_enabled else "✅ Все вкл"
-    pve_all_btn = "🔒 PVE выкл" if all_pve else "🧟 PVE всем"
+    pve_all_btn = "👤 PVE выкл" if all_pve else "🧟 PVE всем"
     keyboard.append([
         InlineKeyboardButton(skins_all_btn, callback_data=f"set:skins:alltoggle:{page}"),
         InlineKeyboardButton(pve_all_btn, callback_data=f"set:skins:pveall:{page}")
@@ -1053,7 +1053,7 @@ async def _show_stats_item_history(query, context, item_type, item_id):
             src = 'auto' if raw_src == 'auto' else 'minprice'
             src_label = 'мин.прайс' if src == 'minprice' else 'авто'
             date = row.get('recorded_at', '?')
-            mode_icon = '🧟' if 'pve' in mode else '🔒'
+            mode_icon = '🧟' if 'pve' in mode else '👤'
             info_lines.append(f"{mode_icon} {src_label} — {date}")
 
     text = f"⭐ <b>{html.escape(item_name)}</b>\n"
@@ -1067,7 +1067,7 @@ async def _show_stats_item_history(query, context, item_type, item_id):
             text += f"  {i}. {p_link} — {seller}\n"
 
     if any_offers:
-        text += "\n🔒 <b>Без PVE:</b>\n"
+        text += "\n👤 <b>Без PVE:</b>\n"
         for i, o in enumerate(any_offers[:7], 1):
             price_display = _price_link(o.get('price_text') or '—', o.get('href'))
             seller = html.escape(o.get('seller') or '?')

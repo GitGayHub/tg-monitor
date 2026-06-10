@@ -20,7 +20,7 @@ DEFAULT_RARE_SKINS = {
     'eon': {
         'enabled': True,
         'keywords': ['вечность', 'эон', 'еон', 'eon'],
-        'price': 1500
+        'price': 1800
     },
     'double_helix': {
         'enabled': True,
@@ -30,7 +30,7 @@ DEFAULT_RARE_SKINS = {
     'dark_vertex': {
         'enabled': True,
         'keywords': ['тёмный вертекс', 'темный вертекс', 'dark vertex', 'darkvertex', 'черный вертекс', 'чёрный вертекс'],
-        'price': 2200
+        'price': 2250
     },
     'neo_versa': {
         'enabled': True,
@@ -55,7 +55,7 @@ DEFAULT_RARE_SKINS = {
     'wildcat': {
         'enabled': True,
         'keywords': ['wildcat', 'wild cat', 'дикая кошка'],
-        'price': 2500
+        'price': 2400
     },
     'dark_skully': {
         'enabled': True,
@@ -91,24 +91,24 @@ DEFAULT_RARE_SKINS = {
         'enabled': True,
         'keywords': ['twitch prime', 'твич прайм', 'havoc', 'sub commander',
                      'trailblazer', 'опустошитель', 'заместитель командующего', 'боевая подруга'],
-        'price': 1500
+        'price': 1000
     },
     'black_knight': {
         'enabled': True,
         'keywords': ['чёрный рыцарь', 'черный рыцарь', 'black knight', 'блэк найт'],
-        'price': 5000,
+        'price': 2250,
         'require_pve': False
     },
     'sparkle_specialist': {
         'enabled': True,
         'keywords': ['искромётный спец', 'искрометный спец', 'sparkle specialist', 'спаркл'],
-        'price': 3000,
+        'price': 1800,
         'require_pve': False
     },
     'floss': {
         'enabled': True,
         'keywords': ['флосс', 'флос', 'floss', 'flos'],
-        'price': 1500,
+        'price': 1800,
         'require_pve': False
     },
 }
