@@ -190,7 +190,7 @@ def _build_settings_main_text(config):
 def _build_settings_main_markup(context):
     config = context.bot_data['config']
     test_summary_mode = _is_statistics_mode(config)
-    mode_label = "📊 Автомониторинг: Статистика" if test_summary_mode else "🔄 Автомониторинг: Обычный"
+    mode_label = "🤖 Автомониторинг: Статистика" if test_summary_mode else "🔄 Автомониторинг: Обычный"
     keyboard = [
         [InlineKeyboardButton("📋 Список", callback_data="set:skins:menu"),
          InlineKeyboardButton("🚫 Фильтры", callback_data="set:filters:menu")],
