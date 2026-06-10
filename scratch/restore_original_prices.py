@@ -38,9 +38,9 @@ original_skin_prices = {
 
 # Original edition prices
 original_edition_prices = {
-    'super_deluxe': 3000,
-    'limited': 3000,
-    'ultimate': 5000,
+    'super_deluxe': 1500,
+    'limited': 2000,
+    'ultimate': 2250,
 }
 
 # 1. Restore skin prices

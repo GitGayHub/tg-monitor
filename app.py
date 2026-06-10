@@ -2657,41 +2657,39 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     # PVE-позиции и издания — только одна строка (всегда с PVE)
                     item_lines = []
                     item_lines.append(f"• <b>{name}</b>")
-                    item_lines.append(f"  ├ 💰 Лимит: {limit_price}₽")
+                    item_lines.append(f"  ├ 🤑 {limit_price}₽")
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
-                        verdict = "✅ Подходит" if p <= limit_price else "🟣 Слишком дорого"
-                        item_lines.append(f"  └ 🧟 Цена: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
+                        emoji = "✅" if p <= limit_price else "🟣"
+                        item_lines.append(f"  └ 🧟 {p}₽ <a href='{h}'>🔗</a> | {emoji}")
                     else:
-                        item_lines.append("  └ ❌ Не найдено")
+                        item_lines.append("  └ 🧟 ❌")
                     report_lines.append("\n".join(item_lines))
                 else:
                     # Скины — показываем с PVE и без PVE
                     item_lines = []
                     item_lines.append(f"• <b>{name}</b>")
-                    item_lines.append(f"  ├ 💰 Лимит: {limit_price}₽")
-                    if not best_with_pve and not best_without_pve:
-                        item_lines.append("  └ ❌ Не найдено")
+                    item_lines.append(f"  ├ 🤑 {limit_price}₽")
+                    
+                    if best_with_pve:
+                        p = best_with_pve['price']
+                        h = best_with_pve['href']
+                        emoji = "✅" if p <= limit_price else "🟣"
+                        item_lines.append(f"  ├ 🧟 {p}₽ <a href='{h}'>🔗</a> | {emoji}")
                     else:
-                        if best_with_pve:
-                            p = best_with_pve['price']
-                            h = best_with_pve['href']
-                            verdict = "✅ Подходит" if p <= limit_price else "🟣 Слишком дорого"
-                            item_lines.append(f"  ├ 🧟 с PVE: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
-                        else:
-                            item_lines.append("  ├ 🧟 с PVE: ❌ Не найдено")
+                        item_lines.append("  ├ 🧟 ❌")
 
-                        if best_without_pve:
-                            p = best_without_pve['price']
-                            h = best_without_pve['href']
-                            if skin_require_pve:
-                                verdict = "🟣 Требуется PVE"
-                            else:
-                                verdict = "✅ Подходит" if p <= limit_price else "🟣 Слишком дорого"
-                            item_lines.append(f"  └ 👤 без PVE: {p}₽ <a href='{h}'>🔗</a> | {verdict}")
+                    if best_without_pve:
+                        p = best_without_pve['price']
+                        h = best_without_pve['href']
+                        if skin_require_pve:
+                            emoji = "🟣"
                         else:
-                            item_lines.append("  └ 👤 без PVE: ❌ Не найдено")
+                            emoji = "✅" if p <= limit_price else "🟣"
+                        item_lines.append(f"  └ 👤 {p}₽ <a href='{h}'>🔗</a> | {emoji}")
+                    else:
+                        item_lines.append("  └ 👤 ❌")
                     report_lines.append("\n".join(item_lines))
 
 
