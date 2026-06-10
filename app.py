@@ -1699,7 +1699,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             for ed_id in edition_order:
                 if ed_id in editions and editions[ed_id].get('enabled', True):
                     summary_stats[ed_id] = {
-                        'name': '🏆 ' + ed_id.replace('_', ' ').title(),
+                        'name': ed_id.replace('_', ' ').title(),
                         'status': 'Не найдено',
                         'min_price': None
                     }
@@ -2675,7 +2675,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         spaces = " " * (9 - len(p_str))
-                        item_lines.append(f"<code>🧟 +PVE  </code><a href='{h}'><code>{p_str}</code></a><code>{spaces} {verdict}</code>")
+                        item_lines.append(f"<code>🧟 +PVE  </code><a href='{h}'>{p_str}</a><code>{spaces} {verdict}</code>")
                     else:
                         item_lines.append("<code>🧟 +PVE  Не найдено ❌</code>")
                     report_lines.append("\n".join(item_lines))
@@ -2693,7 +2693,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         spaces = " " * (9 - len(p_str))
-                        item_lines.append(f"<code>🧟 +PVE  </code><a href='{h}'><code>{p_str}</code></a><code>{spaces} {verdict}</code>")
+                        item_lines.append(f"<code>🧟 +PVE  </code><a href='{h}'>{p_str}</a><code>{spaces} {verdict}</code>")
                     else:
                         item_lines.append("<code>🧟 +PVE  Не найдено ❌</code>")
 
@@ -2706,7 +2706,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         spaces = " " * (9 - len(p_str))
-                        item_lines.append(f"<code>👤 -PVE  </code><a href='{h}'><code>{p_str}</code></a><code>{spaces} {verdict}</code>")
+                        item_lines.append(f"<code>👤 -PVE  </code><a href='{h}'>{p_str}</a><code>{spaces} {verdict}</code>")
                     else:
                         item_lines.append("<code>👤 -PVE  Не найдено ❌</code>")
                     report_lines.append("\n".join(item_lines))
