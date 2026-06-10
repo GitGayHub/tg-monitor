@@ -2674,7 +2674,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"🧟 <code>+PVE  {p_str:<10}  | {verdict}</code> <a href='{h}'>🔗</a>")
+                        spaces = " " * (9 - len(p_str))
+                        item_lines.append(f"🧟 <code>+PVE  {p_str}</code><a href='{h}'>🔗</a><code>{spaces} | {verdict}</code>")
                     else:
                         item_lines.append("🧟 <code>+PVE  Не найдено  | ❌</code>")
                     report_lines.append("\n".join(item_lines))
@@ -2691,7 +2692,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"🧟 <code>+PVE  {p_str:<10}  | {verdict}</code> <a href='{h}'>🔗</a>")
+                        spaces = " " * (9 - len(p_str))
+                        item_lines.append(f"🧟 <code>+PVE  {p_str}</code><a href='{h}'>🔗</a><code>{spaces} | {verdict}</code>")
                     else:
                         item_lines.append("🧟 <code>+PVE  Не найдено  | ❌</code>")
 
@@ -2703,7 +2705,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"👤 <code>-PVE  {p_str:<10}  | {verdict}</code> <a href='{h}'>🔗</a>")
+                        spaces = " " * (9 - len(p_str))
+                        item_lines.append(f"👤 <code>-PVE  {p_str}</code><a href='{h}'>🔗</a><code>{spaces} | {verdict}</code>")
                     else:
                         item_lines.append("👤 <code>-PVE  Не найдено  | ❌</code>")
                     report_lines.append("\n".join(item_lines))
