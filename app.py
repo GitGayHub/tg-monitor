@@ -2717,15 +2717,27 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             source_line = "📋 <b>Автомониторинг: Git 🤖</b>" if is_git else "📋 <b>Автомониторинг: Локальный 💻</b>"
             report_lines.append(source_line)
                 
-            report_msg = "\n\n<code>────────────────────────────────</code>\n\n".join(report_lines)
-            logger.info("📊 Отправляю диагностический отчет в Telegram...")
-            try:
-                if context:
-                    await context.bot.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML', disable_web_page_preview=True)
-                elif bot_instance:
-                    await bot_instance.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML', disable_web_page_preview=True)
-            except Exception as e:
-                logger.error(f"Ошибка отправки диагностического отчета: {e}")
+            # Разделяем отчет на части (чанки) по 8 позиций, чтобы избежать лимита Telegram в 100 HTML-сущностей
+            chunk_size = 8
+            content_lines = report_lines[:-1]
+            footer_line = report_lines[-1]
+            chunks = [content_lines[i:i + chunk_size] for i in range(0, len(content_lines), chunk_size)]
+            if chunks:
+                chunks[-1].append(footer_line)
+            else:
+                chunks = [[footer_line]]
+
+            logger.info(f"📊 Отправляю диагностический отчет в Telegram ({len(chunks)} частей)...")
+            for idx, chunk in enumerate(chunks, 1):
+                report_msg = "\n\n<code>────────────────────────────</code>\n\n".join(chunk)
+                try:
+                    if context:
+                        await context.bot.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML', disable_web_page_preview=True)
+                    elif bot_instance:
+                        await bot_instance.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML', disable_web_page_preview=True)
+                    await asyncio.sleep(0.5)  # небольшая пауза во избежание флуд-лимитов
+                except Exception as e:
+                    logger.error(f"Ошибка отправки части {idx} диагностического отчета: {e}")
 
             clear_monitoring_state()
             logger.info("🧹 Тестовый режим: история очищена перед повтором")
