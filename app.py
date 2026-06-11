@@ -2725,10 +2725,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     else:
                         nopve_lines.append(f"<code>👤 -PVE   {nopve_dashes}  │ </code>❌ Не найдено")
                         
-                    # Combine PVE and no-PVE blocks with a vertical line in the blank line
+                    # Combine PVE and no-PVE blocks directly
                     item_lines.append("\n".join(pve_lines))
-                    sep_len = 12 + len(pve_str if pve_str else pve_dashes)
-                    item_lines.append(f"<code>{' ' * sep_len}│</code>")
                     item_lines.append("\n".join(nopve_lines))
                     
                     report_lines.append("\n".join(item_lines))
