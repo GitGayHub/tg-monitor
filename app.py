@@ -2676,7 +2676,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         spaces = " " * (9 - len(p_str))
-                        item_lines.append(f"<code>🧟 +PVE  {p_str}{spaces} {verdict}</code>\n<code>        </code><a href=\"{html.escape(h)}\">🔗 <b>**ТЫК**</b></a>")
+                        item_lines.append(f"<code>🧟 +PVE  {p_str}{spaces} {verdict}</code>\n<code>        </code><a href=\"{html.escape(h)}\">🔗 <b>*ТЫК*</b></a>")
                     else:
                         item_lines.append("<code>🧟 +PVE  Не найдено❌</code>")
                     report_lines.append("\n".join(item_lines))
@@ -2694,7 +2694,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         spaces = " " * (9 - len(p_str))
-                        item_lines.append(f"<code>🧟 +PVE  {p_str}{spaces} {verdict}</code>\n<code>        </code><a href=\"{html.escape(h)}\">🔗 <b>**ТЫК**</b></a>")
+                        item_lines.append(f"<code>🧟 +PVE  {p_str}{spaces} {verdict}</code>\n<code>        </code><a href=\"{html.escape(h)}\">🔗 <b>*ТЫК*</b></a>")
                     else:
                         item_lines.append("<code>🧟 +PVE  Не найдено❌</code>")
 
@@ -2707,7 +2707,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         spaces = " " * (9 - len(p_str))
-                        item_lines.append(f"<code>👤 -PVE  {p_str}{spaces} {verdict}</code>\n<code>        </code><a href=\"{html.escape(h)}\">🔗 <b>**ТЫК**</b></a>")
+                        item_lines.append(f"<code>👤 -PVE  {p_str}{spaces} {verdict}</code>\n<code>        </code><a href=\"{html.escape(h)}\">🔗 <b>*ТЫК*</b></a>")
                     else:
                         item_lines.append("<code>👤 -PVE  Не найдено❌</code>")
                     report_lines.append("\n".join(item_lines))
@@ -2717,7 +2717,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             source_line = "📋 <b>Автомониторинг: Git 🤖</b>" if is_git else "📋 <b>Автомониторинг: Локальный 💻</b>"
             report_lines.append(source_line)
                 
-            report_msg = "\n\n<code>────────────────────────────</code>\n\n".join(report_lines)
+            report_msg = "\n\n<code>────────────────────────────────</code>\n\n".join(report_lines)
             logger.info("📊 Отправляю диагностический отчет в Telegram...")
             try:
                 if context:
