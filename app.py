@@ -2717,7 +2717,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             source_line = "📋 <b>Автомониторинг: Git 🤖</b>" if is_git else "📋 <b>Автомониторинг: Локальный 💻</b>"
             report_lines.append(source_line)
                 
-            report_msg = "\n\n<code>───────────────────────────────────</code>\n\n".join(report_lines)
+            report_msg = "\n\n<code>────────────────────────────────</code>\n\n".join(report_lines)
             logger.info("📊 Отправляю диагностический отчет в Telegram...")
             try:
                 if context:
