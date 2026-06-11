@@ -2675,7 +2675,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        item_lines.append(f"<code>🧟 +PVE   {p_str}  │ </code>{verdict}\n<code>🔗        </code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
+                        spaces_str = " " * (len(p_str) + 3)
+                        item_lines.append(f"<code>🧟 +PVE   {p_str}  │ </code>{verdict}\n<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
                         item_lines.append("<code>🧟 +PVE   ---  │ </code>❌ Не найдено")
                     report_lines.append("\n".join(item_lines))
@@ -2704,7 +2705,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         pve_lines.append(f"<code>🧟 +PVE   {pve_str}  │ </code>{verdict}")
-                        pve_lines.append(f"<code>🔗        </code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
+                        spaces_str = " " * (len(pve_str) + 3)
+                        pve_lines.append(f"<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
                         pve_lines.append(f"<code>🧟 +PVE   {pve_dashes}  │ </code>❌ Не найдено")
                     
@@ -2718,7 +2720,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         nopve_lines.append(f"<code>👤 -PVE   {nopve_str}  │ </code>{verdict}")
-                        nopve_lines.append(f"<code>🔗        </code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
+                        spaces_str = " " * (len(nopve_str) + 3)
+                        nopve_lines.append(f"<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
                         nopve_lines.append(f"<code>👤 -PVE   {nopve_dashes}  │ </code>❌ Не найдено")
                         
