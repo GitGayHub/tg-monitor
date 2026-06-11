@@ -2675,11 +2675,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        spaces_len = len(p_str) + 3
+                        p_display = p_str.rjust(7)
+                        spaces_len = 7 + 3
                         spaces_str = " " * spaces_len
-                        item_lines.append(f"<code>🧟 +PVE   {p_str}  │ </code>{verdict}\n<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
+                        item_lines.append(f"<code>🧟 +PVE   {p_display}  │ </code>{verdict}\n<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
-                        item_lines.append("<code>🧟 +PVE   ---  │ </code>❌ Не найдено")
+                        p_display = "---".rjust(7)
+                        item_lines.append(f"<code>🧟 +PVE   {p_display}  │ </code>❌ Не найдено")
                     report_lines.append("\n".join(item_lines))
                 else:
                     # Скины — показываем PVE и без PVE
@@ -2692,16 +2694,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     pve_str = f"{int(best_with_pve['price'])}₽" if best_with_pve else None
                     nopve_str = f"{int(best_without_pve['price'])}₽" if best_without_pve else None
                     
-                    if not pve_str and not nopve_str:
-                        pve_dashes = "---"
-                        nopve_dashes = "---"
-                    else:
-                        pve_dashes = "-" * len(nopve_str) if nopve_str else "---"
-                        nopve_dashes = "-" * len(pve_str) if pve_str else "---"
+                    pve_dashes = "---"
+                    nopve_dashes = "---"
                     
-                    pve_len_val = len(pve_str) if pve_str else len(pve_dashes)
-                    nopve_len_val = len(nopve_str) if nopve_str else len(nopve_dashes)
-                    max_len = max(pve_len_val, nopve_len_val)
+                    max_len = 7
                     
                     pve_display = pve_str.rjust(max_len) if pve_str else pve_dashes.rjust(max_len)
                     nopve_display = nopve_str.rjust(max_len) if nopve_str else nopve_dashes.rjust(max_len)
@@ -2767,7 +2763,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         await context.bot.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML', disable_web_page_preview=True)
                     elif bot_instance:
                         await bot_instance.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML', disable_web_page_preview=True)
-                    await asyncio.sleep(0.5)  # небольшая пауза во избежание флуд-лимитов
+                    await asyncio.sleep(2.0)  # пауза для сохранения порядка сообщений и избежания флуд-лимитов
                 except Exception as e:
                     logger.error(f"Ошибка отправки части {idx} диагностического отчета: {e}")
 
