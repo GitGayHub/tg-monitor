@@ -2675,10 +2675,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
-                        spaces = " " * (9 - len(p_str))
-                        item_lines.append(f"<code>🧟 +PVE  {p_str}{spaces} {verdict}</code>\n<code>        </code><a href=\"{html.escape(h)}\">🔗 <b>*ТЫК*</b></a>")
+                        p_padded = f"{p_str:>6}"
+                        item_lines.append(f"<code>🧟 +PVE  {p_padded}  │ </code>{verdict}\n<code>🔗        </code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a><code>  │</code>")
                     else:
-                        item_lines.append("<code>🧟 +PVE  Не найдено❌</code>")
+                        item_lines.append("<code>🧟 +PVE  -----  │ </code>❌ Не найдено")
                     report_lines.append("\n".join(item_lines))
                 else:
                     # Скины — показываем PVE и без PVE
@@ -2688,15 +2688,21 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     item_lines.append(f"💸 Лимит: {limit_price}₽")
                     item_lines.append("")
                     
+                    pve_str = f"{int(best_with_pve['price'])}₽" if best_with_pve else None
+                    nopve_str = f"{int(best_without_pve['price'])}₽" if best_without_pve else None
+                    
+                    pve_dashes = "-" * len(nopve_str) if nopve_str else "-----"
+                    nopve_dashes = "-" * len(pve_str) if pve_str else "-----"
+                    
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
-                        p_str = f"{int(p)}₽"
-                        spaces = " " * (9 - len(p_str))
-                        item_lines.append(f"<code>🧟 +PVE  {p_str}{spaces} {verdict}</code>\n<code>        </code><a href=\"{html.escape(h)}\">🔗 <b>*ТЫК*</b></a>")
+                        p_padded = f"{pve_str:>6}"
+                        item_lines.append(f"<code>🧟 +PVE  {p_padded}  │ </code>{verdict}\n<code>🔗        </code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a><code>  │</code>")
                     else:
-                        item_lines.append("<code>🧟 +PVE  Не найдено❌</code>")
+                        d_padded = f"{pve_dashes:>6}"
+                        item_lines.append(f"<code>🧟 +PVE  {d_padded}  │ </code>❌ Не найдено")
 
                     if best_without_pve:
                         p = best_without_pve['price']
@@ -2705,11 +2711,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             verdict = "🟣 Требуется PVE"
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
-                        p_str = f"{int(p)}₽"
-                        spaces = " " * (9 - len(p_str))
-                        item_lines.append(f"<code>👤 -PVE  {p_str}{spaces} {verdict}</code>\n<code>        </code><a href=\"{html.escape(h)}\">🔗 <b>*ТЫК*</b></a>")
+                        p_padded = f"{nopve_str:>6}"
+                        item_lines.append(f"<code>👤 -PVE  {p_padded}  │ </code>{verdict}\n<code>🔗        </code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a><code>  │</code>")
                     else:
-                        item_lines.append("<code>👤 -PVE  Не найдено❌</code>")
+                        d_padded = f"{nopve_dashes:>6}"
+                        item_lines.append(f"<code>👤 -PVE  {d_padded}  │ </code>❌ Не найдено")
                     report_lines.append("\n".join(item_lines))
 
             # Добавляем в самый конец источник мониторинга
