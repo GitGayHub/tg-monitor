@@ -2698,17 +2698,24 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         pve_dashes = "-" * len(nopve_str) if nopve_str else "---"
                         nopve_dashes = "-" * len(pve_str) if pve_str else "---"
                     
+                    pve_len_val = len(pve_str) if pve_str else len(pve_dashes)
+                    nopve_len_val = len(nopve_str) if nopve_str else len(nopve_dashes)
+                    max_len = max(pve_len_val, nopve_len_val)
+                    
+                    pve_display = pve_str.rjust(max_len) if pve_str else pve_dashes.rjust(max_len)
+                    nopve_display = nopve_str.rjust(max_len) if nopve_str else nopve_dashes.rjust(max_len)
+                    
                     # 1. PVE Block
                     pve_lines = []
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
-                        pve_lines.append(f"<code>🧟 +PVE   {pve_str}  │ </code>{verdict}")
-                        spaces_str = " " * (len(pve_str) + 3)
+                        pve_lines.append(f"<code>🧟 +PVE   {pve_display}  │ </code>{verdict}")
+                        spaces_str = " " * (max_len + 3)
                         pve_lines.append(f"<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
-                        pve_lines.append(f"<code>🧟 +PVE   {pve_dashes}  │ </code>❌ Не найдено")
+                        pve_lines.append(f"<code>🧟 +PVE   {pve_display}  │ </code>❌ Не найдено")
                     
                     # 2. no-PVE Block
                     nopve_lines = []
@@ -2719,11 +2726,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             verdict = "🟣 Требуется PVE"
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
-                        nopve_lines.append(f"<code>👤 -PVE   {nopve_str}  │ </code>{verdict}")
-                        spaces_str = " " * (len(nopve_str) + 3)
+                        nopve_lines.append(f"<code>👤 -PVE   {nopve_display}  │ </code>{verdict}")
+                        spaces_str = " " * (max_len + 3)
                         nopve_lines.append(f"<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
-                        nopve_lines.append(f"<code>👤 -PVE   {nopve_dashes}  │ </code>❌ Не найдено")
+                        nopve_lines.append(f"<code>👤 -PVE   {nopve_display}  │ </code>❌ Не найдено")
                         
                     # Combine PVE and no-PVE blocks directly
                     item_lines.append("\n".join(pve_lines))
