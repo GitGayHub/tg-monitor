@@ -1707,7 +1707,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             # 4. Скины
             for sid, skin in skins_dict.items():
                 summary_stats[sid] = {
-                    'name': skin.get('keywords', [sid])[0],
+                    'name': sid.replace('_', ' ').title(),
                     'status': 'Не найдено',
                     'min_price': None
                 }
@@ -2677,7 +2677,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         p_str = f"{int(p)}₽"
                         item_lines.append(f"<code>🧟 +PVE   {p_str}  │ </code>{verdict}\n<code>🔗        </code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
-                        item_lines.append("<code>🧟 +PVE   -----  │ </code>❌ Не найдено")
+                        item_lines.append("<code>🧟 +PVE   ---  │ </code>❌ Не найдено")
                     report_lines.append("\n".join(item_lines))
                 else:
                     # Скины — показываем PVE и без PVE
@@ -2690,8 +2690,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     pve_str = f"{int(best_with_pve['price'])}₽" if best_with_pve else None
                     nopve_str = f"{int(best_without_pve['price'])}₽" if best_without_pve else None
                     
-                    pve_dashes = "-" * len(nopve_str) if nopve_str else "-----"
-                    nopve_dashes = "-" * len(pve_str) if pve_str else "-----"
+                    if not pve_str and not nopve_str:
+                        pve_dashes = "---"
+                        nopve_dashes = "---"
+                    else:
+                        pve_dashes = "-" * len(nopve_str) if nopve_str else "---"
+                        nopve_dashes = "-" * len(pve_str) if pve_str else "---"
                     
                     # 1. PVE Block
                     pve_lines = []
@@ -2718,9 +2722,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     else:
                         nopve_lines.append(f"<code>👤 -PVE   {nopve_dashes}  │ </code>❌ Не найдено")
                         
-                    # Combine PVE and no-PVE blocks with a vertical line in the blank line
+                    # Combine PVE and no-PVE blocks with a blank line in between
                     item_lines.append("\n".join(pve_lines))
-                    item_lines.append("<code>                 │</code>")
+                    item_lines.append("")
                     item_lines.append("\n".join(nopve_lines))
                     
                     report_lines.append("\n".join(item_lines))
@@ -2743,6 +2747,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             logger.info(f"📊 Отправляю диагностический отчет в Telegram ({len(chunks)} частей)...")
             for idx, chunk in enumerate(chunks, 1):
                 report_msg = "\n\n<code>────────────────────────────</code>\n\n".join(chunk)
+                if idx > 1:
+                    report_msg = f"<code>────────────────────────────</code>\n\n" + report_msg
                 try:
                     if context:
                         await context.bot.send_message(chat_id=chat_id, text=report_msg, parse_mode='HTML', disable_web_page_preview=True)
