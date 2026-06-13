@@ -14,10 +14,10 @@ In Telegram, putting emojis inside `<code>` or `<pre>` tags causes alignment iss
 
 ###  Correct Approach (Emoji Outside Code Tags)
 ```html
-🧟<code> +PVE   8248₽  │ </code>🟣 Дорого
-🔗<code>           </code>*ТЫК*
+🧟 <code>+PVE   8248₽  │ </code>🟣 Дорого
+🔗 <code>          </code>*ТЫК*
 ```
-*Result:* Because the variable-width emojis (`🧟`, `👤`, `🔗`) are placed **outside** the `<code>` tag, they are rendered identically by the system font, and the monospace block starts at the exact same offset.
+*Result:* Because the variable-width emojis (`🧟`, `👤`, `🔗`) and a single space are placed **outside** the `<code>` tag, they are rendered identically by the system font, and the monospace block starts at the exact same offset without the Telegram parser stripping the space inside `<code>`.
 
 ---
 
@@ -37,11 +37,11 @@ max_len = 7
 spaces_len = max_len + 3
 spaces_str = " " * spaces_len
 
-# Emojis outside <code>, a single space inside <code> starts the monospace block
-pve_line = f"🧟<code> +PVE   {pve_display}  │ </code>{verdict}"
-link_line = f"🔗<code> {spaces_str}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
+# Emojis outside <code>, followed by a space outside <code> to align starting monospace blocks
+pve_line = f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}"
+link_line = f"🔗 <code>{spaces_str}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
 
-nopve_line = f"👤<code> -PVE   {nopve_display}  │ </code>{verdict}"
+nopve_line = f"👤 <code>-PVE   {nopve_display}  │ </code>{verdict}"
 ```
 
 ---
