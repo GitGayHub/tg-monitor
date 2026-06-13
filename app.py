@@ -2339,9 +2339,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             ban_line = f"🚫 <a href='{ban_href}'>Бан</a>" if ban_href else f"🚫 Бан: /ban {offer_id}"
             
             if os.environ.get("GITHUB_ACTIONS") == "true":
-                source_line = "🤖 <b>GitHub автомониторинг</b>\n"
+                source_line = "🤖 <b>GitHub автомониторинг</b>"
             else:
-                source_line = "💻 <b>Локальный автомониторинг</b>\n"
+                source_line = "💻 <b>Локальный автомониторинг</b>"
             
             if x5_mode:
                 passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
@@ -2357,7 +2357,6 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     f"🎮 <b>Скины:</b> {skins_list}\n"
                     f"👤 <b>Продавец:</b> {candidate['user']}\n"
                     f"{rating_emoji} <b>Рейтинг:</b> {rating_text}\n"
-                    f"{source_line}"
                     f"🔗 <a href='{href}'>Ссылка на товар</a>"
                 )
             else:
@@ -2371,11 +2370,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     f"🎮 <b>Скины:</b> {skins_list}\n"
                     f"👤 <b>Продавец:</b> {candidate['user']}\n"
                     f"{rating_emoji} <b>Рейтинг:</b> {rating_text}\n"
-                    f"{source_line}"
                     f"🔗 <a href='{href}'>Ссылка на товар</a>"
                 )
             link_line = f"🔗 <a href='{href}'>Ссылка</a>"
-            msg = msg.replace(f"🔗 <a href='{href}'>Ссылка на товар</a>", f"{ban_line}\n{link_line}")
+            msg = msg.replace(f"🔗 <a href='{href}'>Ссылка на товар</a>", f"{ban_line}\n{link_line}\n{source_line}")
 
             try:
                 if context:
