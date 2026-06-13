@@ -2,22 +2,15 @@
 
 This guide documents the layout and column alignment logic implemented for the FunPay diagnostic report. It explains how to prevent mobile rendering bugs and align multiline lists containing emojis and links.
 
-## 1. The Variable-Width Emoji Monospace Bug
-In Telegram, putting emojis inside `<code>` or `<pre>` tags causes alignment issues on mobile devices (iOS/Android). Monospace fonts treat emojis as variable-width or double-width characters, which breaks alignment for all trailing text on that line.
+## 1. Emoji Monospace Column Alignment
+In Telegram, putting different emojis on different lines (e.g. `🧟` and `👤`) outside the `<code>` block can cause alignment issues because different emojis have different widths in standard fonts. Putting emojis **inside** `<code>` tags ensures they are parsed with identical character width constraints, making all columns align perfectly.
 
-### ❌ Broken Approach (Emoji Inside Code Tags)
+### Correct Approach (Emojis Inside Code Tags)
 ```html
 <code>🧟 +PVE   8248₽  │ </code>🟣 Дорого
 <code>🔗          </code>*ТЫК*
 ```
-*Result:* Monospace width is distorted on mobile, causing the vertical pipes (`│`) and link tabs to shift.
-
-###  Correct Approach (Emoji Outside Code Tags)
-```html
-🧟 <code>+PVE   8248₽  │ </code>🟣 Дорого
-🔗 <code>          </code>*ТЫК*
-```
-*Result:* Because the variable-width emojis (`🧟`, `👤`, `🔗`) and a single space are placed **outside** the `<code>` tag, they are rendered identically by the system font, and the monospace block starts at the exact same offset without the Telegram parser stripping the space inside `<code>`.
+*Result:* Emojis inside the monospace block ensure that all columns (price, separator line, and link) are perfectly aligned across all lines regardless of which emojis are used.
 
 ---
 
@@ -37,11 +30,10 @@ max_len = 7
 spaces_len = max_len + 3
 spaces_str = " " * spaces_len
 
-# Emojis outside <code>, followed by a space outside <code> to align starting monospace blocks
-pve_line = f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}"
-link_line = f"🔗 <code>{spaces_str}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
+pve_line = f"<code>🧟 +PVE   {pve_display}  │ </code>{verdict}"
+link_line = f"<code>🔗{spaces_str}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
 
-nopve_line = f"👤 <code>-PVE   {nopve_display}  │ </code>{verdict}"
+nopve_line = f"<code>👤 -PVE   {nopve_display}  │ </code>{verdict}"
 ```
 
 ---
