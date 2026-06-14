@@ -555,16 +555,76 @@ def main_reply_keyboard():
     )
 
 
+def requests_retry_get(session, url, max_retries=4, initial_backoff=3, **kwargs):
+    """Makes a GET request with automatic retries for 5xx/429 status codes or network exceptions."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            if attempt > 1:
+                logger.warning(f"Повторный запрос ({attempt}/{max_retries}) к {url}...")
+            response = session.get(url, **kwargs)
+            if response.status_code in (502, 503, 504, 429, 500):
+                response.raise_for_status()
+            return response
+        except Exception as e:
+            if attempt == max_retries:
+                logger.error(f"Не удалось выполнить GET-запрос к {url} после {max_retries} попыток: {e}")
+                raise e
+            sleep_time = (initial_backoff * (2 ** (attempt - 1))) + random.uniform(1.0, 3.0)
+            logger.warning(f"Ошибка запроса к {url}: {e}. Ожидание {sleep_time:.1f}с перед повтором...")
+            time.sleep(sleep_time)
+
 def build_http_session():
     session = requests.Session()
-    session.headers.update({
-        'User-Agent': get_random_user_agent(),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    ua_list = [
+        (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            {
+                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+            }
+        ),
+        (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            {
+                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="119", "Google Chrome";v="119"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+            }
+        ),
+        (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+            {
+                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Microsoft Edge";v="120"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+            }
+        ),
+        (
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            {
+                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"macOS"',
+            }
+        )
+    ]
+    ua, sec_headers = random.choice(ua_list)
+    headers = {
+        'User-Agent': ua,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
         'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept-Encoding': 'gzip, deflate',
         'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
         'Cookie': 'cy=rub'
-    })
+    }
+    headers.update(sec_headers)
+    session.headers.update(headers)
     return session
 
 
@@ -988,8 +1048,7 @@ def _sync_get_listings():
         for url in FUNPAY_URLS:
             source_lot = 'prochee' if '1098' in url else 'accounts'
             try:
-                response = session.get(url, timeout=HTTP_TIMEOUT)
-                response.raise_for_status()
+                response = requests_retry_get(session, url, timeout=HTTP_TIMEOUT)
                 soup = BeautifulSoup(response.text, 'html.parser')
                 items = soup.find_all('a', class_='tc-item')
                 for item in items:
@@ -1016,8 +1075,7 @@ def _sync_get_offer_details(offer_url):
         time.sleep(delay)
         with build_http_session() as session:
             session.headers.update({'Referer': 'https://funpay.com/'})
-            response = session.get(offer_url, timeout=HTTP_TIMEOUT)
-            response.raise_for_status()
+            response = requests_retry_get(session, offer_url, timeout=HTTP_TIMEOUT)
             soup = BeautifulSoup(response.text, 'html.parser')
 
         full_description = ""
@@ -1147,8 +1205,7 @@ def _sync_search_min_price(keywords, require_pve=False, exclude_confirmed_pve=Fa
         for kw in keywords:
             search_url = f'{FUNPAY_ACCOUNTS_URL}&search={requests.utils.quote(kw)}'
             try:
-                response = session.get(search_url, timeout=HTTP_TIMEOUT)
-                response.raise_for_status()
+                response = requests_retry_get(session, search_url, timeout=HTTP_TIMEOUT)
                 soup = BeautifulSoup(response.text, 'html.parser')
                 items = soup.find_all('a', class_='tc-item')
 
@@ -1204,8 +1261,7 @@ def _sync_search_min_price(keywords, require_pve=False, exclude_confirmed_pve=Fa
         current_best = min((r['price'] for r in all_results.values()), default=None)
         for list_url in [FUNPAY_ACCOUNTS_URL]:
             try:
-                response = session.get(list_url, timeout=HTTP_TIMEOUT)
-                response.raise_for_status()
+                response = requests_retry_get(session, list_url, timeout=HTTP_TIMEOUT)
                 soup = BeautifulSoup(response.text, 'html.parser')
                 items = soup.find_all('a', class_='tc-item')
 
@@ -1334,24 +1390,17 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
         session.headers.update({'Referer': 'https://funpay.com/'})
 
         # === ШАГ 1: Загрузить ВСЕ лоты одним запросом (с ретраями) ===
-        max_retries = 3
-        all_items = []
-        for attempt in range(1, max_retries + 1):
-            try:
-                response = session.get(FUNPAY_ACCOUNTS_URL, timeout=30)
-                response.raise_for_status()
-                soup = BeautifulSoup(response.text, 'html.parser')
-                all_items = soup.find_all('a', class_='tc-item')
-                if all_items:
-                    logger.info(f"Диаг: загружено {len(all_items)} лотов (попытка {attempt}) за {time.monotonic() - start_time:.1f}с")
-                    break
-            except Exception as e:
-                logger.warning(f"Диаг: ошибка загрузки лотов (попытка {attempt}/{max_retries}): {e}")
-                if attempt < max_retries:
-                    time.sleep(3)
-                else:
-                    logger.error("Диаг: не удалось загрузить лоты после всех попыток")
-                    return None
+        try:
+            response = requests_retry_get(session, FUNPAY_ACCOUNTS_URL, timeout=30)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            all_items = soup.find_all('a', class_='tc-item')
+            if not all_items:
+                logger.error("Диаг: не удалось найти лоты на странице")
+                return None
+            logger.info(f"Диаг: загружено {len(all_items)} лотов за {time.monotonic() - start_time:.1f}с")
+        except Exception as e:
+            logger.error(f"Диаг: не удалось загрузить лоты после всех попыток: {e}")
+            return None
 
         # === ШАГ 2: Сканируем ВСЕ лоты, ищем ВСЕ скины одновременно ===
         for item in all_items:
@@ -1443,8 +1492,7 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
                 href = candidate['href']
                 try:
                     time.sleep(0.15)
-                    resp = session.get(href, timeout=HTTP_TIMEOUT)
-                    resp.raise_for_status()
+                    resp = requests_retry_get(session, href, timeout=HTTP_TIMEOUT)
                     detail_soup = BeautifulSoup(resp.text, 'html.parser')
 
                     # Удаляем отзывы
