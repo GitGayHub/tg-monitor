@@ -20,14 +20,18 @@ In Telegram, putting different emojis on different lines (e.g. `🧟` and `👤`
 - **Max price width (`max_len`):** `7` characters.
 - **Price padding:** `.rjust(7)` or `.rjust(max_len)`.
 - **Status/Verdict indent:** align immediately after the vertical pipe `│`.
-- **Link padding (`spaces_len`):** `9` spaces for both blocks.
+- **Link padding (`spaces_len`):** Dynamic based on price digits:
+  - `10` spaces (centered under price) if all displayed prices are 1-digit (<10₽ or None).
+  - `9` spaces (aligned under ruble sign) if any displayed price is 2 or more digits (>=10₽).
 
 ### Code Template (Python)
 
 ```python
 # Widths
 max_len = 7
-spaces_len = 9
+
+# Dynamic spaces_len logic:
+# spaces_len = 10 if (pve_price < 10 and nopve_price < 10) else 9
 spaces_str = " " * spaces_len
 
 pve_line = f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}"

@@ -2695,7 +2695,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         p_display = p_str.rjust(7)
-                        spaces_len = 9
+                        spaces_len = 10 if int(p) < 10 else 9
                         spaces_str = " " * spaces_len
                         item_lines.append(f"🧟 <code>+PVE   {p_display}  │ </code>{verdict}\n🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b><code>*ТЫК*</code></b></a>")
                     else:
@@ -2723,14 +2723,19 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     nopve_display = nopve_str.rjust(max_len) if nopve_str else nopve_dashes.rjust(max_len)
                     
                     # 1. PVE Block
+                    pve_p = best_with_pve['price'] if best_with_pve else None
+                    nopve_p = best_without_pve['price'] if best_without_pve else None
+                    pve_ok = (pve_p is None) or (int(pve_p) < 10)
+                    nopve_ok = (nopve_p is None) or (int(nopve_p) < 10)
+                    spaces_len = 10 if (pve_ok and nopve_ok) else 9
+                    spaces_str = " " * spaces_len
+
                     pve_lines = []
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         pve_lines.append(f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}")
-                        spaces_len = 9
-                        spaces_str = " " * spaces_len
                         pve_lines.append(f"🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b><code>*ТЫК*</code></b></a>")
                     else:
                         verdict = "⚠️ Ошибка 502" if stat.get('error') else "❌ Не найдено"
@@ -2746,8 +2751,6 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         nopve_lines.append(f"👤 <code>-PVE   {nopve_display}  │ </code>{verdict}")
-                        spaces_len = 9
-                        spaces_str = " " * spaces_len
                         nopve_lines.append(f"🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b><code>*ТЫК*</code></b></a>")
                     else:
                         verdict = "⚠️ Ошибка 502" if stat.get('error') else "❌ Не найдено"
