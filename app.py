@@ -1333,16 +1333,25 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
     with build_http_session() as session:
         session.headers.update({'Referer': 'https://funpay.com/'})
 
-        # === ШАГ 1: Загрузить ВСЕ лоты одним запросом ===
-        try:
-            response = session.get(FUNPAY_ACCOUNTS_URL, timeout=30)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
-            all_items = soup.find_all('a', class_='tc-item')
-            logger.info(f"Диаг: загружено {len(all_items)} лотов за {time.monotonic() - start_time:.1f}с")
-        except Exception as e:
-            logger.error(f"Диаг: ошибка загрузки лотов: {e}")
-            return results
+        # === ШАГ 1: Загрузить ВСЕ лоты одним запросом (с ретраями) ===
+        max_retries = 3
+        all_items = []
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = session.get(FUNPAY_ACCOUNTS_URL, timeout=30)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, 'html.parser')
+                all_items = soup.find_all('a', class_='tc-item')
+                if all_items:
+                    logger.info(f"Диаг: загружено {len(all_items)} лотов (попытка {attempt}) за {time.monotonic() - start_time:.1f}с")
+                    break
+            except Exception as e:
+                logger.warning(f"Диаг: ошибка загрузки лотов (попытка {attempt}/{max_retries}): {e}")
+                if attempt < max_retries:
+                    time.sleep(3)
+                else:
+                    logger.error("Диаг: не удалось загрузить лоты после всех попыток")
+                    return None
 
         # === ШАГ 2: Сканируем ВСЕ лоты, ищем ВСЕ скины одновременно ===
         for item in all_items:
@@ -2609,6 +2618,16 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             if search_list:
                 try:
                     diag_results = await diagnostic_search(search_list, time_budget=120)
+                    if diag_results is None:
+                        logger.error("Диагностический поиск вернул None (ошибка загрузки лотов)")
+                        if context or bot_instance:
+                            target_bot = context.bot if context else bot_instance
+                            await target_bot.send_message(
+                                chat_id=chat_id,
+                                text="⚠️ <b>Ошибка автомониторинга:</b> Не удалось загрузить лоты с FunPay (502 Bad Gateway / Cloudflare).\nПовторите попытку позже.",
+                                parse_mode='HTML'
+                            )
+                        return 0
                     for sid, diag_result in diag_results.items():
                         stat = summary_stats[sid]
                         validated = diag_result['validated']
@@ -2676,7 +2695,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         p_display = p_str.rjust(7)
                         spaces_len = 7 + 3
                         spaces_str = " " * spaces_len
-                        item_lines.append(f"<code>🧟 +PVE   {p_display}  │ </code>{verdict}\n<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
+                        item_lines.append(f"<code>🧟 +PVE   {p_display}  │ </code>{verdict}\n<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a> ({html.escape(h)})")
                     else:
                         p_display = "---".rjust(7)
                         item_lines.append(f"<code>🧟 +PVE   {p_display}  │ </code>❌ Не найдено")
@@ -2709,7 +2728,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         pve_lines.append(f"<code>🧟 +PVE   {pve_display}  │ </code>{verdict}")
                         spaces_len = max_len + 3
                         spaces_str = " " * spaces_len
-                        pve_lines.append(f"<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
+                        pve_lines.append(f"<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a> ({html.escape(h)})")
                     else:
                         pve_lines.append(f"<code>🧟 +PVE   {pve_display}  │ </code>❌ Не найдено")
                     
@@ -2725,7 +2744,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         nopve_lines.append(f"<code>👤 -PVE   {nopve_display}  │ </code>{verdict}")
                         spaces_len = max_len + 3
                         spaces_str = " " * spaces_len
-                        nopve_lines.append(f"<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
+                        nopve_lines.append(f"<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a> ({html.escape(h)})")
                     else:
                         nopve_lines.append(f"<code>👤 -PVE   {nopve_display}  │ </code>❌ Не найдено")
                         

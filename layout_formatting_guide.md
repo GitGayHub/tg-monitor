@@ -31,7 +31,7 @@ spaces_len = max_len + 3
 spaces_str = " " * spaces_len
 
 pve_line = f"<code>🧟 +PVE   {pve_display}  │ </code>{verdict}"
-link_line = f"<code>🔗{spaces_str}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
+link_line = f"<code>🔗{spaces_str}</code><a href=\"{url}\"><b>*ТЫК*</b></a> ({url})"
 
 nopve_line = f"<code>👤 -PVE   {nopve_display}  │ </code>{verdict}"
 ```
