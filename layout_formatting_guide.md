@@ -20,20 +20,27 @@ In Telegram, putting different emojis on different lines (e.g. `🧟` and `👤`
 - **Max price width (`max_len`):** `7` characters.
 - **Price padding:** `.rjust(7)` or `.rjust(max_len)`.
 - **Status/Verdict indent:** align immediately after the vertical pipe `│`.
-- **Link padding (`spaces_len`):** `max_len + 3` (e.g. `7 + 3 = 10` spaces).
+- **Link padding (`spaces_len`):** Dynamic based on the emoji rendering width difference:
+  - `max_len + 2` (e.g. `7 + 2 = 9` spaces) for `+PVE` line (starts with `🧟`).
+  - `max_len + 3` (e.g. `7 + 3 = 10` spaces) for `-PVE` line (starts with `👤`).
 
 ### Code Template (Python)
 
 ```python
 # Widths
 max_len = 7
-spaces_len = max_len + 3
-spaces_str = " " * spaces_len
 
+# +PVE Block
+spaces_len_pve = max_len + 2
+spaces_str_pve = " " * spaces_len_pve
 pve_line = f"<code>🧟 +PVE   {pve_display}  │ </code>{verdict}"
-link_line = f"<code>🔗{spaces_str}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
+link_line_pve = f"<code>🔗{spaces_str_pve}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
 
+# -PVE Block
+spaces_len_nopve = max_len + 3
+spaces_str_nopve = " " * spaces_len_nopve
 nopve_line = f"<code>👤 -PVE   {nopve_display}  │ </code>{verdict}"
+link_line_nopve = f"<code>🔗{spaces_str_nopve}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
 ```
 
 ---
