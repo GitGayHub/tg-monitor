@@ -20,14 +20,14 @@ In Telegram, putting different emojis on different lines (e.g. `🧟` and `👤`
 - **Max price width (`max_len`):** `7` characters.
 - **Price padding:** `.rjust(7)` or `.rjust(max_len)`.
 - **Status/Verdict indent:** align immediately after the vertical pipe `│`.
-- **Link padding (`spaces_len`):** `max_len + 2` (e.g. `7 + 2 = 9` spaces) for both blocks.
+- **Link padding (`spaces_len`):** `10` spaces for both blocks.
 
 ### Code Template (Python)
 
 ```python
 # Widths
 max_len = 7
-spaces_len = max_len + 2
+spaces_len = 10
 spaces_str = " " * spaces_len
 
 pve_line = f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}"

@@ -2619,15 +2619,16 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 try:
                     diag_results = await diagnostic_search(search_list, time_budget=120)
                     if diag_results is None:
-                        logger.error("Диагностический поиск вернул None (ошибка загрузки лотов)")
-                        if context or bot_instance:
-                            target_bot = context.bot if context else bot_instance
-                            await target_bot.send_message(
-                                chat_id=chat_id,
-                                text="⚠️ <b>Ошибка автомониторинга:</b> Не удалось загрузить лоты с FunPay (502 Bad Gateway / Cloudflare).\nПовторите попытку позже.",
-                                parse_mode='HTML'
-                            )
-                        return 0
+                        logger.error("Диагностический поиск вернул None (ошибка загрузки лотов). Создаем фиктивные результаты.")
+                        diag_results = {}
+                        for item in search_list:
+                            sid = item[0]
+                            diag_results[sid] = {
+                                'validated': [],
+                                'best_with_pve': None,
+                                'best_without_pve': None,
+                                'error': True
+                            }
                     for sid, diag_result in diag_results.items():
                         stat = summary_stats[sid]
                         validated = diag_result['validated']
@@ -2635,6 +2636,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         
                         stat['best_with_pve'] = validated[0] if validated else None
                         stat['best_without_pve'] = best_no_pve
+                        stat['error'] = diag_result.get('error', False)
                 except Exception as e:
                     logger.error(f"Ошибка диагностического поиска: {e}")
 
@@ -2693,12 +2695,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         p_display = p_str.rjust(7)
-                        spaces_len = 7 + 2
+                        spaces_len = 10
                         spaces_str = " " * spaces_len
                         item_lines.append(f"🧟 <code>+PVE   {p_display}  │ </code>{verdict}\n🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
                         p_display = "---".rjust(7)
-                        item_lines.append(f"🧟 <code>+PVE   {p_display}  │ </code>❌ Не найдено")
+                        verdict = "⚠️ Ошибка" if stat.get('error') else "❌ Не найдено"
+                        item_lines.append(f"🧟 <code>+PVE   {p_display}  │ </code>{verdict}")
                     report_lines.append("\n".join(item_lines))
                 else:
                     # Скины — показываем PVE и без PVE
@@ -2726,11 +2729,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         pve_lines.append(f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}")
-                        spaces_len = max_len + 2
+                        spaces_len = 10
                         spaces_str = " " * spaces_len
                         pve_lines.append(f"🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
-                        pve_lines.append(f"🧟 <code>+PVE   {pve_display}  │ </code>❌ Не найдено")
+                        verdict = "⚠️ Ошибка" if stat.get('error') else "❌ Не найдено"
+                        pve_lines.append(f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}")
                     
                     # 2. no-PVE Block
                     nopve_lines = []
@@ -2742,11 +2746,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         nopve_lines.append(f"👤 <code>-PVE   {nopve_display}  │ </code>{verdict}")
-                        spaces_len = max_len + 2
+                        spaces_len = 10
                         spaces_str = " " * spaces_len
                         nopve_lines.append(f"🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
-                        nopve_lines.append(f"👤 <code>-PVE   {nopve_display}  │ </code>❌ Не найдено")
+                        verdict = "⚠️ Ошибка" if stat.get('error') else "❌ Не найдено"
+                        nopve_lines.append(f"👤 <code>-PVE   {nopve_display}  │ </code>{verdict}")
                         
                     # Combine PVE and no-PVE blocks directly with a blank line in between
                     item_lines.append("\n".join(pve_lines))
