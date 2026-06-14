@@ -3,14 +3,14 @@
 This guide documents the layout and column alignment logic implemented for the FunPay diagnostic report. It explains how to prevent mobile rendering bugs and align multiline lists containing emojis and links.
 
 ## 1. Emoji Monospace Column Alignment
-In Telegram, putting different emojis on different lines (e.g. `🧟` and `👤`) outside the `<code>` block can cause alignment issues because different emojis have different widths in standard fonts. Putting emojis **inside** `<code>` tags ensures they are parsed with identical character width constraints, making all columns align perfectly.
+In Telegram, putting different emojis on different lines (e.g. `🧟` and `👤`) can cause alignment issues because different emojis have different widths in standard fonts. Moving the emojis outside the `<code>` block, followed by a single space, and using a fixed width monospace code block ensures perfect column alignment.
 
-### Correct Approach (Emojis Inside Code Tags)
+### Correct Approach (Emojis Outside Code Tags, Space Separator)
 ```html
-<code>🧟 +PVE   8248₽  │ </code>🟣 Дорого
-<code>🔗          </code>*ТЫК*
+🧟 <code>+PVE   8248₽  │ </code>🟣 Дорого
+🔗 <code>         </code>*ТЫК*
 ```
-*Result:* Emojis inside the monospace block ensure that all columns (price, separator line, and link) are perfectly aligned across all lines regardless of which emojis are used.
+*Result:* Emojis and a single space are rendered outside the monospace block, ensuring all starting offsets and column boundaries (price, separator line, and link) are perfectly aligned.
 
 ---
 
@@ -20,27 +20,20 @@ In Telegram, putting different emojis on different lines (e.g. `🧟` and `👤`
 - **Max price width (`max_len`):** `7` characters.
 - **Price padding:** `.rjust(7)` or `.rjust(max_len)`.
 - **Status/Verdict indent:** align immediately after the vertical pipe `│`.
-- **Link padding (`spaces_len`):** Dynamic based on the emoji rendering width difference:
-  - `max_len + 1` (e.g. `7 + 1 = 8` spaces) for `+PVE` line (starts with `🧟`).
-  - `max_len + 2` (e.g. `7 + 2 = 9` spaces) for `-PVE` line (starts with `👤`).
+- **Link padding (`spaces_len`):** `max_len + 2` (e.g. `7 + 2 = 9` spaces) for both blocks.
 
 ### Code Template (Python)
 
 ```python
 # Widths
 max_len = 7
+spaces_len = max_len + 2
+spaces_str = " " * spaces_len
 
-# +PVE Block
-spaces_len_pve = max_len + 1
-spaces_str_pve = " " * spaces_len_pve
-pve_line = f"<code>🧟 +PVE   {pve_display}  │ </code>{verdict}"
-link_line_pve = f"<code>🔗{spaces_str_pve}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
+pve_line = f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}"
+link_line = f"🔗 <code>{spaces_str}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
 
-# -PVE Block
-spaces_len_nopve = max_len + 2
-spaces_str_nopve = " " * spaces_len_nopve
-nopve_line = f"<code>👤 -PVE   {nopve_display}  │ </code>{verdict}"
-link_line_nopve = f"<code>🔗{spaces_str_nopve}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
+nopve_line = f"👤 <code>-PVE   {nopve_display}  │ </code>{verdict}"
 ```
 
 ---
