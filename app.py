@@ -2693,7 +2693,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         p_display = p_str.rjust(7)
-                        spaces_len = 7 + 2
+                        spaces_len = 7 + 1
                         spaces_str = " " * spaces_len
                         item_lines.append(f"<code>🧟 +PVE   {p_display}  │ </code>{verdict}\n<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
@@ -2726,7 +2726,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         pve_lines.append(f"<code>🧟 +PVE   {pve_display}  │ </code>{verdict}")
-                        spaces_len = max_len + 2
+                        spaces_len = max_len + 1
                         spaces_str = " " * spaces_len
                         pve_lines.append(f"<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
@@ -2742,7 +2742,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         nopve_lines.append(f"<code>👤 -PVE   {nopve_display}  │ </code>{verdict}")
-                        spaces_len = max_len + 3
+                        spaces_len = max_len + 2
                         spaces_str = " " * spaces_len
                         nopve_lines.append(f"<code>🔗{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
