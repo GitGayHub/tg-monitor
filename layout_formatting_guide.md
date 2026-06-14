@@ -8,7 +8,7 @@ In Telegram, putting different emojis on different lines (e.g. `🧟` and `👤`
 ### Correct Approach (Emojis Outside Code Tags, Space Separator)
 ```html
 🧟 <code>+PVE   8248₽  │ </code>🟣 Дорого
-🔗 <code>         </code><b><code>*ТЫК*</code></b>
+🔗 <code>         </code><b>*ТЫК*</b>
 ```
 *Result:* Emojis and a single space are rendered outside the monospace block, ensuring all starting offsets and column boundaries (price, separator line, and link) are perfectly aligned.
 
@@ -35,7 +35,7 @@ max_len = 7
 spaces_str = " " * spaces_len
 
 pve_line = f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}"
-link_line = f"🔗 <code>{spaces_str}</code><a href=\"{url}\"><b><code>*ТЫК*</code></b></a>"
+link_line = f"🔗 <code>{spaces_str}</code><a href=\"{url}\"><b>*ТЫК*</b></a>"
 
 nopve_line = f"👤 <code>-PVE   {nopve_display}  │ </code>{verdict}"
 ```

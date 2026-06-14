@@ -2745,7 +2745,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         p_display = p_str.rjust(7)
                         spaces_len = 10 if int(p) < 10 else 9
                         spaces_str = " " * spaces_len
-                        item_lines.append(f"🧟 <code>+PVE   {p_display}  │ </code>{verdict}\n🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b><code>*ТЫК*</code></b></a>")
+                        item_lines.append(f"🧟 <code>+PVE   {p_display}  │ </code>{verdict}\n🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
                         p_display = "---".rjust(7)
                         verdict = "⚠️ Ошибка 502" if stat.get('error') else "❌ Не найдено"
@@ -2784,7 +2784,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         pve_lines.append(f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}")
-                        pve_lines.append(f"🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b><code>*ТЫК*</code></b></a>")
+                        pve_lines.append(f"🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
                         verdict = "⚠️ Ошибка 502" if stat.get('error') else "❌ Не найдено"
                         pve_lines.append(f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}")
@@ -2799,7 +2799,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         nopve_lines.append(f"👤 <code>-PVE   {nopve_display}  │ </code>{verdict}")
-                        nopve_lines.append(f"🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b><code>*ТЫК*</code></b></a>")
+                        nopve_lines.append(f"🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
                         verdict = "⚠️ Ошибка 502" if stat.get('error') else "❌ Не найдено"
                         nopve_lines.append(f"👤 <code>-PVE   {nopve_display}  │ </code>{verdict}")
