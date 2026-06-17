@@ -2400,37 +2400,45 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             else:
                 source_line = "💻 <b>Локальный автомониторинг</b>"
             
+            link_line = f"🔗 <a href='{href}'>Ссылка</a>"
+            desc_escaped = html.escape(candidate['short_description'])
             if x5_mode:
                 passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
                 msg = (
                     f"🔔 <b>Найдено предложение!</b>\n"
-                    f"⚙️ <b>Режим:</b> х5 режим\n\n"
+                    f"⚙️ <b>Режим:</b> х5 режим\n"
+                    f"<code>───────────────────────────────</code>\n\n"
                     f"⭐ <b>Главное:</b> {main_feature}\n"
                     f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a> (Моя цена в конфиге: {original_my_max_price}₽)\n"
                     f"🤔 <b>Подошло бы без х5 режима:</b> {passed_str}\n"
                     f"🧟 <b>PVE:</b> {pve_text}\n"
                     f"📊 <b>Оценка:</b> {price_breakdown}\n"
-                    f"📌 <b>Название:</b> {candidate['short_description']}\n"
-                    f"🎮 <b>Скины:</b> {skins_list}\n"
-                    f"👤 <b>Продавец:</b> {candidate['user']}\n"
-                    f"{rating_emoji} <b>Рейтинг:</b> {rating_text}\n"
-                    f"🔗 <a href='{href}'>Ссылка на товар</a>"
+                    f"🎮 <b>Скины:</b> {skins_list}\n\n"
+                    f"<code>───────────────────────────────</code>\n\n"
+                    f"📌 <b>Название:</b> {desc_escaped}\n\n"
+                    f"<code>───────────────────────────────</code>\n\n"
+                    f"👤 <b>Продавец:</b> {candidate['user']} ({rating_text})\n\n"
+                    f"{ban_line}  │  {link_line}\n\n"
+                    f"<code>───────────────────────────────</code>\n\n"
+                    f"{source_line}"
                 )
             else:
                 msg = (
-                    f"🔔 <b>Найдено предложение!</b>\n\n"
+                    f"🔔 <b>Найдено предложение!</b>\n"
+                    f"<code>───────────────────────────────</code>\n\n"
                     f"⭐ <b>Главное:</b> {main_feature}\n"
                     f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n"
                     f"🧟 <b>PVE:</b> {pve_text}\n"
                     f"📊 <b>Оценка:</b> {price_breakdown}\n"
-                    f"📌 <b>Название:</b> {candidate['short_description']}\n"
-                    f"🎮 <b>Скины:</b> {skins_list}\n"
-                    f"👤 <b>Продавец:</b> {candidate['user']}\n"
-                    f"{rating_emoji} <b>Рейтинг:</b> {rating_text}\n"
-                    f"🔗 <a href='{href}'>Ссылка на товар</a>"
+                    f"🎮 <b>Скины:</b> {skins_list}\n\n"
+                    f"<code>───────────────────────────────</code>\n\n"
+                    f"📌 <b>Название:</b> {desc_escaped}\n\n"
+                    f"<code>───────────────────────────────</code>\n\n"
+                    f"👤 <b>Продавец:</b> {candidate['user']} ({rating_text})\n\n"
+                    f"{ban_line}  │  {link_line}\n\n"
+                    f"<code>───────────────────────────────</code>\n\n"
+                    f"{source_line}"
                 )
-            link_line = f"🔗 <a href='{href}'>Ссылка</a>"
-            msg = msg.replace(f"🔗 <a href='{href}'>Ссылка на товар</a>", f"{ban_line}\n{link_line}\n{source_line}")
 
             try:
                 if context:
@@ -2743,7 +2751,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         p_display = p_str.rjust(7)
-                        spaces_len = 10 if int(p) < 10 else 9
+                        spaces_len = 10 if int(p) < 100 else 9
                         spaces_str = " " * spaces_len
                         item_lines.append(f"🧟 <code>+PVE   {p_display}  │ </code>{verdict}\n🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
@@ -2773,8 +2781,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     # 1. PVE Block
                     pve_p = best_with_pve['price'] if best_with_pve else None
                     nopve_p = best_without_pve['price'] if best_without_pve else None
-                    pve_ok = (pve_p is None) or (int(pve_p) < 10)
-                    nopve_ok = (nopve_p is None) or (int(nopve_p) < 10)
+                    pve_ok = (pve_p is None) or (int(pve_p) < 100)
+                    nopve_ok = (nopve_p is None) or (int(nopve_p) < 100)
                     spaces_len = 10 if (pve_ok and nopve_ok) else 9
                     spaces_str = " " * spaces_len
 
@@ -2840,8 +2848,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 except Exception as e:
                     logger.error(f"Ошибка отправки части {idx} диагностического отчета: {e}")
 
-            clear_monitoring_state()
-            logger.info("🧹 Тестовый режим: история очищена перед повтором")
+            logger.info("📊 Тестовый режим: отчет отправлен, история не сбрасывается")
 
         return sent_count
 
