@@ -2400,43 +2400,56 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             else:
                 source_line = "💻 <b>Локальный автомониторинг</b>"
             
+            # Determine display name and emoji for the main feature
+            from handlers import _skin_emoji as _get_skin_emoji
+            edition_ids = set(config.get_all_editions().keys())
+            if premium_only and matched_edition:
+                display_title = f"🏆 {matched_edition.replace('_', ' ').title()}"
+            elif found_skins:
+                def skin_price(skin):
+                    return rare_override if rare_override is not None else skin['price']
+                main_skin = max(found_skins, key=skin_price)
+                skin_id = main_skin['id']
+                skin_emoji = _get_skin_emoji(skin_id) or "🎮"
+                skin_name = skin_id.replace('_', ' ').title()
+                display_title = f"{skin_emoji} {skin_name}"
+            elif has_confirmed_pve:
+                display_title = "🧟 Подтв. PVE"
+            elif has_any_pve:
+                display_title = "🧟 Неподтв. PVE"
+            else:
+                if matched_keyword:
+                    display_title = f"🔔 {matched_keyword.title()}"
+                else:
+                    display_title = "🔔 Найдено предложение!"
+
             link_line = f"🔗 <a href='{href}'>Ссылка</a>"
             desc_escaped = html.escape(candidate['short_description'])
             if x5_mode:
                 passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
                 msg = (
-                    f"🔔 <b>Найдено предложение!</b>\n"
-                    f"⚙️ <b>Режим:</b> х5 режим\n"
-                    f"<code>───────────────────────────────</code>\n\n"
-                    f"⭐ <b>Главное:</b> {main_feature}\n"
-                    f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a> (Моя цена в конфиге: {original_my_max_price}₽)\n"
-                    f"🤔 <b>Подошло бы без х5 режима:</b> {passed_str}\n"
-                    f"🧟 <b>PVE:</b> {pve_text}\n"
-                    f"📊 <b>Оценка:</b> {price_breakdown}\n"
-                    f"🎮 <b>Скины:</b> {skins_list}\n\n"
-                    f"<code>───────────────────────────────</code>\n\n"
-                    f"📌 <b>Название:</b> {desc_escaped}\n\n"
-                    f"<code>───────────────────────────────</code>\n\n"
-                    f"👤 <b>Продавец:</b> {candidate['user']} ({rating_text})\n\n"
+                    f"<b>{display_title}</b>\n\n"
+                    f"<code>⚙️ Режим:     х5 режим\n"
+                    f"💸 Цена:      {candidate['price_text']} (лимит: {original_my_max_price}₽)\n"
+                    f"🤔 Без х5:     {passed_str}\n"
+                    f"🧟 PVE:       {pve_text}\n"
+                    f"📈 Оценка:    {price_breakdown}\n"
+                    f"👤 Продавец:  {candidate['user']} ({rating_text})</code>\n\n"
+                    f"🎮 <b>Скины:</b> {skins_list}\n"
+                    f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
                     f"{ban_line}  │  {link_line}\n\n"
-                    f"<code>───────────────────────────────</code>\n\n"
                     f"{source_line}"
                 )
             else:
                 msg = (
-                    f"🔔 <b>Найдено предложение!</b>\n"
-                    f"<code>───────────────────────────────</code>\n\n"
-                    f"⭐ <b>Главное:</b> {main_feature}\n"
-                    f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n"
-                    f"🧟 <b>PVE:</b> {pve_text}\n"
-                    f"📊 <b>Оценка:</b> {price_breakdown}\n"
-                    f"🎮 <b>Скины:</b> {skins_list}\n\n"
-                    f"<code>───────────────────────────────</code>\n\n"
-                    f"📌 <b>Название:</b> {desc_escaped}\n\n"
-                    f"<code>───────────────────────────────</code>\n\n"
-                    f"👤 <b>Продавец:</b> {candidate['user']} ({rating_text})\n\n"
+                    f"<b>{display_title}</b>\n\n"
+                    f"<code>💸 Цена:      {candidate['price_text']}\n"
+                    f"🧟 PVE:       {pve_text}\n"
+                    f"📈 Оценка:    {price_breakdown}\n"
+                    f"👤 Продавец:  {candidate['user']} ({rating_text})</code>\n\n"
+                    f"🎮 <b>Скины:</b> {skins_list}\n"
+                    f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
                     f"{ban_line}  │  {link_line}\n\n"
-                    f"<code>───────────────────────────────</code>\n\n"
                     f"{source_line}"
                 )
 
