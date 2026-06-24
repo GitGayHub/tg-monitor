@@ -2467,9 +2467,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             pve_emoji = "✅" if has_any_pve else "❌"
             limit_val_for_align = x5_my_max_price if x5_mode else original_my_max_price
             limit_val_str = f"{limit_val_for_align}₽"
-            middle_idx = 18 + len(limit_val_str) // 2
-            spaces_count = max(1, middle_idx - 5)
-            pve_line = "🧟 PVE" + (" " * spaces_count) + pve_emoji
+            middle_idx = 15 + len(limit_val_str) // 2
+            spaces_count = max(1, middle_idx - 3)
+            pve_line_inner = "PVE" + (" " * spaces_count) + pve_emoji
 
             if os.environ.get("GITHUB_ACTIONS") == "true":
                 source_line = "🤖 <b>GitHub автомониторинг</b>"
@@ -2504,12 +2504,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 msg = (
                     f"<b>{display_title}</b>\n\n"
                     f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n\n"
-                    f"<code>⚙️ Режим:     х5 режим\n"
-                    f"💸 Лимит:         {x5_my_max_price}₽\n"
-                    f"🤔 Без х5:     {passed_str}\n"
-                    f"{pve_line}\n"
-                    f"👤 Продавец:  {candidate['user']} ({rating_text})</code>\n\n"
-                    f"🎮 <b>Скины:</b> {skins_list}\n"
+                    f"⚙️ <code>Режим:         х5 режим</code>\n"
+                    f"💸 <code>Лимит:         {x5_my_max_price}₽</code>\n"
+                    f"🤔 <code>Без х5:        {passed_str}</code>\n"
+                    f"🧟 <code>{pve_line_inner}</code>\n"
+                    f"👤 <code>Продавец:      {candidate['user']} ({rating_text})</code>\n"
+                    f"🎮 <b>Основное:</b> {skins_list}\n\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
                     f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
                     f"{source_line}"
@@ -2518,10 +2518,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 msg = (
                     f"<b>{display_title}</b>\n\n"
                     f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n\n"
-                    f"<code>💸 Лимит:         {original_my_max_price}₽\n"
-                    f"{pve_line}\n"
-                    f"👤 Продавец:  {candidate['user']} ({rating_text})</code>\n\n"
-                    f"🎮 <b>Скины:</b> {skins_list}\n"
+                    f"💸 <code>Лимит:         {original_my_max_price}₽</code>\n"
+                    f"🧟 <code>{pve_line_inner}</code>\n"
+                    f"👤 <code>Продавец:      {candidate['user']} ({rating_text})</code>\n"
+                    f"🎮 <b>Основное:</b> {skins_list}\n\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
                     f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
                     f"{source_line}"
