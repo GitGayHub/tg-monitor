@@ -2505,25 +2505,50 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             # Format value inside the table: limit price from the config
             # (which is x5_my_max_price or original_my_max_price)
             limit_val_for_align = x5_my_max_price if x5_mode else original_my_max_price
-            limit_val = f"{limit_val_for_align}₽".rjust(8)
 
-            # Emojis inside the <code> block for perfect alignment
-            limit_row = f"<code>💸 Лимит       │ {limit_val}</code>"
-            pve_row = f"<code>🧟   PVE       │         </code>{pve_emoji}"
-            seller_row = f"<code>👤 Продавец    │         </code>{seller_status_emoji}"
-            skins_row = f"<code>🎮 Основное    │ </code>{skins_list}"
+            pve_price_str = f"{int(candidate['price_value'])}₽" if has_any_pve else None
+            nopve_price_str = None if has_any_pve else f"{int(candidate['price_value'])}₽"
+            
+            pve_display = pve_price_str.rjust(7) if pve_price_str else "---".rjust(7)
+            nopve_display = nopve_price_str.rjust(7) if nopve_price_str else "---".rjust(7)
+            
+            # verdicts
+            if has_any_pve:
+                pve_verdict = "✅ Подходит" if passed_without_x5 else "🟣 Дорого"
+                nopve_verdict = "❌ Не найдено"
+            else:
+                if skin_require_pve:
+                    nopve_verdict = "🟣 Требуется PVE"
+                else:
+                    nopve_verdict = "✅ Подходит" if passed_without_x5 else "🟣 Дорого"
+                pve_verdict = "❌ Не найдено"
+
+            pve_row = f"🧟 <code>+PVE   {pve_display}  │ </code>{pve_verdict}"
+            nopve_row = f"👤 <code>-PVE   {nopve_display}  │ </code>{nopve_verdict}"
+
+            if has_any_pve:
+                spaces_len = 12 - len(pve_price_str) // 2
+                spaces_str = " " * spaces_len
+                pve_block = f"{pve_row}\n🔗 <code>{spaces_str}</code><a href=\"{href}\"><b>*ТЫК*</b></a>"
+                nopve_block = nopve_row
+            else:
+                spaces_len = 12 - len(nopve_price_str) // 2
+                spaces_str = " " * spaces_len
+                pve_block = pve_row
+                nopve_block = f"{nopve_row}\n🔗 <code>{spaces_str}</code><a href=\"{href}\"><b>*ТЫК*</b></a>"
+
+            pve_nopve_section = f"{pve_block}\n\n{nopve_block}"
 
             if x5_mode:
                 passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
                 msg = (
                     f"<b>{display_title}</b>\n\n"
-                    f"💰 <b>Цена:</b> <a href='{href}'><b>{candidate['price_text']}</b></a>\n\n"
+                    f"💸 Лимит: {limit_val_for_align}₽\n"
                     f"⚙️ <code>Режим:     х5 режим</code>\n"
                     f"🤔 <code>Без х5:    {passed_str}</code>\n\n"
-                    f"{limit_row}\n"
-                    f"{pve_row}\n"
-                    f"{seller_row}\n"
-                    f"{skins_row}\n\n"
+                    f"{pve_nopve_section}\n\n"
+                    f"👤 <b>Продавец:</b> {candidate['user']} ({rating_text})\n"
+                    f"🎮 <b>Основное:</b> {skins_list}\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
                     f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
                     f"{source_line}"
@@ -2531,11 +2556,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             else:
                 msg = (
                     f"<b>{display_title}</b>\n\n"
-                    f"💰 <b>Цена:</b> <a href='{href}'><b>{candidate['price_text']}</b></a>\n\n"
-                    f"{limit_row}\n"
-                    f"{pve_row}\n"
-                    f"{seller_row}\n"
-                    f"{skins_row}\n\n"
+                    f"💸 Лимит: {limit_val_for_align}₽\n\n"
+                    f"{pve_nopve_section}\n\n"
+                    f"👤 <b>Продавец:</b> {candidate['user']} ({rating_text})\n"
+                    f"🎮 <b>Основное:</b> {skins_list}\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
                     f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
                     f"{source_line}"
@@ -4024,22 +4048,7 @@ async def run_once(verbose=False):
     global bot_username
     """Запуск один раз и выход, для GitHub Actions / Cron."""
     setup_logging(verbose=verbose)
-    try:
-        env_chat = os.environ.get('TELEGRAM_CHAT_ID')
-        if env_chat:
-            import json
-            sent_offers = {}
-            if os.path.exists('sent_offers.json'):
-                try:
-                    with open('sent_offers.json', 'r', encoding='utf-8') as f:
-                        sent_offers = json.load(f)
-                except Exception:
-                    sent_offers = {}
-            sent_offers['_telegram_chat_id'] = str(env_chat)
-            with open('sent_offers.json', 'w', encoding='utf-8') as f:
-                json.dump(sent_offers, f, indent=2)
-    except Exception:
-        pass
+
     if not TELEGRAM_BOT_TOKEN:
         print("FATAL: TELEGRAM_BOT_TOKEN not set")
         sys.exit(1)
