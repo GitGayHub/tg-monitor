@@ -2455,13 +2455,21 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             # Get or create seller ID for the ban link
             seller_id = get_or_create_seller_id(candidate['user'])
             ban_seller_href = f"https://t.me/{bot_username}?start=banseller_{seller_id}" if bot_username else None
-            ban_seller_line = f"🚫 <a href='{ban_seller_href}'>Бан продавца</a>" if ban_seller_href else f"🚫 Бан: /banseller {candidate['user']}"
+            ban_line = f"🚫 <a href='{ban_seller_href}'>Бан</a>" if ban_seller_href else f"🚫 Бан: /banseller {candidate['user']}"
 
             hide_href = f"https://t.me/{bot_username}?start=ban_{offer_id}" if bot_username else None
-            hide_line = f"❌ <a href='{hide_href}'>Скрыть навсегда</a>" if hide_href else f"❌ Скрыть: /ban {offer_id}"
+            hide_line = f"❌ <a href='{hide_href}'>Скрыть</a>" if hide_href else f"❌ Скрыть: /ban {offer_id}"
 
             link_line = f"🔗 <a href='{href}'>Ссылка</a>"
             desc_escaped = html.escape(candidate['short_description'])
+
+            # PVE Checkmark / Cross logic
+            pve_emoji = "✅" if has_any_pve else "❌"
+            limit_val_for_align = x5_my_max_price if x5_mode else original_my_max_price
+            limit_val_str = f"{limit_val_for_align}₽"
+            middle_idx = 18 + len(limit_val_str) // 2
+            spaces_count = max(1, middle_idx - 5)
+            pve_line = "🧟 PVE" + (" " * spaces_count) + pve_emoji
 
             if os.environ.get("GITHUB_ACTIONS") == "true":
                 source_line = "🤖 <b>GitHub автомониторинг</b>"
@@ -2495,27 +2503,27 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
                 msg = (
                     f"<b>{display_title}</b>\n\n"
-                    f"💸 <b>Цена:</b>      <a href='{href}'>{candidate['price_text']}</a> (лимит: {original_my_max_price}₽)\n"
+                    f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n\n"
                     f"<code>⚙️ Режим:     х5 режим\n"
+                    f"💸 Лимит:         {x5_my_max_price}₽\n"
                     f"🤔 Без х5:     {passed_str}\n"
-                    f"🧟 PVE:       {pve_text}\n"
-                    f"📈 Наша цена: {price_breakdown}\n"
+                    f"{pve_line}\n"
                     f"👤 Продавец:  {candidate['user']} ({rating_text})</code>\n\n"
                     f"🎮 <b>Скины:</b> {skins_list}\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
-                    f"{ban_seller_line}  │  {hide_line}  │  {link_line}\n\n"
+                    f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
                     f"{source_line}"
                 )
             else:
                 msg = (
                     f"<b>{display_title}</b>\n\n"
-                    f"💸 <b>Цена:</b>      <a href='{href}'>{candidate['price_text']}</a>\n"
-                    f"<code>🧟 PVE:       {pve_text}\n"
-                    f"📈 Наша цена: {price_breakdown}\n"
+                    f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n\n"
+                    f"<code>💸 Лимит:         {original_my_max_price}₽\n"
+                    f"{pve_line}\n"
                     f"👤 Продавец:  {candidate['user']} ({rating_text})</code>\n\n"
                     f"🎮 <b>Скины:</b> {skins_list}\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
-                    f"{ban_seller_line}  │  {hide_line}  │  {link_line}\n\n"
+                    f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
                     f"{source_line}"
                 )
 
