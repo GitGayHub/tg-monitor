@@ -1970,6 +1970,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 banned_count += 1
                 continue
 
+            user_div = item.find('div', class_='media-user-name')
             user = user_div.get_text(strip=True) if user_div else "Неизвестный"
             if user in banned_sellers:
                 logger.info(f"👤 Пропуск: продавец {user} забанен")
@@ -1977,7 +1978,6 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             desc_div = item.find('div', class_='tc-desc-text')
             price_div = item.find('div', class_='tc-price')
-            user_div = item.find('div', class_='media-user-name')
 
             short_description = desc_div.get_text(strip=True) if desc_div else ""
             price_text = price_div.get_text(strip=True) if price_div else "Нет цены"
