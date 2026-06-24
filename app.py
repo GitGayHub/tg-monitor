@@ -46,6 +46,17 @@ BANNED_SELLERS_FILE = 'banned_sellers.txt'
 SELLER_MAP_FILE = 'seller_map.json'
 SENT_OFFERS_FILE = 'sent_offers.json'
 
+def get_spaces_len(price):
+    if price is None:
+        return 10
+    try:
+        val_str = str(int(price))
+    except (ValueError, TypeError):
+        return 10
+    num_digits = len(val_str)
+    return 10 if (num_digits % 2 == 1) else 11
+
+
 def setup_logging(verbose=False):
     if verbose:
         logging.basicConfig(
@@ -2526,14 +2537,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             pve_row = f"🧟 <code>+PVE   {pve_display}  │ </code>{pve_verdict}"
             nopve_row = f"👤 <code>-PVE   {nopve_display}  │ </code>{nopve_verdict}"
 
+            spaces_len = get_spaces_len(candidate['price_value'])
+            spaces_str = " " * spaces_len
+
             if has_any_pve:
-                spaces_len = 12 - len(pve_price_str) // 2
-                spaces_str = " " * spaces_len
                 pve_block = f"{pve_row}\n🔗 <code>{spaces_str}</code><a href=\"{href}\"><b>*ТЫК*</b></a>"
                 nopve_block = nopve_row
             else:
-                spaces_len = 12 - len(nopve_price_str) // 2
-                spaces_str = " " * spaces_len
                 pve_block = pve_row
                 nopve_block = f"{nopve_row}\n🔗 <code>{spaces_str}</code><a href=\"{href}\"><b>*ТЫК*</b></a>"
 
@@ -2543,10 +2553,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
                 msg = (
                     f"<b>{display_title}</b>\n\n"
-                    f"💸 Лимит: {limit_val_for_align}₽\n"
+                    f"💰 <b>Цена:</b> <a href='{href}'><b>{candidate['price_text']}</b></a>\n\n"
                     f"⚙️ <code>Режим:     х5 режим</code>\n"
                     f"🤔 <code>Без х5:    {passed_str}</code>\n\n"
                     f"{pve_nopve_section}\n\n"
+                    f"💸 Лимит: {limit_val_for_align}₽\n"
                     f"👤 <b>Продавец:</b> {candidate['user']} ({rating_text})\n"
                     f"🎮 <b>Основное:</b> {skins_list}\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
@@ -2556,8 +2567,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             else:
                 msg = (
                     f"<b>{display_title}</b>\n\n"
-                    f"💸 Лимит: {limit_val_for_align}₽\n\n"
+                    f"💰 <b>Цена:</b> <a href='{href}'><b>{candidate['price_text']}</b></a>\n\n"
                     f"{pve_nopve_section}\n\n"
+                    f"💸 Лимит: {limit_val_for_align}₽\n"
                     f"👤 <b>Продавец:</b> {candidate['user']} ({rating_text})\n"
                     f"🎮 <b>Основное:</b> {skins_list}\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
@@ -2876,7 +2888,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
                         p_str = f"{int(p)}₽"
                         p_display = p_str.rjust(7)
-                        spaces_len = 10 if int(p) < 100 else 9
+                        spaces_len = get_spaces_len(p)
                         spaces_str = " " * spaces_len
                         item_lines.append(f"🧟 <code>+PVE   {p_display}  │ </code>{verdict}\n🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
@@ -2904,18 +2916,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     nopve_display = nopve_str.rjust(max_len) if nopve_str else nopve_dashes.rjust(max_len)
                     
                     # 1. PVE Block
-                    pve_p = best_with_pve['price'] if best_with_pve else None
-                    nopve_p = best_without_pve['price'] if best_without_pve else None
-                    pve_ok = (pve_p is None) or (int(pve_p) < 100)
-                    nopve_ok = (nopve_p is None) or (int(nopve_p) < 100)
-                    spaces_len = 10 if (pve_ok and nopve_ok) else 9
-                    spaces_str = " " * spaces_len
-
                     pve_lines = []
                     if best_with_pve:
                         p = best_with_pve['price']
                         h = best_with_pve['href']
                         verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
+                        spaces_len = get_spaces_len(p)
+                        spaces_str = " " * spaces_len
                         pve_lines.append(f"🧟 <code>+PVE   {pve_display}  │ </code>{verdict}")
                         pve_lines.append(f"🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
@@ -2931,6 +2938,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                             verdict = "🟣 Требуется PVE"
                         else:
                             verdict = "✅ Подходит" if p <= limit_price else "🟣 Дорого"
+                        spaces_len = get_spaces_len(p)
+                        spaces_str = " " * spaces_len
                         nopve_lines.append(f"👤 <code>-PVE   {nopve_display}  │ </code>{verdict}")
                         nopve_lines.append(f"🔗 <code>{spaces_str}</code><a href=\"{html.escape(h)}\"><b>*ТЫК*</b></a>")
                     else:
