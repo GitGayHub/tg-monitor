@@ -257,11 +257,12 @@ def load_sent_offers():
     # Rebuild sent_by_seller index
     sent_by_seller = {}
     for oid, sent in sent_offers.items():
-        sent['offer_id'] = oid
-        seller = sent.get('seller')
-        if seller:
-            seller_key = seller.strip().lower()
-            sent_by_seller.setdefault(seller_key, []).append(sent)
+        if isinstance(sent, dict):
+            sent['offer_id'] = oid
+            seller = sent.get('seller')
+            if seller:
+                seller_key = seller.strip().lower()
+                sent_by_seller.setdefault(seller_key, []).append(sent)
 
 def save_sent_offer(offer_id, price, description, seller=None):
     global sent_offers, sent_by_seller
