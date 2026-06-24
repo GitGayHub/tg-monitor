@@ -2500,18 +2500,23 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 else:
                     display_title = "🔔 Найдено предложение!"
 
-            price_val = candidate['price_text'].rjust(8)
-            limit_row = f"💸 <code>Лимит       │ </code><a href='{href}'><b><code>{price_val}</code></b></a>"
-            pve_row = f"🧟 <code>  PVE       │         </code>{pve_emoji}"
-            seller_row = f"👤 <code>Продавец    │         </code>{seller_status_emoji}"
-            skins_row = f"🎮 <code>Основное    │ </code>{skins_list}"
+            # Format value inside the table: limit price from the config
+            # (which is x5_my_max_price or original_my_max_price)
+            limit_val_for_align = x5_my_max_price if x5_mode else original_my_max_price
+            limit_val = f"{limit_val_for_align}₽".rjust(8)
+
+            # Emojis inside the <code> block for perfect alignment
+            limit_row = f"<code>💸 Лимит       │ {limit_val}</code>"
+            pve_row = f"<code>🧟   PVE       │         </code>{pve_emoji}"
+            seller_row = f"<code>👤 Продавец    │         </code>{seller_status_emoji}"
+            skins_row = f"<code>🎮 Основное    │ </code>{skins_list}"
 
             if x5_mode:
                 passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
                 msg = (
                     f"<b>{display_title}</b>\n\n"
+                    f"💰 <b>Цена:</b> <a href='{href}'><b>{candidate['price_text']}</b></a>\n\n"
                     f"⚙️ <code>Режим:     х5 режим</code>\n"
-                    f"💸 <code>Лимит:     {x5_my_max_price}₽</code>\n"
                     f"🤔 <code>Без х5:    {passed_str}</code>\n\n"
                     f"{limit_row}\n"
                     f"{pve_row}\n"
@@ -2524,7 +2529,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             else:
                 msg = (
                     f"<b>{display_title}</b>\n\n"
-                    f"💸 Лимит: {original_my_max_price}₽\n\n"
+                    f"💰 <b>Цена:</b> <a href='{href}'><b>{candidate['price_text']}</b></a>\n\n"
                     f"{limit_row}\n"
                     f"{pve_row}\n"
                     f"{seller_row}\n"
