@@ -4022,6 +4022,22 @@ async def run_once(verbose=False):
     global bot_username
     """Запуск один раз и выход, для GitHub Actions / Cron."""
     setup_logging(verbose=verbose)
+    try:
+        env_chat = os.environ.get('TELEGRAM_CHAT_ID')
+        if env_chat:
+            import json
+            sent_offers = {}
+            if os.path.exists('sent_offers.json'):
+                try:
+                    with open('sent_offers.json', 'r', encoding='utf-8') as f:
+                        sent_offers = json.load(f)
+                except Exception:
+                    sent_offers = {}
+            sent_offers['_telegram_chat_id'] = str(env_chat)
+            with open('sent_offers.json', 'w', encoding='utf-8') as f:
+                json.dump(sent_offers, f, indent=2)
+    except Exception:
+        pass
     if not TELEGRAM_BOT_TOKEN:
         print("FATAL: TELEGRAM_BOT_TOKEN not set")
         sys.exit(1)
