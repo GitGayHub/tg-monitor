@@ -43,6 +43,8 @@ SEEN_IDS_FILE = 'seen_ids.txt'
 SEEN_CACHE_FILE = 'seen_cache.json'
 SENT_OFFERS_FILE = 'sent_offers.json'
 BANNED_IDS_FILE = 'banned_ids.txt'
+BANNED_SELLERS_FILE = 'banned_sellers.txt'
+SELLER_MAP_FILE = 'seller_map.json'
 
 def setup_logging(verbose=False):
     if verbose:
@@ -82,6 +84,9 @@ seen_cache = {}
 sent_offers = {}
 sent_by_seller = {}
 banned_ids = set()
+banned_sellers = set()
+seller_map = {}
+seller_reverse_map = {}
 check_run_count = 0
 
 # Глобальный кэш деталей предложений (для минимизации запросов к FunPay)
@@ -185,6 +190,63 @@ def clear_banned_ids():
     with open(BANNED_IDS_FILE, 'w') as f:
         f.write('')
     return removed
+
+def load_banned_sellers():
+    global banned_sellers
+    try:
+        with open(BANNED_SELLERS_FILE, 'r', encoding='utf-8') as f:
+            banned_sellers = set(line.strip() for line in f if line.strip())
+    except FileNotFoundError:
+        banned_sellers = set()
+
+def save_banned_sellers():
+    try:
+        with open(BANNED_SELLERS_FILE, 'w', encoding='utf-8') as f:
+            for seller in sorted(banned_sellers):
+                f.write(seller + '\n')
+    except Exception as e:
+        logger.warning(f"Ошибка сохранения banned_sellers: {e}")
+
+def clear_banned_sellers():
+    global banned_sellers
+    removed = len(banned_sellers)
+    banned_sellers.clear()
+    try:
+        with open(BANNED_SELLERS_FILE, 'w', encoding='utf-8') as f:
+            f.write('')
+    except Exception as e:
+        logger.warning(f"Ошибка очистки banned_sellers: {e}")
+    return removed
+
+def load_seller_map():
+    global seller_map, seller_reverse_map
+    try:
+        with open(SELLER_MAP_FILE, 'r', encoding='utf-8') as f:
+            seller_map = json.load(f)
+            seller_reverse_map = {v: k for k, v in seller_map.items()}
+    except (FileNotFoundError, json.JSONDecodeError):
+        seller_map = {}
+        seller_reverse_map = {}
+
+def save_seller_map():
+    try:
+        with open(SELLER_MAP_FILE, 'w', encoding='utf-8') as f:
+            json.dump(seller_map, f, ensure_ascii=False, indent=1)
+    except Exception as e:
+        logger.warning(f"Ошибка сохранения seller_map: {e}")
+
+def get_or_create_seller_id(seller_name):
+    if seller_name in seller_reverse_map:
+        return seller_reverse_map[seller_name]
+    import uuid
+    short_id = uuid.uuid4().hex[:12]
+    seller_map[short_id] = seller_name
+    seller_reverse_map[seller_name] = short_id
+    save_seller_map()
+    return short_id
+
+def get_seller_name_by_id(short_id):
+    return seller_map.get(short_id)
 
 def load_sent_offers():
     global sent_offers, sent_by_seller
@@ -1922,6 +1984,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             price_text = price_div.get_text(strip=True) if price_div else "Нет цены"
             price_value = parse_price(price_text)
             user = user_div.get_text(strip=True) if user_div else "Неизвестный"
+            if user in banned_sellers:
+                logger.info(f"👤 Пропуск: продавец {user} забанен")
+                continue
             short_desc_lower = normalize_match_text(short_description)
 
             already_seen = False
@@ -2393,9 +2458,6 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             else:
                 pve_text = "Нет"
 
-            ban_href = build_ban_link(offer_id)
-            ban_line = f"🚫 <a href='{ban_href}'>Бан</a>" if ban_href else f"🚫 Бан: /ban {offer_id}"
-            
             if os.environ.get("GITHUB_ACTIONS") == "true":
                 source_line = "🤖 <b>GitHub автомониторинг</b>"
             else:
@@ -2424,35 +2486,54 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 else:
                     display_title = "🔔 Найдено предложение!"
 
-            link_line = f"🔗 <a href='{href}'>Ссылка</a>"
             desc_escaped = html.escape(candidate['short_description'])
+
+            # Calculate helper variables for the table
+            is_seller_ok = True
+            if not rating_text or "0 отзывов" in rating_text or "Ошибка" in rating_text or "❗" in rating_text or "Нет рейтинга" in rating_text or "❌" in rating_text:
+                is_seller_ok = False
+            seller_status_emoji = "👌" if is_seller_ok else "❌"
+
+            pve_emoji = "✅" if has_any_pve else "❌"
+            limit_val = x5_my_max_price if x5_mode else original_my_max_price
+            limit_display = f"{int(limit_val)}₽".rjust(9)
+
+            # Generate seller mapping and links
+            seller_id = get_or_create_seller_id(candidate['user'])
+            ban_seller_href = f"https://t.me/{bot_username}?start=banseller_{seller_id}" if bot_username else None
+            ban_line = f"🚫 <a href='{ban_seller_href}'>Бан</a>" if ban_seller_href else f"🚫 Бан: /banseller {candidate['user']}"
+
+            hide_href = f"https://t.me/{bot_username}?start=ban_{offer_id}" if bot_username else None
+            hide_line = f"❌ <a href='{hide_href}'>Скрыть</a>" if hide_href else f"❌ Скрыть: /ban {offer_id}"
+            
+            link_line = f"🔗 <a href='{href}'>Ссылка</a>"
+
             if x5_mode:
-                passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
-                msg = (
-                    f"<b>{display_title}</b>\n\n"
-                    f"<code>⚙️ Режим:     х5 режим\n"
-                    f"💸 Цена:      {candidate['price_text']} (лимит: {original_my_max_price}₽)\n"
-                    f"🤔 Без х5:     {passed_str}\n"
-                    f"🧟 PVE:       {pve_text}\n"
-                    f"📈 Оценка:    {price_breakdown}\n"
-                    f"👤 Продавец:  {candidate['user']} ({rating_text})</code>\n\n"
-                    f"🎮 <b>Скины:</b> {skins_list}\n"
-                    f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
-                    f"{ban_line}  │  {link_line}\n\n"
-                    f"{source_line}"
+                passed_str_emoji = "✅" if passed_without_x5 else "❌"
+                table_content = (
+                    f"⚙️   Режим     │    x5 режим\n"
+                    f"🤔   Без х5    │         {passed_str_emoji}\n"
+                    f"💸 Лимит       │{limit_display}\n"
+                    f"🧟   PVE       │         {pve_emoji}\n"
+                    f"👤 Продавец    │         {seller_status_emoji}\n"
+                    f"🎮 Основное    │ {skins_list}"
                 )
             else:
-                msg = (
-                    f"<b>{display_title}</b>\n\n"
-                    f"<code>💸 Цена:      {candidate['price_text']}\n"
-                    f"🧟 PVE:       {pve_text}\n"
-                    f"📈 Оценка:    {price_breakdown}\n"
-                    f"👤 Продавец:  {candidate['user']} ({rating_text})</code>\n\n"
-                    f"🎮 <b>Скины:</b> {skins_list}\n"
-                    f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
-                    f"{ban_line}  │  {link_line}\n\n"
-                    f"{source_line}"
+                table_content = (
+                    f"💸 Лимит       │{limit_display}\n"
+                    f"🧟   PVE       │         {pve_emoji}\n"
+                    f"👤 Продавец    │         {seller_status_emoji}\n"
+                    f"🎮 Основное    │ {skins_list}"
                 )
+
+            msg = (
+                f"<b>{display_title}</b>\n\n"
+                f"💸 Цена: <a href='{href}'><b>{candidate['price_text']}</b></a>\n\n"
+                f"📌 Описание: <i>{desc_escaped}</i>\n\n"
+                f"<code>{table_content}</code>\n\n"
+                f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
+                f"{source_line}"
+            )
 
             try:
                 if context:
@@ -3035,6 +3116,63 @@ async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Всего в бан-листе: {len(banned_ids)}"
     )
 
+async def banseller_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /banseller — добавляет продавца в бан-лист или очищает его."""
+    global chat_id, banned_sellers
+    user_chat_id = update.effective_chat.id
+    if str(user_chat_id) != str(chat_id):
+        await update.message.reply_text("❌ Вы не авторизованы. Напишите /start")
+        return
+
+    args = context.args if context.args else []
+    if not args:
+        await update.message.reply_text(
+            "Использование: /banseller <username>\n"
+            "Или: /banseller clear"
+        )
+        return
+
+    if len(args) == 1 and args[0].lower() == 'clear':
+        removed = clear_banned_sellers()
+        await update.message.reply_text(f"✅ Бан-лист продавцов очищен. Удалено: {removed}")
+        return
+
+    seller_name = " ".join(args).strip()
+    if not seller_name:
+        await update.message.reply_text("❌ Неверное имя продавца.")
+        return
+
+    already_banned = seller_name in banned_sellers
+    banned_sellers.add(seller_name)
+    save_banned_sellers()
+
+    await update.message.reply_text(
+        f"✅ Продавец добавлен в бан-лист: <code>{seller_name}</code>\n"
+        f"Всего забанено продавцов: {len(banned_sellers)}",
+        parse_mode='HTML'
+    )
+
+async def unbanseller_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /unbanseller — удаляет продавца из бан-листа."""
+    global chat_id, banned_sellers
+    user_chat_id = update.effective_chat.id
+    if str(user_chat_id) != str(chat_id):
+        await update.message.reply_text("❌ Вы не авторизованы. Напишите /start")
+        return
+
+    args = context.args if context.args else []
+    if not args:
+        await update.message.reply_text("Использование: /unbanseller <username>")
+        return
+
+    seller_name = " ".join(args).strip()
+    if seller_name in banned_sellers:
+        banned_sellers.remove(seller_name)
+        save_banned_sellers()
+        await update.message.reply_text(f"✅ Продавец удалён из бан-листа: <code>{seller_name}</code>", parse_mode='HTML')
+    else:
+        await update.message.reply_text(f"❌ Продавец <code>{seller_name}</code> не найден в бан-листе.", parse_mode='HTML')
+
 async def pricetest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /pricetest — разовая проверка с тестовыми ценами."""
     global chat_id, bot_mode
@@ -3203,6 +3341,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args if context.args else []
     if args:
+        if args[0].startswith('banseller_'):
+            short_id = args[0].replace('banseller_', '', 1)
+            seller_name = get_seller_name_by_id(short_id)
+            if seller_name:
+                already_banned = seller_name in banned_sellers
+                banned_sellers.add(seller_name)
+                save_banned_sellers()
+                await update.message.reply_text(
+                    (
+                        f"👤 Продавец забанен: <code>{seller_name}</code>"
+                        if not already_banned else
+                        f"👤 Продавец уже в бан-листе: <code>{seller_name}</code>"
+                    ),
+                    parse_mode='HTML',
+                    reply_markup=keyboard
+                )
+            else:
+                await update.message.reply_text("❌ Продавец не найден в базе соответствий.", reply_markup=keyboard)
+            return
         ban_offer_id = extract_offer_id(args[0].replace('ban_', '', 1)) if args[0].startswith('ban_') else None
         if ban_offer_id:
             already_banned = ban_offer_id in banned_ids
@@ -3868,6 +4025,8 @@ async def run_once(verbose=False):
     load_seen_ids()
     load_sent_offers()
     load_banned_ids()
+    load_banned_sellers()
+    load_seller_map()
 
     if not chat_id:
         print("FATAL: Chat ID not found. Set TELEGRAM_CHAT_ID env var")
@@ -3922,6 +4081,8 @@ def main():
     load_seen_ids()
     load_sent_offers()
     load_banned_ids()
+    load_banned_sellers()
+    load_seller_map()
 
     _log_startup_banner("LOCAL")
     print("Запустите бота и напишите ему /start в Telegram.")
@@ -3930,6 +4091,8 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("ban", ban))
+    application.add_handler(CommandHandler("banseller", banseller_cmd))
+    application.add_handler(CommandHandler("unbanseller", unbanseller_cmd))
     application.add_handler(CommandHandler("recheck", recheck))
     application.add_handler(CommandHandler("pricetest", pricetest))
     application.add_handler(CommandHandler("stop", stop_command))
