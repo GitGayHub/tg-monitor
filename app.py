@@ -2467,14 +2467,13 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             pve_emoji = "✅" if has_any_pve else "❌"
             limit_val_for_align = x5_my_max_price if x5_mode else original_my_max_price
             limit_val_str = f"{limit_val_for_align}₽"
-            middle_idx = 15 + len(limit_val_str) // 2
-            spaces_count = max(1, middle_idx - 3)
-            pve_line_inner = "PVE" + (" " * spaces_count) + pve_emoji
+            center_idx = 11 + len(limit_val_str) // 2
+            pve_spaces = max(1, center_idx - 3)
 
             if os.environ.get("GITHUB_ACTIONS") == "true":
-                source_line = "🤖 <b>GitHub автомониторинг</b>"
+                source_line = "🤖 GitHub автомониторинг"
             else:
-                source_line = "💻 <b>Локальный автомониторинг</b>"
+                source_line = "💻 Локальный автомониторинг"
 
             # Determine display name and emoji for the main feature
             from handlers import _skin_emoji as _get_skin_emoji
@@ -2504,11 +2503,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 msg = (
                     f"<b>{display_title}</b>\n\n"
                     f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n\n"
-                    f"⚙️ <code>Режим:         х5 режим</code>\n"
-                    f"💸 <code>Лимит:         {x5_my_max_price}₽</code>\n"
-                    f"🤔 <code>Без х5:        {passed_str}</code>\n"
-                    f"🧟 <code>{pve_line_inner}</code>\n"
-                    f"👤 <code>Продавец:      {candidate['user']} ({rating_text})</code>\n"
+                    f"⚙️ <code>Режим:     х5 режим</code>\n"
+                    f"💸 <code>Лимит:     {x5_my_max_price}₽</code>\n"
+                    f"🤔 <code>Без х5:    {passed_str}</code>\n"
+                    f"🧟 <code>PVE{' ' * pve_spaces}</code>{pve_emoji}\n"
+                    f"👤 <code>Продавец:  {candidate['user']} ({rating_text})</code>\n"
                     f"🎮 <b>Основное:</b> {skins_list}\n\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
                     f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
@@ -2518,9 +2517,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 msg = (
                     f"<b>{display_title}</b>\n\n"
                     f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n\n"
-                    f"💸 <code>Лимит:         {original_my_max_price}₽</code>\n"
-                    f"🧟 <code>{pve_line_inner}</code>\n"
-                    f"👤 <code>Продавец:      {candidate['user']} ({rating_text})</code>\n"
+                    f"💸 <code>Лимит:     {original_my_max_price}₽</code>\n"
+                    f"🧟 <code>PVE{' ' * pve_spaces}</code>{pve_emoji}\n"
+                    f"👤 <code>Продавец:  {candidate['user']} ({rating_text})</code>\n"
                     f"🎮 <b>Основное:</b> {skins_list}\n\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
                     f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
