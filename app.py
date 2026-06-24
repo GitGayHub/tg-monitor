@@ -44,6 +44,7 @@ SEEN_CACHE_FILE = 'seen_cache.json'
 BANNED_IDS_FILE = 'banned_ids.txt'
 BANNED_SELLERS_FILE = 'banned_sellers.txt'
 SELLER_MAP_FILE = 'seller_map.json'
+SENT_OFFERS_FILE = 'sent_offers.json'
 
 def setup_logging(verbose=False):
     if verbose:
