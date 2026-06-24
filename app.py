@@ -2465,10 +2465,12 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             # PVE Checkmark / Cross logic
             pve_emoji = "✅" if has_any_pve else "❌"
-            limit_val_for_align = x5_my_max_price if x5_mode else original_my_max_price
-            limit_val_str = f"{limit_val_for_align}₽"
-            center_idx = 11 + len(limit_val_str) // 2
-            pve_spaces = max(1, center_idx - 3)
+
+            # Seller status check
+            is_seller_ok = True
+            if not rating_text or "0 отзывов" in rating_text or "Ошибка" in rating_text or "❗" in rating_text:
+                is_seller_ok = False
+            seller_status_emoji = "👌" if is_seller_ok else "❗"
 
             if os.environ.get("GITHUB_ACTIONS") == "true":
                 source_line = "🤖 GitHub автомониторинг"
@@ -2498,17 +2500,23 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 else:
                     display_title = "🔔 Найдено предложение!"
 
+            price_val = candidate['price_text'].rjust(8)
+            limit_row = f"💸 <code>Лимит       │ </code><a href='{href}'><b><code>{price_val}</code></b></a>"
+            pve_row = f"🧟 <code>  PVE       │         </code>{pve_emoji}"
+            seller_row = f"👤 <code>Продавец    │         </code>{seller_status_emoji}"
+            skins_row = f"🎮 <code>Основное    │ </code>{skins_list}"
+
             if x5_mode:
                 passed_str = "Да" if passed_without_x5 else "Нет, цена выше сильно"
                 msg = (
                     f"<b>{display_title}</b>\n\n"
-                    f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n\n"
                     f"⚙️ <code>Режим:     х5 режим</code>\n"
                     f"💸 <code>Лимит:     {x5_my_max_price}₽</code>\n"
-                    f"🤔 <code>Без х5:    {passed_str}</code>\n"
-                    f"🧟 <code>PVE{' ' * pve_spaces}</code>{pve_emoji}\n"
-                    f"👤 <code>Продавец:  {candidate['user']} ({rating_text})</code>\n"
-                    f"🎮 <b>Основное:</b> {skins_list}\n\n"
+                    f"🤔 <code>Без х5:    {passed_str}</code>\n\n"
+                    f"{limit_row}\n"
+                    f"{pve_row}\n"
+                    f"{seller_row}\n"
+                    f"{skins_row}\n\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
                     f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
                     f"{source_line}"
@@ -2516,11 +2524,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             else:
                 msg = (
                     f"<b>{display_title}</b>\n\n"
-                    f"💰 <b>Цена:</b> <a href='{href}'>{candidate['price_text']}</a>\n\n"
-                    f"💸 <code>Лимит:     {original_my_max_price}₽</code>\n"
-                    f"🧟 <code>PVE{' ' * pve_spaces}</code>{pve_emoji}\n"
-                    f"👤 <code>Продавец:  {candidate['user']} ({rating_text})</code>\n"
-                    f"🎮 <b>Основное:</b> {skins_list}\n\n"
+                    f"💸 Лимит: {original_my_max_price}₽\n\n"
+                    f"{limit_row}\n"
+                    f"{pve_row}\n"
+                    f"{seller_row}\n"
+                    f"{skins_row}\n\n"
                     f"📌 <b>Описание:</b> <i>{desc_escaped}</i>\n\n"
                     f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
                     f"{source_line}"
@@ -2528,9 +2536,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             try:
                 if context:
-                    await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
+                    await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML', disable_web_page_preview=True)
                 elif bot_instance:
-                    await bot_instance.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
+                    await bot_instance.send_message(chat_id=chat_id, text=msg, parse_mode='HTML', disable_web_page_preview=True)
 
                 logger.info(f"✅ Отправлено: {skins_list} - {candidate['price_value']}₽")
                 sent_count += 1
