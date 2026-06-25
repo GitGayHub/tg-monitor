@@ -2557,7 +2557,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             msg = (
                 f"<b>{display_title}</b>\n\n"
-                f"💸 Цена: <a href='{href}'><b>{candidate['price_text']}</b></a>\n\n"
+                f"💰 Цена: <a href='{href}'><b>{candidate['price_text']}</b></a>\n\n"
                 f"📌 Описание: <i>{desc_escaped}</i>\n\n"
                 f"<code>{table_content}</code>\n\n"
                 f"{link_line}  │  {hide_line}  │  {ban_line}\n\n"
