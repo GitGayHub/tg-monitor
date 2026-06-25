@@ -250,6 +250,17 @@ def get_seller_name_by_id(short_id):
 
 def load_sent_offers():
     global sent_offers, sent_by_seller
+    # If seen_ids is empty, reset sent offers to allow resending previously sent items
+    if not seen_ids:
+        sent_offers = {}
+        sent_by_seller = {}
+        try:
+            with open(SENT_OFFERS_FILE, 'w', encoding='utf-8') as f:
+                json.dump({}, f, indent=1)
+        except Exception:
+            pass
+        return
+
     try:
         with open(SENT_OFFERS_FILE, 'r', encoding='utf-8') as f:
             sent_offers = json.load(f)
@@ -1654,7 +1665,7 @@ async def diagnostic_search(skin_searches, time_budget=120):
 
 
 async def process_offers(bot_instance=None, context=None, skip_seen=True, max_price_override=None,
-                         rare_override=None, pve_override=None, candidate_limit=15,
+                         rare_override=None, pve_override=None, candidate_limit=None,
                          include_unconfirmed_pve=False, premium_only=False,
                          confirmed_pve_enabled_override=None, confirmed_pve_price_override=None):
     """Основная функция обработки предложений."""
@@ -1704,7 +1715,7 @@ async def process_offers(bot_instance=None, context=None, skip_seen=True, max_pr
 
 
 async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, max_price_override=None,
-                               rare_override=None, pve_override=None, candidate_limit=10,
+                               rare_override=None, pve_override=None, candidate_limit=None,
                                include_unconfirmed_pve=False, premium_only=False,
                                confirmed_pve_enabled_override=None, confirmed_pve_price_override=None):
     """Реальная обработка предложений под внешней блокировкой."""
