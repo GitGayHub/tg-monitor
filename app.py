@@ -124,9 +124,19 @@ SEEN_IDS_MAX = 15000
 
 def load_seen_ids():
     global seen_ids, seen_cache
-    seen_ids = set()
-    seen_cache = {}
-    return
+    try:
+        with open(SEEN_IDS_FILE, 'r') as f:
+            all_ids = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        all_ids = []
+    
+    seen_ids = set(all_ids)
+
+    try:
+        with open(SEEN_CACHE_FILE, 'r', encoding='utf-8') as f:
+            seen_cache = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        seen_cache = {}
 
     # Migrate legacy/existing text ids to the JSON seen_cache if missing
     migrated = False
