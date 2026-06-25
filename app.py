@@ -124,19 +124,9 @@ SEEN_IDS_MAX = 15000
 
 def load_seen_ids():
     global seen_ids, seen_cache
-    try:
-        with open(SEEN_IDS_FILE, 'r') as f:
-            all_ids = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        all_ids = []
-    
-    seen_ids = set(all_ids)
-
-    try:
-        with open(SEEN_CACHE_FILE, 'r', encoding='utf-8') as f:
-            seen_cache = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        seen_cache = {}
+    seen_ids = set()
+    seen_cache = {}
+    return
 
     # Migrate legacy/existing text ids to the JSON seen_cache if missing
     migrated = False
@@ -250,11 +240,9 @@ def get_seller_name_by_id(short_id):
 
 def load_sent_offers():
     global sent_offers, sent_by_seller
-    try:
-        with open(SENT_OFFERS_FILE, 'r', encoding='utf-8') as f:
-            sent_offers = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        sent_offers = {}
+    sent_offers = {}
+    sent_by_seller = {}
+    return
     
     # Rebuild sent_by_seller index
     sent_by_seller = {}
@@ -4056,7 +4044,7 @@ async def run_once(verbose=False):
         print(f"FATAL: Cannot connect to Telegram API: {e}")
         sys.exit(1)
 
-    sent = await process_offers(bot_instance=bot, skip_seen=True)
+    sent = await process_offers(bot_instance=bot, skip_seen=True, candidate_limit=40)
     logger.info("=== Done (sent: %s) ===", sent)
 
 async def post_init(application):
