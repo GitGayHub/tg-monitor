@@ -4044,7 +4044,7 @@ async def run_once(verbose=False):
         print(f"FATAL: Cannot connect to Telegram API: {e}")
         sys.exit(1)
 
-    sent = await process_offers(bot_instance=bot, skip_seen=True, candidate_limit=40)
+    sent = await process_offers(bot_instance=bot, skip_seen=True, candidate_limit=25)
     logger.info("=== Done (sent: %s) ===", sent)
 
 async def post_init(application):
