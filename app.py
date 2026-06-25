@@ -1726,6 +1726,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
     run_snapshot = None
     log_state = None
     log_keyword_map = {}
+    loop_start_time = time.monotonic()
 
     def cancelled():
         return bool(context and context.bot_data.get('cancel_current_check'))
@@ -2198,6 +2199,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 logger.info("⏹️ Проверка остановлена пользователем во время обработки кандидатов")
                 return -2
 
+            # Time budget check (max 300 seconds per run to save state cleanly and allow the next run to pick up)
+            if time.monotonic() - loop_start_time > 300:
+                logger.warning("⏱️ Достигнут лимит времени работы (300 секунд), прерываем проверку лотов для сохранения состояния.")
+                break
+
             offer_id = candidate['offer_id']
             href = candidate['href']
             short_preview = candidate['short_description'][:60] or f"Лот {idx}"
@@ -2644,6 +2650,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     if time.time() - OFFER_DETAILS_CACHE[href]['cached_at'] < OFFER_DETAILS_CACHE_TTL:
                         cache_hits += 1
                 try:
+                    if time.monotonic() - loop_start_time > 300:
+                        return True
                     full_desc, _ = await asyncio.wait_for(
                         get_offer_details(href), timeout=15
                     )
