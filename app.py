@@ -4075,6 +4075,37 @@ async def run_once(verbose=False):
         print(f"FATAL: Cannot connect to Telegram API: {e}")
         sys.exit(1)
 
+    # Fetch pending updates from Telegram when bot was offline
+    try:
+        logger.info("Checking pending Telegram updates...")
+        updates = await bot.get_updates(offset=0, timeout=5)
+        for update in updates:
+            if update.message and update.message.text:
+                text = update.message.text
+                if text.startswith('/start'):
+                    parts = text.split()
+                    if len(parts) > 1:
+                        payload = parts[1]
+                        if payload.startswith('ban_'):
+                            ban_offer_id = extract_offer_id(payload.replace('ban_', '', 1))
+                            if ban_offer_id:
+                                banned_ids.add(ban_offer_id)
+                                save_banned_ids()
+                                logger.info(f"🚫 [Telegram Update] Добавлен лот в бан: {ban_offer_id}")
+                        elif payload.startswith('banseller_'):
+                            short_id = payload.replace('banseller_', '', 1)
+                            seller_name = get_seller_name_by_id(short_id)
+                            if seller_name:
+                                banned_sellers.add(seller_name)
+                                save_banned_sellers()
+                                logger.info(f"👤 [Telegram Update] Добавлен продавец в бан: {seller_name}")
+        if updates:
+            last_id = updates[-1].update_id
+            await bot.get_updates(offset=last_id + 1, limit=1)
+            logger.info(f"Cleared {len(updates)} pending updates.")
+    except Exception as e:
+        logger.warning(f"Не удалось получить обновления Telegram: {e}")
+
     sent = await process_offers(bot_instance=bot, skip_seen=True)
     logger.info("=== Done (sent: %s) ===", sent)
 
