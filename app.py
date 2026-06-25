@@ -2459,9 +2459,9 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 pve_text = "Нет"
 
             if os.environ.get("GITHUB_ACTIONS") == "true":
-                source_line = "🤖 <b>GitHub автомониторинг</b>"
+                source_line = "🤖 GitHub автомониторинг"
             else:
-                source_line = "💻 <b>Локальный автомониторинг</b>"
+                source_line = "🤖 Локальный автомониторинг"
             
             # Determine display name and emoji for the main feature
             from handlers import _skin_emoji as _get_skin_emoji
@@ -2496,7 +2496,20 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             pve_emoji = "✅" if has_any_pve else "❌"
             limit_val = x5_my_max_price if x5_mode else original_my_max_price
-            limit_display = f"{int(limit_val)}₽".rjust(9)
+            
+            # Aligned centering logic for price limit based on its string length
+            price_str = f"{int(limit_val)}₽"
+            num_len = len(price_str)
+            if num_len <= 3:
+                left_spaces = 4
+            elif num_len <= 5:
+                left_spaces = 3
+            else:
+                left_spaces = 2
+            limit_display = " " * left_spaces + price_str
+            
+            pve_display = "    " + pve_emoji
+            seller_display = "    " + seller_status_emoji
 
             # Generate seller mapping and links
             seller_id = get_or_create_seller_id(candidate['user'])
@@ -2510,20 +2523,19 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             if x5_mode:
                 passed_str_emoji = "✅" if passed_without_x5 else "❌"
+                passed_display = "    " + passed_str_emoji
                 table_content = (
-                    f"⚙️   Режим     │    x5 режим\n"
-                    f"🤔   Без х5    │         {passed_str_emoji}\n"
+                    f"⚙️ Режим       │   x5 режим\n"
+                    f"🤔 Без х5      │{passed_display}\n"
                     f"💸 Лимит       │{limit_display}\n"
-                    f"🧟   PVE       │         {pve_emoji}\n"
-                    f"👤 Продавец    │         {seller_status_emoji}\n"
-                    f"🎮 Основное    │ {skins_list}"
+                    f"🧟 PVE         │{pve_display}\n"
+                    f"👤 Продавец    │{seller_display}"
                 )
             else:
                 table_content = (
                     f"💸 Лимит       │{limit_display}\n"
-                    f"🧟   PVE       │         {pve_emoji}\n"
-                    f"👤 Продавец    │         {seller_status_emoji}\n"
-                    f"🎮 Основное    │ {skins_list}"
+                    f"🧟 PVE         │{pve_display}\n"
+                    f"👤 Продавец    │{seller_display}"
                 )
 
             msg = (
@@ -2531,7 +2543,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 f"💸 Цена: <a href='{href}'><b>{candidate['price_text']}</b></a>\n\n"
                 f"📌 Описание: <i>{desc_escaped}</i>\n\n"
                 f"<code>{table_content}</code>\n\n"
-                f"{hide_line}  │  {ban_line}  │  {link_line}\n\n"
+                f"{link_line}  │  {hide_line}  │  {ban_line}\n\n"
                 f"{source_line}"
             )
 
