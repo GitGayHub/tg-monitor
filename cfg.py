@@ -342,6 +342,8 @@ DEFAULT_CONFIG = {
     'editions': DEFAULT_EDITIONS,
     'prochee_keywords': DEFAULT_PROCHEE_KEYWORDS,
     'max_price': 5000,
+    # Floor price: filter fake 1₽ listings used only to sit at the bottom of FunPay list
+    'min_price': 111,
     'confirmed_pve_enabled': True,
     'confirmed_pve_price': 700,
     'unconfirmed_pve_price': 450,
@@ -675,6 +677,16 @@ class ConfigManager:
     @max_price.setter
     def max_price(self, value):
         self.data['max_price'] = value
+        self.save()
+
+    @property
+    def min_price(self):
+        """Minimum listing price (₽). Below this = fake bait, skip entirely."""
+        return self.data.get('min_price', 111)
+
+    @min_price.setter
+    def min_price(self, value):
+        self.data['min_price'] = value
         self.save()
 
     @property

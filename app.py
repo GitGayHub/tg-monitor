@@ -14,6 +14,7 @@ import json
 import base64
 import subprocess
 import html
+from difflib import SequenceMatcher
 
 from cfg import ConfigManager
 from history import init_price_history_db, record_price_snapshot, record_red_flag, get_latest_top3
@@ -350,62 +351,79 @@ def normalize_match_text(text):
     return text.strip()
 
 
+def description_similarity(a, b):
+    """Similarity ratio of two descriptions (0..1) after normalization."""
+    na = normalize_match_text(a)
+    nb = normalize_match_text(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    # Fast path for very different lengths
+    shorter, longer = (na, nb) if len(na) <= len(nb) else (nb, na)
+    if len(longer) > 0 and len(shorter) / len(longer) < 0.4:
+        return 0.0
+    return SequenceMatcher(None, na, nb).ratio()
+
+
 def is_recently_sent(offer_id, seller, description, price_value, max_days=7):
-    """Returns True if this offer (same ID or an identical re-post by the same seller)
-    was already sent within max_days days and the price hasn't dropped significantly (>= 2%)."""
+    """Returns True if this offer (same ID or a similar re-post by the same seller)
+    was already sent within max_days days and the price hasn't dropped significantly (>= 10%).
+
+    Catches near-duplicates: sellers often re-list the same account with tiny description
+    tweaks (e.g. '70 кирок' vs 'Blue Squire') and the same price — those should not be
+    sent again.
+    """
     global sent_offers, sent_by_seller
     now = time.time()
     seconds_limit = max_days * 24 * 3600
     norm_desc = normalize_match_text(description)
 
-    # Gather all matching previously sent records
-    matching_prices = []
-
-    # 1. Check by exact offer_id
+    # 1. Exact offer_id — always skip if recently sent
     if offer_id in sent_offers:
         sent = sent_offers[offer_id]
         sent_time = sent.get('timestamp', 0)
         if now - sent_time < seconds_limit:
-            # Skip completely if the exact same offer ID was already sent
             return True
 
-    # 2. Check by seller (re-post detection)
+    # 2. Similar re-post by same seller (or no seller: desc-only fallback)
+    matching_prices = []
+
+    def _consider(sent):
+        sent_time = sent.get('timestamp', 0)
+        if now - sent_time >= seconds_limit:
+            return
+        sent_price = sent.get('price')
+        if sent_price is None:
+            return
+        sim = description_similarity(sent.get('description', ''), description)
+        price_close = False
+        if price_value is not None and sent_price > 0:
+            price_close = abs(price_value - sent_price) / sent_price <= 0.02
+        # High text similarity, or same price + moderately similar text
+        if sim >= 0.75 or (price_close and sim >= 0.55):
+            matching_prices.append(sent_price)
+
     if seller:
         seller_key = seller.strip().lower()
-        if seller_key in sent_by_seller:
-            for sent in sent_by_seller[seller_key]:
-                sent_time = sent.get('timestamp', 0)
-                if now - sent_time < seconds_limit:
-                    if normalize_match_text(sent.get('description', '')) == norm_desc:
-                        price = sent.get('price')
-                        if price is not None:
-                            matching_prices.append(price)
+        for sent in sent_by_seller.get(seller_key, []):
+            _consider(sent)
     else:
-        # Fallback for empty/unknown seller: compare description against all sent offers
-        for oid, sent in sent_offers.items():
-            sent_time = sent.get('timestamp', 0)
-            if now - sent_time < seconds_limit:
-                sent_seller = sent.get('seller')
-                if not sent_seller:
-                    if normalize_match_text(sent.get('description', '')) == norm_desc:
-                        price = sent.get('price')
-                        if price is not None:
-                            matching_prices.append(price)
+        for _oid, sent in sent_offers.items():
+            if not sent.get('seller'):
+                _consider(sent)
 
-    # If no matching offers were sent, then it is NOT recently sent
     if not matching_prices:
         return False
 
-    # Find the minimum price among all sent matches
     min_sent_price = min(matching_prices)
 
-    # Skip if current price is higher or equal to the minimum sent price
-    if price_value >= min_sent_price:
+    # Skip if current price is higher or equal to the cheapest already-sent match
+    if price_value is None or price_value >= min_sent_price:
         return True
 
-    # If the price dropped, check if it dropped by at least 10% to filter out minor fluctuations
-    price_drop = min_sent_price - price_value
-    percent_drop = price_drop / min_sent_price
+    # Re-send only if price dropped by at least 10%
+    percent_drop = (min_sent_price - price_value) / min_sent_price
     if percent_drop < 0.10:
         return True
 
@@ -1310,7 +1328,7 @@ def _sync_search_min_price(keywords, require_pve=False, exclude_confirmed_pve=Fa
 
                     price_value = parse_price(price_text)
 
-                    if price_value is not None and price_value > 0:
+                    if price_value is not None and price_value >= config.min_price:
                         normalized_kw = normalize_match_text(kw)
                         if normalized_kw and _keyword_word_match(normalized_kw, item_text):
                             # Быстрый путь: собираем кандидатов по короткому тексту,
@@ -1365,7 +1383,7 @@ def _sync_search_min_price(keywords, require_pve=False, exclude_confirmed_pve=Fa
                         continue
 
                     price_value = parse_price(price_text)
-                    if price_value is None or price_value <= 0:
+                    if price_value is None or price_value < config.min_price:
                         continue
                     if current_best is not None and price_value >= current_best:
                         continue
@@ -1498,7 +1516,7 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
             price_div = item.find('div', class_='tc-price')
             price_text = price_div.get_text(strip=True) if price_div else ""
             price_value = parse_price(price_text)
-            if price_value is None or price_value <= 0:
+            if price_value is None or price_value < config.min_price:
                 continue
 
             user_div = item.find('div', class_='media-user-name')
@@ -2012,6 +2030,19 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 # Continue processing to update auto_price_map for stats,
                 # but will skip notification logic below.
 
+            # Fake bait listings (e.g. 1.22₽) sit at the bottom of FunPay to attract DMs.
+            # Global floor — do not notify, track, or treat as real market price.
+            min_offer_price = config.min_price
+            if price_value is not None and price_value < min_offer_price:
+                if skip_seen and not already_seen:
+                    seen_ids.add(offer_id)
+                    save_seen_id(offer_id, price_value, short_description)
+                    logger.info(
+                        f"💸 Пропуск фейк-цены {price_value}₽ < {min_offer_price}₽: "
+                        f"{short_description[:50]}..."
+                    )
+                continue
+
             if 'аренда' in short_desc_lower and 'продажа' not in short_desc_lower:
                 if skip_seen:
                     seen_ids.add(offer_id)
@@ -2238,7 +2269,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     logger.warning(f"Не удалось сохранить seen_id для отклонённого лота: {e}")
 
             if is_recently_sent(offer_id, candidate['user'], candidate['short_description'], candidate['price_value']):
-                logger.debug(f"⏳ Пропуск: лот {offer_id} от {candidate['user']} (или аналогичный) уже отправлялся в последние 7 дней")
+                logger.info(
+                    f"⏳ Пропуск дубля: лот {offer_id} от {candidate['user']} "
+                    f"(или похожий) уже отправлялся в последние 7 дней"
+                )
                 _mark_seen_permanent()
                 continue
 
@@ -4034,13 +4068,25 @@ def _log_startup_banner(mode):
     logger.info("  Telegram:   %s", tg_status)
     logger.info("  Chat ID:    %s", chat_id or "❌ не задан")
     logger.info("╠══════════════════════════════════════════════╣")
-    logger.info("  Скинов:     %d/%d", len(enabled_skins), len(config.get_all_skins()))
+    all_skins = config.get_all_skins()
+    require_pve_count = sum(1 for s in enabled_skins.values() if s.get('require_pve', False))
+    logger.info("  Скинов:     %d/%d", len(enabled_skins), len(all_skins))
+    logger.info("  require_pve:%d из %d вкл.", require_pve_count, len(enabled_skins))
     logger.info("  PVE-слов:   %d подтв.", len(config.get_confirmed_pve()))
     logger.info("  Исключений: %d фраз", len(config.get_exclude_keywords()))
+    logger.info("  Мин. цена:  %d₽", config.min_price)
     logger.info("  Макс. цена: %d₽", max_price)
+    logger.info("  conf.PVE:   %s до %s₽", config.confirmed_pve_enabled, config.confirmed_pve_price)
+    logger.info("  unconf.PVE: до %s₽", config.unconfirmed_pve_price)
     logger.info("  Seen IDs:   %d", len(seen_ids))
     logger.info("  Banned IDs: %d", len(banned_ids))
     logger.info("  Интервал:   %ds", config.check_interval)
+    # Per-skin PVE flags (so GitHub logs show actual encrypted-config settings)
+    for sid, sdata in enabled_skins.items():
+        logger.info(
+            "  skin %-22s price=%s require_pve=%s",
+            sid, sdata.get('price'), bool(sdata.get('require_pve', False)),
+        )
     logger.info("╚══════════════════════════════════════════════╝")
 
 
