@@ -2,6 +2,8 @@
 import subprocess
 import sys
 import os
+import re
+import shutil
 import signal
 import atexit
 
@@ -13,7 +15,12 @@ if hasattr(sys.stderr, "reconfigure"):
 REPO = os.path.dirname(os.path.abspath(__file__))
 MONITOR = os.path.join(REPO, "app.py")
 LOCK_FILE = os.path.join(REPO, ".bot.lock")
-STATE_SYNC = ["seen_ids.txt", "seen_cache.json", "sent_offers.json", "banned_ids.txt", "config.json", "config.json.enc", "price_history.db", "mode.txt"]
+# banned_sellers.txt / seller_map.json / run_log.json пишет app.py и коммитит CI,
+# но раньше их тут не было: бан продавца с телефона не доезжал до Actions, и лоты
+# этого продавца продолжали приходить.
+STATE_SYNC = ["seen_ids.txt", "seen_cache.json", "sent_offers.json", "banned_ids.txt",
+              "banned_sellers.txt", "seller_map.json", "run_log.json", "state_meta.json",
+              "config.json", "config.json.enc", "price_history.db", "mode.txt"]
 STATE_PROTECTED = STATE_SYNC + ["price_history.db-shm", "price_history.db-wal"]
 STATE_SET = {p.replace("\\", "/") for p in STATE_PROTECTED}
 STATE_COMMIT_PREFIXES = ("Sync state after run", "Update monitor state")
@@ -25,6 +32,34 @@ TEXT_KW = {"text": True, "encoding": "utf-8", "errors": "replace"}
 # means the launcher works without any one-off `git config --global` step.
 _REPO_SAFE = REPO.replace("\\", "/")
 GIT_BASE = ["git", "-c", f"safe.directory={_REPO_SAFE}"]
+
+# Авторизация без записи токена на диск. Помощник — короткий shell-скрипт: сам
+# токен он берёт из переменной окружения в момент запроса, поэтому не попадает
+# ни в .git/config, ни в список аргументов процесса, ни в сообщения git об
+# ошибках (раньше токен вписывался прямо в URL origin и светился везде).
+if os.environ.get("GITHUB_TOKEN"):
+    GIT_BASE += [
+        "-c",
+        "credential.https://github.com.helper="
+        "!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f",
+        "-c", "credential.https://github.com.useHttpPath=false",
+    ]
+
+
+def mask_secrets(text):
+    """Прячет токен из вывода git.
+
+    Страховка на случай старых копий репозитория, где токен ещё вписан в URL
+    origin: git печатает такой URL в сообщениях об ошибках
+    ("fatal: unable to access 'https://<токен>@github.com/...'").
+    """
+    if not text:
+        return text
+    masked = re.sub(r'(https://)[^@/\s]+(@github\.com)', r'\1***\2', text)
+    token = os.environ.get('GITHUB_TOKEN', '')
+    if token:
+        masked = masked.replace(token, '***')
+    return masked
 
 
 def git(*args, visible=False, timeout=None):
@@ -143,6 +178,74 @@ def restore_files(snapshot):
             f.write(data)
 
 
+def merge_back_state(snapshot):
+    """Объединяет наше состояние с подтянутым из git вместо перезаписи.
+
+    Раньше здесь стоял простой restore_files: наши до-пуловые копии ложились
+    поверх свежих чужих, поэтому просмотренные лоты и строки истории цен,
+    добавленные на другой машине или в Actions, пропадали, а лоты приходили
+    повторно. Файлы без правила слияния (конфиг, mode.txt) восстанавливаем как
+    раньше — там побеждает локальная версия осознанно.
+    """
+    if not snapshot:
+        return
+    try:
+        if REPO not in sys.path:
+            sys.path.append(REPO)
+        import state_merge
+    except Exception as e:
+        print(f"WARNING: state_merge недоступен ({e}) — восстанавливаю локальные копии без слияния.")
+        restore_files(snapshot)
+        return
+
+    import tempfile
+    plain = {p: d for p, d in snapshot.items() if os.path.basename(p) not in state_merge.MERGERS}
+    mergeable = {p: d for p, d in snapshot.items() if os.path.basename(p) in state_merge.MERGERS}
+    restore_files(plain)
+
+    if not mergeable:
+        return
+    tmp_root = tempfile.mkdtemp(prefix="state_merge_")
+    try:
+        ours_dir = os.path.join(tmp_root, "ours")
+        theirs_dir = os.path.join(tmp_root, "theirs")
+        os.makedirs(ours_dir)
+        os.makedirs(theirs_dir)
+        for path, data in mergeable.items():
+            name = os.path.basename(path)
+            if data is not None:
+                with open(os.path.join(ours_dir, name), "wb") as f:
+                    f.write(data)
+            live = os.path.join(REPO, path)
+            if os.path.exists(live):
+                shutil.copy2(live, os.path.join(theirs_dir, name))
+
+        # Метки времени нужны правилам всегда, даже если сам state_meta.json не
+        # менялся: без них слияние не отличит осознанную очистку от потери данных.
+        live_meta = os.path.join(REPO, state_merge.META_FILE)
+        if os.path.exists(live_meta):
+            for target in (ours_dir, theirs_dir):
+                dest = os.path.join(target, state_merge.META_FILE)
+                if not os.path.exists(dest):
+                    shutil.copy2(live_meta, dest)
+
+        # state_meta.json сливаем последним: остальные правила читают из него
+        # метки очисток, и перезапись файла до них исказила бы решения.
+        ordered = ([p for p in mergeable if os.path.basename(p) != state_merge.META_FILE]
+                   + [p for p in mergeable if os.path.basename(p) == state_merge.META_FILE])
+        for path in ordered:
+            name = os.path.basename(path)
+            print("  " + state_merge.merge_file(name, ours_dir, theirs_dir))
+            merged = os.path.join(ours_dir, name)
+            if os.path.exists(merged):
+                shutil.copy2(merged, os.path.join(REPO, path))
+    except Exception as e:
+        print(f"WARNING: слияние состояния не удалось ({e}) — восстанавливаю локальные копии.")
+        restore_files(mergeable)
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+
+
 def protect_state_for_sync():
     """Backup dirty state files and clean them so git rebase works cleanly."""
     paths = dirty_state_files()
@@ -200,6 +303,56 @@ def release_lock():
         pass
 
 
+def is_our_bot_process(pid):
+    """Проверяет, что процесс — это действительно наш бот из этого каталога.
+
+    После перезагрузки PID из старого .bot.lock достаётся постороннему процессу,
+    и прежняя проверка «процесс с таким PID существует» приводила к taskkill
+    случайной чужой программы при каждом запуске.
+    """
+    try:
+        pid_int = int(pid)
+    except (TypeError, ValueError):
+        return False
+    repo_marker = os.path.basename(REPO).lower()
+
+    def _run(cmd):
+        try:
+            r = subprocess.run(cmd, capture_output=True, **TEXT_KW)
+            return (r.stdout or "")
+        except (OSError, subprocess.SubprocessError):
+            # wmic отсутствует в свежих сборках Windows и роняет запуск лаунчера,
+            # если не поймать здесь.
+            return ""
+
+    cmdline = ""
+    if os.name == "nt":
+        cmdline = _run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                        f"(Get-CimInstance Win32_Process -Filter \"ProcessId={pid_int}\").CommandLine"])
+        if not cmdline.strip():
+            cmdline = _run(["wmic", "process", "where", f"ProcessId={pid_int}",
+                            "get", "CommandLine", "/value"])
+    else:
+        try:
+            with open(f"/proc/{pid_int}/cmdline", "rb") as f:
+                cmdline = f.read().replace(b"\0", b" ").decode("utf-8", "replace")
+        except OSError:
+            cmdline = _run(["ps", "-p", str(pid_int), "-o", "args="])
+
+    cmdline = cmdline.lower()
+    if cmdline.strip():
+        return repo_marker in cmdline and ("app.py" in cmdline or "launcher.py" in cmdline)
+
+    # Командную строку узнать не удалось. Ориентируемся хотя бы на имя процесса:
+    # чужую непитоновскую программу не трогаем, питоновскую считаем своим ботом,
+    # чтобы не оставить два экземпляра с дублями уведомлений.
+    if os.name == "nt":
+        name = _run(["tasklist", "/FI", f"PID eq {pid_int}", "/FO", "CSV", "/NH"]).lower()
+    else:
+        name = _run(["ps", "-p", str(pid_int), "-o", "comm="]).lower()
+    return "python" in name
+
+
 def acquire_lock():
     """Prevent multiple bot instances from running simultaneously. Kills stale ones."""
     if os.path.exists(LOCK_FILE):
@@ -209,20 +362,44 @@ def acquire_lock():
         except OSError:
             pids = []
         for old_pid in pids:
-            if old_pid and old_pid != str(os.getpid()) and pid_alive(old_pid):
-                print(f"Stopping old bot process PID {old_pid}...")
-                try:
-                    if os.name == "nt":
-                        subprocess.run(["taskkill", "/F", "/PID", old_pid], capture_output=True)
-                    else:
-                        os.kill(int(old_pid), signal.SIGTERM)
-                except Exception as e:
-                    print(f"WARNING: could not stop old process: {e}")
+            if not old_pid or old_pid == str(os.getpid()) or not pid_alive(old_pid):
+                continue
+            if not is_our_bot_process(old_pid):
+                print(f"INFO: PID {old_pid} из .bot.lock занят посторонним процессом — не трогаю его.")
+                continue
+            print(f"Stopping old bot process PID {old_pid}...")
+            try:
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/F", "/PID", old_pid], capture_output=True)
+                else:
+                    os.kill(int(old_pid), signal.SIGTERM)
+            except Exception as e:
+                print(f"WARNING: could not stop old process: {e}")
         try:
             os.remove(LOCK_FILE)
-        except OSError:
-            pass
-    with open(LOCK_FILE, "w") as f:
+            stale_cleared = True
+        except OSError as e:
+            stale_cleared = False
+            print(f"WARNING: не удалось удалить старый .bot.lock: {e}")
+    else:
+        stale_cleared = True
+
+    # Создаём файл атомарно: два лаунчера, стартовавшие одновременно, раньше оба
+    # проходили проверку os.path.exists и поднимали по боту — уведомления дублировались.
+    try:
+        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except (FileExistsError, PermissionError):
+        # PermissionError: на Windows удалённый файл может оставаться в состоянии
+        # delete-pending, пока его держит антивирус или индексатор.
+        if not stale_cleared:
+            # Старый файл удалить не удалось, живого бота мы не нашли — не блокируем
+            # запуск навсегда, просто перезаписываем, как было раньше.
+            print("WARNING: перезаписываю .bot.lock, который не удалось удалить.")
+            fd = os.open(LOCK_FILE, os.O_CREAT | os.O_WRONLY | os.O_TRUNC)
+        else:
+            print("ERROR: другой лаунчер уже запускается (.bot.lock занят). Выходим.")
+            sys.exit(1)
+    with os.fdopen(fd, "w") as f:
         f.write(f"{os.getpid()}\n")
     atexit.register(release_lock)
 
@@ -246,7 +423,6 @@ def ensure_on_main():
 
 def clean_leftover_rebase():
     """Force remove rebase folders if git gets stuck."""
-    import shutil
     git_dir = os.path.join(REPO, ".git")
     for folder in ["rebase-merge", "rebase-apply"]:
         path = os.path.join(git_dir, folder)
@@ -260,8 +436,57 @@ def clean_leftover_rebase():
                     print(f"WARNING: could not remove {path}: {e}")
 
 
+def merge_conflicted_state_file(rel_path):
+    """Сливает обе стороны конфликта rebase вместо выбора одной.
+
+    Раньше здесь безусловно бралась сторона --theirs (при rebase это локальный
+    коммит), поэтому состояние, пришедшее из GitHub, просто отбрасывалось.
+    Ступень :2 — версия upstream (то, что в origin), ступень :3 — наш коммит.
+    """
+    name = os.path.basename(rel_path)
+    try:
+        if REPO not in sys.path:
+            sys.path.append(REPO)
+        import state_merge
+    except Exception:
+        return False
+    if name not in state_merge.MERGERS:
+        return False
+
+    import tempfile
+    tmp_root = tempfile.mkdtemp(prefix="rebase_merge_")
+    try:
+        ours_dir = os.path.join(tmp_root, "ours")
+        theirs_dir = os.path.join(tmp_root, "theirs")
+        os.makedirs(ours_dir)
+        os.makedirs(theirs_dir)
+        for stage, target in ((2, ours_dir), (3, theirs_dir)):
+            r = subprocess.run(
+                GIT_BASE + ["show", f":{stage}:{rel_path}"],
+                cwd=REPO, capture_output=True,
+            )
+            if r.returncode != 0:
+                return False
+            with open(os.path.join(target, name), "wb") as f:
+                f.write(r.stdout)
+        # Метки очисток берём из рабочей копии — иначе слияние решит, что
+        # удаление было потерей данных, и вернёт строки обратно.
+        live_meta = os.path.join(REPO, state_merge.META_FILE)
+        if os.path.exists(live_meta) and name != state_merge.META_FILE:
+            for target in (ours_dir, theirs_dir):
+                shutil.copy2(live_meta, os.path.join(target, state_merge.META_FILE))
+        print("  " + state_merge.merge_file(name, ours_dir, theirs_dir))
+        shutil.copy2(os.path.join(ours_dir, name), os.path.join(REPO, rel_path))
+        return True
+    except Exception as e:
+        print(f"WARNING: не удалось слить {rel_path} при rebase: {e}")
+        return False
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+
+
 def resolve_state_rebase():
-    """Auto-resolve rebase conflicts in state files by taking remote version."""
+    """Auto-resolve rebase conflicts in state files by merging both sides."""
     guard = 0
     while in_rebase() and guard < 20:
         guard += 1
@@ -276,9 +501,12 @@ def resolve_state_rebase():
             return False
         if unmerged:
             for f in unmerged:
-                pick = git("checkout", "--theirs", "--", f)
-                if pick.returncode != 0:
-                    git("checkout", "--ours", "--", f)
+                if not merge_conflicted_state_file(f):
+                    # Слияние невозможно (нет правила, удаление файла и т.п.) —
+                    # оставляем локальную версию, как было раньше.
+                    pick = git("checkout", "--theirs", "--", f)
+                    if pick.returncode != 0:
+                        git("checkout", "--ours", "--", f)
                 git("add", "--", f)
         env = os.environ.copy()
         env["GIT_EDITOR"] = "true"
@@ -290,33 +518,84 @@ def resolve_state_rebase():
     return not in_rebase()
 
 
-def sync_from_remote():
-    print("=== [1/3] Pulling latest state from GitHub ===")
-    # Auto-fix remote URL: replace embedded stale token with GITHUB_TOKEN from env
-    gh_token = os.environ.get('GITHUB_TOKEN', '')
+def strip_token_from_remote():
+    """Убирает токен из URL origin.
+
+    Раньше токен вписывался прямо в remote URL, то есть лежал открытым текстом
+    в .git/config и попадал в сообщения git об ошибках. Теперь авторизация идёт
+    через credential helper (см. GIT_BASE), который читает GITHUB_TOKEN из
+    окружения в момент запроса и на диск ничего не пишет.
+    """
     remote_url = git("remote", "get-url", "origin")
     remote_str = (remote_url.stdout or "").strip()
-    if gh_token and remote_str:
-        import re
-        # Replace or embed GITHUB_TOKEN (e.g. ghp_xxx or github_pat_xxx) into the URL
-        fixed = re.sub(r'https://(?:[^@]+@)?github\.com', f'https://{gh_token}@github.com', remote_str)
-        if fixed != remote_str:
-            print(f"  Fixing remote URL (embedding GITHUB_TOKEN)...")
-            git("remote", "set-url", "origin", fixed)
-            remote_str = fixed
+    if not remote_str:
+        return ""
+    # Чистим URL только если есть чем авторизоваться взамен: на машине, где
+    # GITHUB_TOKEN в окружении не задан, токен из URL — единственный способ
+    # попасть в origin, и его удаление сломало бы синхронизацию.
+    if not os.environ.get("GITHUB_TOKEN"):
+        return remote_str
+    clean = re.sub(r'https://[^@/\s]+@github\.com', 'https://github.com', remote_str)
+    if clean != remote_str:
+        print("  Убираю токен из URL origin (авторизация через credential helper)...")
+        if git("remote", "set-url", "origin", clean).returncode == 0:
+            remote_str = clean
+    return remote_str
+
+
+def recover_from_rewritten_history():
+    """Восстанавливается, если история origin была переписана (force-push).
+
+    Без этого локальная ветка и origin/main расходятся без общего предка, и
+    обычный rebase пытается переиграть поверх новой базы все локальные коммиты
+    (их тут десятки тысяч) — процесс зависает и конфликтует. Здесь мы жёстко
+    переходим на версию origin, сохранив файлы состояния через слияние.
+    """
+    upstream = upstream_ref()
+    if not upstream:
+        return False
+
+    base = git("merge-base", "HEAD", upstream)
+    diverged = base.returncode != 0 or not (base.stdout or "").strip()
+    if not diverged:
+        return False
+
+    print("\n⚠️  История на GitHub была переписана — общий предок отсутствует.")
+    print("   Перехожу на версию из origin, состояние сохраняю слиянием.")
+    snapshot = backup_files([p for p in STATE_SYNC if os.path.exists(os.path.join(REPO, p))])
+    reset = git("reset", "--hard", upstream, visible=True)
+    if reset.returncode != 0:
+        print("   ❌ Не удалось перейти на версию origin — оставляю всё как есть.")
+        restore_files(snapshot)
+        return False
+    merge_back_state(snapshot)
+    print("   ✅ Локальная копия синхронизирована с новой историей.")
+    return True
+
+
+def sync_from_remote():
+    print("=== [1/3] Pulling latest state from GitHub ===")
+    remote_str = strip_token_from_remote()
     if remote_str:
-        # Show URL with masked token
-        masked = re.sub(r'(https://)[^@]*(@github\.com)', r'\1***\2', remote_str)
-        print(f"  Git remote: {masked}")
+        print(f"  Git remote: {mask_secrets(remote_str)}")
     else:
         print("  ⚠️ Git remote: not configured")
     try:
-        fetch = git("fetch", "--prune", visible=True, timeout=30)
+        # 30с не хватало: репозиторий растёт от коммитов состояния каждые ~5 минут,
+        # и на медленном канале fetch отваливался, тихо отключая синхронизацию.
+        # Вывод забираем себе, чтобы вычистить токен из сообщения об ошибке.
+        fetch = git("fetch", "--prune", timeout=120)
     except subprocess.TimeoutExpired:
         print("\n⚠️ WARNING: git fetch timed out — starting bot with local state.")
         return
     if fetch.returncode != 0:
         print("\n⚠️ WARNING: git fetch failed — starting bot with local state.")
+        print("   " + mask_secrets((fetch.stderr or "").strip())[:400])
+        return
+    print("  ✅ git fetch OK")
+
+    # Если историю переписали, обычный rebase здесь бесполезен и опасен.
+    if recover_from_rewritten_history():
         return
 
     if not drop_local_state_commits():
@@ -349,8 +628,8 @@ def sync_from_remote():
                 print("\nWARNING: git pull failed — starting bot with local state.")
     finally:
         if state_snapshot:
-            restore_files(state_snapshot)
-            print("INFO: local state restored after git sync.")
+            print("INFO: merging local state with the version pulled from GitHub...")
+            merge_back_state(state_snapshot)
 
     # Разрешаем любые конфликты слияния/autostash в рабочей директории
     status = git("status", "--porcelain")
@@ -543,9 +822,27 @@ resolve_config_after_sync()
 print("\n=== [2/3] Starting bot (Ctrl+C to exit) ===\n")
 
 os.environ["BOT_RUNNING_UNDER_LAUNCHER"] = "1"
+# Ctrl+C должен гасить бота, а не лаунчер: лаунчеру нужно дожить до блока
+# finally, где состояние уходит на GitHub.
 signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+def _restore_default_sigint():
+    """Возвращает дочернему процессу обычную реакцию на SIGINT.
+
+    На Linux/Android диспозиция SIG_IGN наследуется через fork+exec, и CPython
+    в таком случае вообще не ставит свой обработчик — app.py переставал
+    реагировать на Ctrl+C и на `pkill -2` из mobile/stop.sh. Дальше stop.sh
+    добивал процессы через -9 вместе с лаунчером, и состояние не пушилось.
+    """
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
 try:
-    proc = subprocess.Popen([sys.executable, MONITOR] + sys.argv[1:], cwd=REPO)
+    popen_kwargs = {}
+    if os.name != "nt":
+        popen_kwargs["preexec_fn"] = _restore_default_sigint
+    proc = subprocess.Popen([sys.executable, MONITOR] + sys.argv[1:], cwd=REPO, **popen_kwargs)
     try:
         with open(LOCK_FILE, "w") as f:
             f.write(f"{os.getpid()}\n{proc.pid}\n")
@@ -563,17 +860,20 @@ finally:
                 sys.path.append(REPO)
                 import config_crypt
                 with open(os.path.join(REPO, "config.json"), "rb") as f:
-                    encrypted = config_crypt.encrypt(f.read(), passphrase)
-                with open(os.path.join(REPO, "config.json.enc"), "wb") as f:
-                    f.write(encrypted)
-                print("  Config encrypted successfully.")
+                    plaintext = f.read()
+                # Перезаписываем только при реальном изменении настроек: соль
+                # случайна, поэтому иначе каждый запуск давал новый 23-КБ блоб,
+                # несжимаемый дельтой (163 МБ истории при неизменном конфиге).
+                if config_crypt.encrypt_to_file(plaintext, passphrase, os.path.join(REPO, "config.json.enc")):
+                    print("  Config encrypted successfully.")
+                else:
+                    print("  Config unchanged — re-encryption skipped.")
             except Exception as e:
                 print(f"  ⚠️ Error encrypting config: {e}")
         
         # Ensure remote URL has token for non-interactive push
         gh_token = os.environ.get('GITHUB_TOKEN', '')
         if gh_token:
-            import re
             remote_url = git("remote", "get-url", "origin")
             remote_str = (remote_url.stdout or "").strip()
             if remote_str:
@@ -646,16 +946,15 @@ finally:
                 except subprocess.TimeoutExpired:
                     print("WARNING: pull timed out.")
                     break
-                # Restore our local state files on top of whatever remote had
+                # Merge our local state with whatever remote had (not overwrite)
                 if state_snapshot:
-                    restore_files(state_snapshot)
+                    merge_back_state(state_snapshot)
                 # Re-encrypt config if needed, otherwise stage config.json directly
                 if passphrase and os.path.exists(os.path.join(REPO, "config.json")):
                     try:
                         with open(os.path.join(REPO, "config.json"), "rb") as f:
-                            encrypted = config_crypt.encrypt(f.read(), passphrase)
-                        with open(os.path.join(REPO, "config.json.enc"), "wb") as f:
-                            f.write(encrypted)
+                            config_crypt.encrypt_to_file(f.read(), passphrase,
+                                                         os.path.join(REPO, "config.json.enc"))
                     except Exception:
                         pass
                 elif not passphrase and os.path.exists(os.path.join(REPO, "config.json")):

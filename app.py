@@ -46,6 +46,10 @@ SENT_OFFERS_FILE = 'sent_offers.json'
 BANNED_IDS_FILE = 'banned_ids.txt'
 BANNED_SELLERS_FILE = 'banned_sellers.txt'
 SELLER_MAP_FILE = 'seller_map.json'
+# Метки времени правок и очисток состояния. Нужны слиянию (state_merge.py):
+# без них объединение двух сторон возвращало бы обратно снятые баны и
+# отменяло очистку истории — удаление невозможно выразить объединением.
+STATE_META_FILE = 'state_meta.json'
 
 def setup_logging(verbose=False):
     if verbose:
@@ -78,6 +82,14 @@ setup_logging(verbose=False)
 logger = logging.getLogger()
 process_offers_lock = asyncio.Lock()
 HTTP_TIMEOUT = (10, 20)
+# Бюджеты на все попытки внутри одного запроса. Внешние asyncio.wait_for ниже
+# ставятся с запасом к этим значениям, чтобы поток успевал завершиться сам.
+LISTINGS_BUDGET = 75
+LISTINGS_WAIT = 90
+OFFER_DETAILS_BUDGET = 45
+OFFER_DETAILS_WAIT = 60
+VALIDATION_BUDGET = 20
+VALIDATION_WAIT = 30
 
 # Глобальные переменные
 seen_ids = set()
@@ -94,6 +106,7 @@ check_run_count = 0
 # Схема: href → { 'full_description': str, 'rating_text': str, 'cached_at': float }
 OFFER_DETAILS_CACHE = {}
 OFFER_DETAILS_CACHE_TTL = 3600  # Время жизни кэша: 1 час (3600 секунд)
+OFFER_DETAILS_CACHE_MAX = 5000  # Предел записей: TTL проверяется только при чтении
 chat_id = os.environ.get('TELEGRAM_CHAT_ID')
 bot_username = os.environ.get('TELEGRAM_BOT_USERNAME')
 config = ConfigManager()  # Загружает из config.json или создаёт с дефолтами
@@ -123,6 +136,78 @@ def save_chat_id(new_id):
 
 SEEN_IDS_MAX = 15000
 
+
+def atomic_write_text(path, text, encoding='utf-8'):
+    """Пишет файл целиком через временный и os.replace.
+
+    Бот завершается через os._exit, поэтому обычная запись «на месте» могла
+    оборваться посередине и оставить обрезанный файл: для seen_cache и
+    sent_offers это означало потерю дедупликации и повторные уведомления.
+    """
+    tmp_path = path + '.tmp'
+    try:
+        with open(tmp_path, 'w', encoding=encoding) as f:
+            f.write(text)
+        os.replace(tmp_path, path)
+        return True
+    except Exception as e:
+        logger.warning(f"Ошибка записи {path}: {e}")
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        return False
+
+
+_state_meta = None
+
+
+def _load_state_meta():
+    global _state_meta
+    if _state_meta is None:
+        try:
+            with open(STATE_META_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                data = {}
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            data = {}
+        data.setdefault('modified_at', {})
+        data.setdefault('cleared_at', {})
+        _state_meta = data
+    return _state_meta
+
+
+def _save_state_meta():
+    if _state_meta is not None:
+        atomic_write_text(STATE_META_FILE, json.dumps(_state_meta, ensure_ascii=False, indent=1))
+
+
+def mark_state_modified(key, min_interval=5.0):
+    """Отмечает время правки состояния. Сравнивается со временем очистки на
+    другой стороне, поэтому обновляется часто — с простым дребезгом."""
+    meta = _load_state_meta()
+    now = time.time()
+    previous = meta['modified_at'].get(key, 0)
+    try:
+        previous = float(previous)
+    except (TypeError, ValueError):
+        previous = 0
+    if now - previous < min_interval:
+        return
+    meta['modified_at'][key] = now
+    _save_state_meta()
+
+
+def mark_state_cleared(key):
+    """Отмечает осознанную очистку: слияние не должно её отменять."""
+    meta = _load_state_meta()
+    now = time.time()
+    meta['cleared_at'][key] = now
+    meta['modified_at'][key] = now
+    _save_state_meta()
+
+
 def load_seen_ids():
     global seen_ids, seen_cache
     try:
@@ -130,14 +215,40 @@ def load_seen_ids():
             all_ids = [line.strip() for line in f if line.strip()]
     except FileNotFoundError:
         all_ids = []
-    
+
     seen_ids = set(all_ids)
+
+    # Файл годами дописывался и при повторной отправке того же лота, поэтому
+    # разросся дублями (около 300 тыс. строк на 4.8 тыс. id) — и в таком виде
+    # коммитился в git каждые несколько минут. Схлопываем при заметном избытке;
+    # порядок первых вхождений сохраняем.
+    if len(all_ids) > len(seen_ids) * 2 and seen_ids:
+        deduped = list(dict.fromkeys(all_ids))
+        if atomic_write_text(SEEN_IDS_FILE, ''.join(i + '\n' for i in deduped)):
+            logger.info(f"seen_ids.txt: убраны дубли, {len(all_ids)} строк → {len(deduped)}")
 
     try:
         with open(SEEN_CACHE_FILE, 'r', encoding='utf-8') as f:
-            seen_cache = json.load(f)
+            raw_cache = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        seen_cache = {}
+        raw_cache = {}
+
+    # Файл синхронизируется через git между ПК и Actions, поэтому текстовый
+    # автомерж может слепить запись неверной формы. Приводим к [цена, описание],
+    # иначе распаковка в цикле обработки уронит весь прогон.
+    seen_cache = {}
+    dropped = 0
+    if isinstance(raw_cache, dict):
+        for oid, value in raw_cache.items():
+            entry = normalize_seen_entry(value)
+            if entry is None:
+                dropped += 1
+                continue
+            seen_cache[oid] = entry
+    else:
+        dropped = 1
+    if dropped:
+        logger.warning(f"seen_cache: отброшено повреждённых записей: {dropped}")
 
     # Migrate legacy/existing text ids to the JSON seen_cache if missing
     migrated = False
@@ -145,30 +256,49 @@ def load_seen_ids():
         if oid not in seen_cache:
             seen_cache[oid] = [None, ""]
             migrated = True
-    if migrated:
+    if migrated or dropped:
         save_seen_cache()
+
+def normalize_seen_entry(value):
+    """Приводит запись seen_cache к [цена, описание]. None — если запись мусорная."""
+    if not isinstance(value, list) or not value:
+        return None
+    price = value[0]
+    if price is not None and not isinstance(price, (int, float)):
+        return None
+    description = value[-1] if len(value) > 1 else ""
+    if not isinstance(description, str):
+        description = ""
+    return [price, description]
 
 def save_seen_cache():
     global seen_cache
     if len(seen_cache) > SEEN_IDS_MAX:
-        keys = list(seen_cache.keys())
-        trimmed_keys = keys[-SEEN_IDS_MAX:]
-        seen_cache = {k: seen_cache[k] for k in trimmed_keys}
-    try:
-        with open(SEEN_CACHE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(seen_cache, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.warning(f"Ошибка сохранения seen_cache: {e}")
+        # Сначала выбрасываем записи без цены: они появляются при миграции из
+        # seen_ids.txt и никогда не совпадут с лотом, а обычная обрезка «с конца»
+        # вытесняла бы ими настоящие записи.
+        excess = len(seen_cache) - SEEN_IDS_MAX
+        placeholders = [k for k, v in seen_cache.items() if v[0] is None]
+        for key in placeholders[:excess]:
+            del seen_cache[key]
+        if len(seen_cache) > SEEN_IDS_MAX:
+            keys = list(seen_cache.keys())
+            seen_cache = {k: seen_cache[k] for k in keys[-SEEN_IDS_MAX:]}
+    atomic_write_text(SEEN_CACHE_FILE, json.dumps(seen_cache, ensure_ascii=False, indent=2))
+    mark_state_modified('seen_state')
 
 def save_seen_id(offer_id, price=None, description=None):
     global seen_ids, seen_cache
+    is_new = offer_id not in seen_ids
     seen_ids.add(offer_id)
     seen_cache[offer_id] = [price, description or ""]
-    try:
-        with open(SEEN_IDS_FILE, 'a') as f:
-            f.write(offer_id + '\n')
-    except Exception as e:
-        logger.warning(f"Ошибка сохранения seen_ids.txt: {e}")
+    if is_new:
+        # Дописываем только новые id: раньше файл рос дублями (298k строк на 4.8k id).
+        try:
+            with open(SEEN_IDS_FILE, 'a') as f:
+                f.write(offer_id + '\n')
+        except Exception as e:
+            logger.warning(f"Ошибка сохранения seen_ids.txt: {e}")
     save_seen_cache()
 
 def load_banned_ids():
@@ -180,16 +310,17 @@ def load_banned_ids():
         banned_ids = set()
 
 def save_banned_ids():
-    with open(BANNED_IDS_FILE, 'w') as f:
-        for offer_id in sorted(banned_ids):
-            f.write(offer_id + '\n')
+    atomic_write_text(BANNED_IDS_FILE, ''.join(offer_id + '\n' for offer_id in sorted(banned_ids)))
+    # Бан-лист правит только пользователь, поэтому слияние берёт свежую версию
+    # целиком: иначе снятый бан возвращался бы с другой стороны.
+    mark_state_modified(BANNED_IDS_FILE, min_interval=0)
 
 def clear_banned_ids():
     global banned_ids
     removed = len(banned_ids)
     banned_ids.clear()
-    with open(BANNED_IDS_FILE, 'w') as f:
-        f.write('')
+    atomic_write_text(BANNED_IDS_FILE, '')
+    mark_state_cleared(BANNED_IDS_FILE)
     return removed
 
 def load_banned_sellers():
@@ -201,22 +332,15 @@ def load_banned_sellers():
         banned_sellers = set()
 
 def save_banned_sellers():
-    try:
-        with open(BANNED_SELLERS_FILE, 'w', encoding='utf-8') as f:
-            for seller in sorted(banned_sellers):
-                f.write(seller + '\n')
-    except Exception as e:
-        logger.warning(f"Ошибка сохранения banned_sellers: {e}")
+    atomic_write_text(BANNED_SELLERS_FILE, ''.join(seller + '\n' for seller in sorted(banned_sellers)))
+    mark_state_modified(BANNED_SELLERS_FILE, min_interval=0)
 
 def clear_banned_sellers():
     global banned_sellers
     removed = len(banned_sellers)
     banned_sellers.clear()
-    try:
-        with open(BANNED_SELLERS_FILE, 'w', encoding='utf-8') as f:
-            f.write('')
-    except Exception as e:
-        logger.warning(f"Ошибка очистки banned_sellers: {e}")
+    atomic_write_text(BANNED_SELLERS_FILE, '')
+    mark_state_cleared(BANNED_SELLERS_FILE)
     return removed
 
 def load_seller_map():
@@ -230,11 +354,7 @@ def load_seller_map():
         seller_reverse_map = {}
 
 def save_seller_map():
-    try:
-        with open(SELLER_MAP_FILE, 'w', encoding='utf-8') as f:
-            json.dump(seller_map, f, ensure_ascii=False, indent=1)
-    except Exception as e:
-        logger.warning(f"Ошибка сохранения seller_map: {e}")
+    atomic_write_text(SELLER_MAP_FILE, json.dumps(seller_map, ensure_ascii=False, indent=1))
 
 def get_or_create_seller_id(seller_name):
     if seller_name in seller_reverse_map:
@@ -291,8 +411,7 @@ def save_sent_offer(offer_id, price, description, seller=None):
     if seller:
         seller_key = seller.strip().lower()
         sent_by_seller.setdefault(seller_key, []).append(record)
-    with open(SENT_OFFERS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(sent_offers, f, ensure_ascii=False, indent=2)
+    atomic_write_text(SENT_OFFERS_FILE, json.dumps(sent_offers, ensure_ascii=False, indent=2))
 
 
 def clear_monitoring_state():
@@ -300,14 +419,13 @@ def clear_monitoring_state():
     global seen_ids, seen_cache, sent_offers, sent_by_seller
     seen_ids.clear()
     seen_cache.clear()
-    with open(SEEN_IDS_FILE, 'w') as f:
-        f.write('')
-    with open(SEEN_CACHE_FILE, 'w', encoding='utf-8') as f:
-        json.dump({}, f)
+    atomic_write_text(SEEN_IDS_FILE, '')
+    atomic_write_text(SEEN_CACHE_FILE, json.dumps({}))
     sent_offers.clear()
     sent_by_seller.clear()
-    with open(SENT_OFFERS_FILE, 'w', encoding='utf-8') as f:
-        json.dump({}, f)
+    atomic_write_text(SENT_OFFERS_FILE, json.dumps({}))
+    # Помечаем очистку, иначе слияние вернуло бы просмотренные лоты с другой стороны
+    mark_state_cleared('seen_state')
     logger.info("🧹 Сброс мониторинга: seen_ids, seen_cache, sent_offers, sent_by_seller очищены")
 
 def parse_price(price_text):
@@ -647,8 +765,15 @@ def main_reply_keyboard():
     )
 
 
-def requests_retry_get(session, url, max_retries=4, initial_backoff=3, **kwargs):
-    """Makes a GET request with automatic retries for 5xx/429 status codes or network exceptions."""
+def requests_retry_get(session, url, max_retries=4, initial_backoff=3, total_budget=None, **kwargs):
+    """Makes a GET request with automatic retries for 5xx/429 status codes or network exceptions.
+
+    total_budget — предельное время всех попыток в секундах. Вызовы обёрнуты в
+    asyncio.wait_for, и без бюджета ретраи (до ~150с) не успевали отработать:
+    внешний таймаут срабатывал первым, результат выбрасывался, а поток продолжал
+    висеть — при череде сбоев они забивали пул потоков целиком.
+    """
+    start = time.monotonic()
     for attempt in range(1, max_retries + 1):
         try:
             if attempt > 1:
@@ -662,6 +787,14 @@ def requests_retry_get(session, url, max_retries=4, initial_backoff=3, **kwargs)
                 logger.error(f"Не удалось выполнить GET-запрос к {url} после {max_retries} попыток: {e}")
                 raise e
             sleep_time = (initial_backoff * (2 ** (attempt - 1))) + random.uniform(1.0, 3.0)
+            if total_budget is not None:
+                elapsed = time.monotonic() - start
+                if elapsed + sleep_time >= total_budget:
+                    logger.error(
+                        f"Исчерпан бюджет {total_budget:.0f}с на запрос к {url} "
+                        f"(попытка {attempt}/{max_retries}): {e}"
+                    )
+                    raise e
             logger.warning(f"Ошибка запроса к {url}: {e}. Ожидание {sleep_time:.1f}с перед повтором...")
             time.sleep(sleep_time)
 
@@ -1099,6 +1232,23 @@ async def build_cached_recheck_log_async(snapshot, progress_callback=None):
     return snapshot['log_items']
 
 
+def is_check_running(context):
+    """Идёт ли сейчас ручная проверка (та же логика, что в меню настроек)."""
+    mode_info = context.bot_data.get('bot_mode', {}) or {}
+    if mode_info.get('mode', 'standard') != 'standard':
+        return True
+    if context.bot_data.get('current_check_origin') == 'background':
+        return False
+    return bool(context.bot_data.get('current_check_progress'))
+
+
+def reset_bot_mode():
+    """Возвращает бота в обычный режим (иначе автомониторинг стоит до watchdog)."""
+    bot_mode['mode'] = 'standard'
+    bot_mode['params'] = {}
+    bot_mode['started_at'] = None
+
+
 def build_running_check_status(context):
     progress = context.bot_data.get('current_check_progress') or {}
     mode_info = context.bot_data.get('bot_mode', {}) or {}
@@ -1136,11 +1286,13 @@ def _sync_get_listings():
     """Синхронный HTTP-запрос главных страниц (вызывается через asyncio.to_thread)."""
     all_items = []
     seen_hrefs = set()
+    # Бюджет делим между страницами, чтобы суммарно уложиться в LISTINGS_BUDGET.
+    per_url_budget = max(20, LISTINGS_BUDGET // max(len(FUNPAY_URLS), 1))
     with build_http_session() as session:
         for url in FUNPAY_URLS:
             source_lot = 'prochee' if '1098' in url else 'accounts'
             try:
-                response = requests_retry_get(session, url, timeout=HTTP_TIMEOUT)
+                response = requests_retry_get(session, url, timeout=HTTP_TIMEOUT, total_budget=per_url_budget)
                 soup = BeautifulSoup(response.text, 'html.parser')
                 items = soup.find_all('a', class_='tc-item')
                 for item in items:
@@ -1160,14 +1312,15 @@ async def get_listings():
     """Получает список товаров — НЕ блокирует event loop."""
     return await asyncio.to_thread(_sync_get_listings)
 
-def _sync_get_offer_details(offer_url):
+def _sync_get_offer_details(offer_url, total_budget=None):
     """Синхронный HTTP-запрос деталей предложения (вызывается через asyncio.to_thread)."""
     try:
         delay = random.uniform(config.request_delay_min, config.request_delay_max)
         time.sleep(delay)
         with build_http_session() as session:
             session.headers.update({'Referer': 'https://funpay.com/'})
-            response = requests_retry_get(session, offer_url, timeout=HTTP_TIMEOUT)
+            response = requests_retry_get(session, offer_url, timeout=HTTP_TIMEOUT,
+                                          total_budget=total_budget or OFFER_DETAILS_BUDGET)
             soup = BeautifulSoup(response.text, 'html.parser')
 
         full_description = ""
@@ -1258,15 +1411,19 @@ def _sync_get_offer_details(offer_url):
         logger.error(f"Ошибка при загрузке деталей {offer_url}: {e}")
         return None, "Ошибка загрузки"
 
-async def get_offer_details(offer_url):
-    """Получает детали предложения с кэшированием."""
+async def get_offer_details(offer_url, total_budget=None):
+    """Получает детали предложения с кэшированием.
+
+    total_budget задаёт предел на все попытки внутри потока. Он должен быть
+    меньше внешнего asyncio.wait_for, иначе поток остаётся висеть после тайм-аута.
+    """
     now = time.time()
     if offer_url in OFFER_DETAILS_CACHE:
         cached = OFFER_DETAILS_CACHE[offer_url]
         if now - cached['cached_at'] < OFFER_DETAILS_CACHE_TTL:
             return cached['full_description'], cached['rating_text']
 
-    full_desc, rating = await asyncio.to_thread(_sync_get_offer_details, offer_url)
+    full_desc, rating = await asyncio.to_thread(_sync_get_offer_details, offer_url, total_budget)
 
     if full_desc is not None and full_desc != "Ошибка загрузки":
         OFFER_DETAILS_CACHE[offer_url] = {
@@ -1274,12 +1431,34 @@ async def get_offer_details(offer_url):
             'rating_text': rating,
             'cached_at': now
         }
+        _evict_stale_offer_details(now)
 
     return full_desc, rating
 
 
+def _evict_stale_offer_details(now):
+    """Чистит кэш описаний: TTL проверялся только при чтении, поэтому записи
+    по ссылкам, которые больше не встречаются, копились бесконечно."""
+    if len(OFFER_DETAILS_CACHE) <= OFFER_DETAILS_CACHE_MAX:
+        return
+    for url in [u for u, c in OFFER_DETAILS_CACHE.items()
+                if now - c['cached_at'] >= OFFER_DETAILS_CACHE_TTL]:
+        del OFFER_DETAILS_CACHE[url]
+    # Если протухших не хватило — выбрасываем самые старые.
+    excess = len(OFFER_DETAILS_CACHE) - OFFER_DETAILS_CACHE_MAX
+    if excess > 0:
+        oldest = sorted(OFFER_DETAILS_CACHE, key=lambda u: OFFER_DETAILS_CACHE[u]['cached_at'])
+        for url in oldest[:excess]:
+            del OFFER_DETAILS_CACHE[url]
+
+
 def _sync_search_min_price(keywords, require_pve=False, exclude_confirmed_pve=False):
     """Ищет минимальную цену по ВСЕМ ключевым словам через поиск FunPay."""
+    # Снимок настроек: функция работает в отдельном потоке, а меню может менять
+    # те же списки — перебор живого объекта падал бы с "changed size during
+    # iteration". Копия списка делается на уровне C и разрыву не подвержена.
+    cfg_exclude = list(config.get_exclude_keywords())
+    cfg_positive = list(config.get_positive_keywords())
     all_results = {}  # href → result (дедупликация)
     normalized_keywords = [normalize_match_text(kw) for kw in keywords if normalize_match_text(kw)]
     details_cache = {}
@@ -1321,9 +1500,7 @@ def _sync_search_min_price(keywords, require_pve=False, exclude_confirmed_pve=Fa
                     if 'аренда' in item_text and 'продажа' not in item_text:
                         continue
 
-                    exclude_kws = config.get_exclude_keywords()
-                    positive_kws = config.get_positive_keywords()
-                    if contains_exclude_keyword(item_text, exclude_kws, positive_kws):
+                    if contains_exclude_keyword(item_text, cfg_exclude, cfg_positive):
                         continue
 
                     price_value = parse_price(price_text)
@@ -1375,7 +1552,7 @@ def _sync_search_min_price(keywords, require_pve=False, exclude_confirmed_pve=Fa
 
                     if 'аренда' in item_text and 'продажа' not in item_text:
                         continue
-                    if contains_exclude_keyword(item_text, config.get_exclude_keywords(), config.get_positive_keywords()):
+                    if contains_exclude_keyword(item_text, cfg_exclude, cfg_positive):
                         continue
 
                     matched_kw = _keywords_match_text(normalized_keywords, item_text)
@@ -1406,9 +1583,9 @@ def _sync_search_min_price(keywords, require_pve=False, exclude_confirmed_pve=Fa
 
     # Validate top candidates by loading full descriptions (both PVE and non-PVE).
     # This keeps the search fast: only top-N get HTTP requests, not all matches.
-    exclude_kws = config.get_exclude_keywords()
-    positive_kws = config.get_positive_keywords()
-    pve_tokens = [normalize_match_text(pk) for pk in config.get_confirmed_pve()] if (require_pve or exclude_confirmed_pve) else []
+    exclude_kws = cfg_exclude
+    positive_kws = cfg_positive
+    pve_tokens = [normalize_match_text(pk) for pk in list(config.get_confirmed_pve())] if (require_pve or exclude_confirmed_pve) else []
     validated = []
     for candidate in results[:8]:
         href = candidate['href']
@@ -1462,9 +1639,10 @@ def _sync_diagnostic_search(skin_searches, time_budget=120):
     start_time = time.monotonic()
     results = {}
 
-    exclude_kws = config.get_exclude_keywords()
-    positive_kws = config.get_positive_keywords()
-    pve_confirmed = config.get_confirmed_pve()
+    # Снимок настроек: функция работает в отдельном потоке (см. _sync_search_min_price)
+    exclude_kws = list(config.get_exclude_keywords())
+    positive_kws = list(config.get_positive_keywords())
+    pve_confirmed = list(config.get_confirmed_pve())
 
     # Построим индекс: normalized_keyword → [(skin_id, require_pve), ...]
     keyword_index = {}  # normalized_kw → [(sid, require_pve)]
@@ -1716,6 +1894,14 @@ async def process_offers(bot_instance=None, context=None, skip_seen=True, max_pr
             logger.info("⏳ Ручная проверка не запущена: уже выполняется другая проверка")
             return -1
 
+    # Повторная проверка вплотную к захвату. Выше есть await-паузы, и за них
+    # блокировку могла занять другая проверка — тогда запуск молча вставал в
+    # очередь вместо честного отказа, а пользователь не получал ответа.
+    # Между этим if и acquire() точек переключения нет, поэтому гонки не будет.
+    if process_offers_lock.locked():
+        logger.info("⏳ Проверка не запущена: блокировку успела занять другая")
+        return 0 if skip_seen else -1
+
     async with process_offers_lock:
         return await _process_offers_impl(
             bot_instance=bot_instance,
@@ -1916,7 +2102,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         )
 
         try:
-            listings = await asyncio.wait_for(get_listings(), timeout=35)
+            listings = await asyncio.wait_for(get_listings(), timeout=LISTINGS_WAIT)
         except asyncio.TimeoutError:
             logger.error("⏱️ Тайм-аут при получении списка лотов")
             if progress_msg and progress_bot:
@@ -1960,13 +2146,15 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
         kw_to_skin = {}
         kw_to_edition = {}
         if skip_seen:  # only for background auto-monitoring
+            # Ключи нормализуем так же, как текст объявления (в т.ч. ё→е):
+            # иначе слово с «ё» здесь не могло совпасть никогда.
             for sid, skin in skins_dict.items():
                 for kw in skin.get('keywords', []):
-                    kw_to_skin[kw.lower()] = (sid, sid.replace('_', ' ').title())
+                    kw_to_skin[normalize_match_text(kw)] = (sid, sid.replace('_', ' ').title())
             for eid, ed in config.get_all_editions().items():
                 if ed.get('enabled', True):
                     for kw in ed.get('keywords', []):
-                        kw_to_edition[kw.lower()] = (eid, eid.replace('_', ' ').title())
+                        kw_to_edition[normalize_match_text(kw)] = (eid, eid.replace('_', ' ').title())
 
         for idx, item in enumerate(listings, start=1):
             if cancelled():
@@ -2021,9 +2209,11 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
 
             already_seen = False
             if skip_seen and offer_id in seen_cache:
-                cached_price, cached_desc = seen_cache[offer_id]
-                if cached_price == price_value and cached_desc == short_description:
-                    already_seen = True
+                cached_entry = normalize_seen_entry(seen_cache[offer_id])
+                if cached_entry is not None:
+                    cached_price, cached_desc = cached_entry
+                    if cached_price == price_value and cached_desc == short_description:
+                        already_seen = True
 
             if already_seen:
                 already_seen_count += 1
@@ -2279,7 +2469,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
             try:
                 full_description, rating_text = await asyncio.wait_for(
                     get_offer_details(href),
-                    timeout=max(20, config.request_delay_max + 20)
+                    timeout=OFFER_DETAILS_WAIT + config.request_delay_max
                 )
             except asyncio.TimeoutError:
                 logger.warning(f"⏱️ Тайм-аут деталей лота: {href}")
@@ -2307,7 +2497,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 continue
 
             if premium_only:
-                combined_lower = combined_text.lower()
+                combined_lower = normalize_match_text(combined_text)
                 editions = config.get_all_editions()
                 edition_priority = ['ultimate', 'limited', 'super_deluxe']
                 matched_edition = None
@@ -2315,7 +2505,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     ed = editions.get(ed_id, {})
                     if not ed.get('enabled', True):
                         continue
-                    if any(kw.lower() in combined_lower for kw in ed.get('keywords', [])):
+                    # По границам слова, а не подстрокой: иначе «limited»
+                    # срабатывал внутри «unlimited» и издание определялось неверно.
+                    if any(re.search(r'\b' + re.escape(normalize_match_text(kw)) + r'\b', combined_lower)
+                           for kw in ed.get('keywords', []) if kw.strip()):
                         matched_edition = ed_id
                         break
                 if not matched_edition:
@@ -2373,7 +2566,7 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                                 summary_stats[skin['id']]['status'] = "❌ Найден только без PVE"
                                 summary_stats[skin['id']]['href'] = candidate.get('href', '')
                                 if summary_stats[skin['id']].get('min_price') is None:
-                                    summary_stats[skin['id']]['min_price'] = candidate.get('price', 0)
+                                    summary_stats[skin['id']]['min_price'] = candidate.get('price_value', 0)
                         else:
                             filtered_skins.append(skin)
                     found_skins = filtered_skins
@@ -2687,7 +2880,8 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                     if time.monotonic() - loop_start_time > 300:
                         return True
                     full_desc, _ = await asyncio.wait_for(
-                        get_offer_details(href), timeout=15
+                        get_offer_details(href, total_budget=VALIDATION_BUDGET),
+                        timeout=VALIDATION_WAIT + config.request_delay_max
                     )
                     if full_desc:
                         excluded = contains_exclude_keyword(full_desc, exclude_keywords, positive_keywords)
@@ -2741,6 +2935,10 @@ async def _process_offers_impl(bot_instance=None, context=None, skip_seen=True, 
                 """Check if previously saved offer is no longer on the listing page."""
                 # If listing was truncated (2000 items), we can't be sure the offer is gone
                 if total_listings >= 2000:
+                    return False
+                # Пустая выдача означает сбой загрузки, а не что все лоты исчезли:
+                # иначе один сетевой сбой записывал бы «пропал» всем позициям сразу.
+                if not all_listing_hrefs:
                     return False
                 try:
                     top = get_latest_top3(item_type, item_id, mode)
@@ -3068,6 +3266,13 @@ async def recheck(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Вы не авторизованы. Напишите /start")
         return
 
+    # Без этой проверки команда затирала bot_mode уже идущей проверки: её
+    # restore_skins/restore_mode терялись, а временные цены оставались в конфиге.
+    if is_check_running(context):
+        text, keyboard = build_running_check_status(context)
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
+        return
+
     args = context.args if context.args else []
     include_unconfirmed_pve = '++pve' in [a.lower() for a in args]
     search_mode_label = 'По списку'
@@ -3096,19 +3301,25 @@ async def recheck(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚠️ Это может занять несколько минут из-за задержек между запросами."
     )
 
-    sent_count = await process_offers(context=context, skip_seen=False, candidate_limit=None,
-                                      include_unconfirmed_pve=include_unconfirmed_pve)
+    try:
+        sent_count = await process_offers(context=context, skip_seen=False, candidate_limit=None,
+                                          include_unconfirmed_pve=include_unconfirmed_pve)
+    except Exception as e:
+        reset_bot_mode()
+        context.bot_data.pop('current_check_sent_positions', None)
+        logger.error(f"Ошибка перепроверки: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Перепроверка прервана с ошибкой: {e}")
+        return
 
     if sent_count == -1:
+        reset_bot_mode()
         text, keyboard = build_running_check_status(context)
         await update.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
         return
 
     if sent_count == -2:
         context.bot_data.pop('current_check_sent_positions', None)
-        bot_mode['mode'] = 'standard'
-        bot_mode['params'] = {}
-        bot_mode['started_at'] = None
+        reset_bot_mode()
         await update.message.reply_text("⏹ Текущая проверка остановлена принудительно.")
         return
 
@@ -3268,6 +3479,12 @@ async def pricetest(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Неверный формат. Пример: /pricetest 8000 3500")
         return
 
+    # Как и в /recheck: не затираем bot_mode уже идущей проверки.
+    if is_check_running(context):
+        text, keyboard = build_running_check_status(context)
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
+        return
+
     max_price_override = (rare_price + pve_price) if pve_price is not None else rare_price
     pve_text = f"{pve_price}₽" if pve_price is not None else f"стандартные {config.pve_bonus}/1000₽"
 
@@ -3302,25 +3519,31 @@ async def pricetest(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚠️ Режим разовой перепроверки (как /recheck)."
     )
 
-    sent_count = await process_offers(
-        context=context,
-        skip_seen=False,
-        max_price_override=max_price_override,
-        rare_override=rare_price,
-        pve_override=pve_price,
-        candidate_limit=None
-    )
+    try:
+        sent_count = await process_offers(
+            context=context,
+            skip_seen=False,
+            max_price_override=max_price_override,
+            rare_override=rare_price,
+            pve_override=pve_price,
+            candidate_limit=None
+        )
+    except Exception as e:
+        reset_bot_mode()
+        context.bot_data.pop('current_check_sent_positions', None)
+        logger.error(f"Ошибка мин. прайс теста: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Мин. прайс тест прерван с ошибкой: {e}")
+        return
 
     if sent_count == -1:
+        reset_bot_mode()
         text, keyboard = build_running_check_status(context)
         await update.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
         return
 
     if sent_count == -2:
         context.bot_data.pop('current_check_sent_positions', None)
-        bot_mode['mode'] = 'standard'
-        bot_mode['params'] = {}
-        bot_mode['started_at'] = None
+        reset_bot_mode()
         await update.message.reply_text("⏹ Текущая проверка остановлена принудительно.")
         return
 
@@ -3391,6 +3614,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global bot_username
     user_chat_id = update.effective_chat.id
+
+    # Владелец привязывается только один раз (через TELEGRAM_CHAT_ID или первый /start).
+    # Иначе любой посторонний мог бы забрать бота себе этой же командой.
+    if chat_id and str(user_chat_id) != str(chat_id):
+        logger.warning(f"Отклонён /start от постороннего чата: {user_chat_id}")
+        await update.message.reply_text("❌ Этот бот приватный.")
+        return
+
     save_chat_id(user_chat_id)
     # Обновляем authorized_chat_id для settings
     context.bot_data['authorized_chat_id'] = str(user_chat_id)
@@ -3530,8 +3761,8 @@ async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ GitHub не настроен.\n\n"
             "Установите переменные окружения:\n"
-            "<code>GITHUB_TOKEN</code> â€” Personal Access Token\n"
-            "<code>GITHUB_REPO</code> â€” owner/repo\n\n"
+            "<code>GITHUB_TOKEN</code> — Personal Access Token\n"
+            "<code>GITHUB_REPO</code> — owner/repo\n\n"
             "📌 Создать PAT: GitHub → Settings → Developer settings → Tokens",
             parse_mode='HTML'
         )
@@ -3546,8 +3777,8 @@ async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("ℹ️ config.json не изменился, пуш не нужен.")
     except Exception as e:
-        logger.error(f"Ошибка синхронизации: {e}")
-        await update.message.reply_text(f"❌ Ошибка синхронизации: {e}")
+        logger.error(f"Ошибка синхронизации: {_mask_secrets(str(e))}")
+        await update.message.reply_text(f"❌ Ошибка синхронизации: {_mask_secrets(str(e))}")
 
 
 def _get_mode_txt_value():
@@ -3560,13 +3791,38 @@ def _get_mode_txt_value():
             pass
     return False
 
+def _mask_secrets(text):
+    """Убирает токен из текста ошибки git.
+
+    Токен вписан в remote URL, и git печатает этот URL в stderr при сбое пуша —
+    иначе он попадал бы в логи и в сообщение /sync в Telegram.
+    """
+    if not text:
+        return text
+    masked = re.sub(r'(https://)[^@/\s]+(@github\.com)', r'\1***\2', text)
+    gh_token = os.environ.get('GITHUB_TOKEN', '')
+    if gh_token:
+        masked = masked.replace(gh_token, '***')
+    return masked
+
+
 def _git_commit_and_push(files_to_sync, commit_msg):
     """Коммитит и пушит файлы напрямую через локальный Git CLI.
     Используется, когда бот запущен под лаунчером."""
     repo_dir = os.path.dirname(os.path.abspath(__file__))
     repo_dir_safe = repo_dir.replace("\\", "/")
     git_base = ["git", "-c", f"safe.directory={repo_dir_safe}"]
-    
+    # Авторизация через credential helper, читающий токен из окружения: на диск
+    # (.git/config) он не попадает и в сообщениях git об ошибках не светится.
+    if os.environ.get('GITHUB_TOKEN'):
+        git_base += [
+            "-c",
+            "credential.https://github.com.helper="
+            "!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f",
+            "-c", "credential.https://github.com.useHttpPath=false",
+        ]
+
+
     def git_run(*args):
         env = os.environ.copy()
         env["GIT_TERMINAL_PROMPT"] = "0"
@@ -3587,15 +3843,17 @@ def _git_commit_and_push(files_to_sync, commit_msg):
                 stderr = "Git executable not found in PATH"
             return DummyResult()
 
-    # 1. Исправляем remote URL с использованием GITHUB_TOKEN для неинтерактивного пуша
-    gh_token = os.environ.get('GITHUB_TOKEN', '')
-    if gh_token:
+    # 1. Чистим URL origin от вписанного ранее токена (авторизация теперь через
+    #    credential helper выше). Токен в URL оставался в .git/config открытым
+    #    текстом и печатался git'ом в сообщениях об ошибках. Чистим только когда
+    #    есть чем авторизоваться взамен — иначе push перестал бы работать.
+    if os.environ.get('GITHUB_TOKEN'):
         r_url = git_run("remote", "get-url", "origin")
         r_str = (r_url.stdout or "").strip()
         if r_str:
-            fixed = re.sub(r'https://(?:[^@]+@)?github\.com', f'https://{gh_token}@github.com', r_str)
-            if fixed != r_str:
-                git_run("remote", "set-url", "origin", fixed)
+            clean = re.sub(r'https://[^@/\s]+@github\.com', 'https://github.com', r_str)
+            if clean != r_str:
+                git_run("remote", "set-url", "origin", clean)
 
     # 1.5 Разрешаем любые конфликты слияния/autostash в рабочей директории ДО коммита
     status = git_run("status", "--porcelain")
@@ -3634,7 +3892,7 @@ def _git_commit_and_push(files_to_sync, commit_msg):
             logger.info(f"Git push successful for: {files_to_sync}")
             return True
         else:
-            logger.info(f"First git push failed, trying to pull & rebase... Error: {push.stderr.strip()}")
+            logger.info(f"First git push failed, trying to pull & rebase... Error: {_mask_secrets(push.stderr.strip())}")
             # Пробуем сделать pull --rebase и повторить пуш
             pull = git_run("pull", "--rebase", "--autostash")
             if pull.returncode != 0:
@@ -3692,7 +3950,7 @@ def _git_commit_and_push(files_to_sync, commit_msg):
                 logger.info(f"Git push successful after rebase for: {files_to_sync}")
                 return True
             else:
-                raise Exception(f"Git push failed after rebase: {push.stderr.strip()}")
+                raise Exception(f"Git push failed after rebase: {_mask_secrets(push.stderr.strip())}")
     else:
         logger.info(f"No changes staged for: {files_to_sync}")
         return False
@@ -3851,6 +4109,11 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обрабатывает нажатия кнопок постоянной клавиатуры."""
+    # Правка ранее отправленного сообщения приходит без update.message, а весь
+    # код ниже отвечает через него — такой апдейт просто пропускаем.
+    if update.message is None or not update.message.text:
+        return
+
     # Очищаем незавершённый ввод, если был.
     context.user_data.pop('input_state', None)
     context.user_data.pop('editing_skin_id', None)
@@ -4229,7 +4492,30 @@ def main():
     logger.info("🤖 Бот запущен, запуск мониторинга...")
 
     import signal as _signal
-    _signal.signal(_signal.SIGINT, lambda s, f: os._exit(0))
+    import threading as _threading
+
+    def _handle_stop(signum, frame):
+        """Мягкая остановка с жёсткой страховкой.
+
+        Раньше здесь был os._exit(0) сразу: процесс умирал посреди отправки
+        сообщения или записи файла. Теперь просим PTB завершиться штатно, но
+        если он не уложится — всё равно выходим, чтобы бот не завис.
+        """
+        if getattr(_handle_stop, 'called', False):
+            os._exit(0)          # повторный Ctrl+C — выходим немедленно
+        _handle_stop.called = True
+        logger.info("⏹ Останавливаюсь... (повторный Ctrl+C — немедленный выход)")
+        _threading.Timer(15, lambda: os._exit(0)).start()
+        try:
+            application.stop_running()
+        except Exception:
+            os._exit(0)
+
+    _signal.signal(_signal.SIGINT, _handle_stop)
+    try:
+        _signal.signal(_signal.SIGTERM, _handle_stop)
+    except (AttributeError, ValueError):
+        pass  # SIGTERM есть не на всех платформах
     application.run_polling(drop_pending_updates=True, stop_signals=None)
 
 if __name__ == "__main__":

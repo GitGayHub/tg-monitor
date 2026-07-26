@@ -367,6 +367,9 @@ class ConfigManager:
     def __init__(self, config_path='config.json'):
         self.config_path = config_path
         self.data = {}
+        # True, если файл существует, но прочитать его не удалось. В этом режиме
+        # запись запрещена, чтобы не затереть целый конфиг дефолтами.
+        self._load_failed = False
         self.load()
 
     # ========================
@@ -379,23 +382,32 @@ class ConfigManager:
             try:
                 with open(self.config_path, 'r', encoding='utf-8') as f:
                     self.data = json.load(f)
+                # Отслеживаем, изменила ли миграция что-нибудь. Безусловный save()
+                # обновлял mtime при каждом старте, а лаунчер по этому mtime решает,
+                # чей конфиг новее — и «свежая» копия без правок побеждала настоящие
+                # изменения с другого компьютера.
+                changed = False
                 # Дополняем отсутствующие ключи дефолтами
                 for key, default_val in DEFAULT_CONFIG.items():
                     if key not in self.data:
                         self.data[key] = copy.deepcopy(default_val)
+                        changed = True
                 # Добавляем enabled=True для скинов без этого поля (миграция)
                 for skin_id, skin_data in self.data.get('rare_skins', {}).items():
                     if 'enabled' not in skin_data:
                         skin_data['enabled'] = True
+                        changed = True
                 # Миграция: добавляем enabled для изданий
                 for eid, ed_data in self.data.get('editions', {}).items():
                     if 'enabled' not in ed_data:
                         ed_data['enabled'] = True
+                        changed = True
                 # Миграция: добавляем новые скины из дефолтов, если их нет
                 existing_skins = self.data.get('rare_skins', {})
                 for sid, sdata in DEFAULT_RARE_SKINS.items():
                     if sid not in existing_skins:
                         existing_skins[sid] = copy.deepcopy(sdata)
+                        changed = True
                         logger.info(f"Миграция: добавлен скин '{sid}' из дефолтов")
                     else:
                         # Дополняем отсутствующие ключевые слова из дефолтов
@@ -403,22 +415,46 @@ class ConfigManager:
                         for kw in sdata.get('keywords', []):
                             if kw.lower() not in existing_kws_lower:
                                 existing_skins[sid].setdefault('keywords', []).append(kw)
+                                changed = True
                                 logger.info(f"Миграция: для скина '{sid}' добавлено ключевое слово '{kw}'")
                 # Миграция: добавляем недостающие confirmed PVE слова из дефолтов
                 existing_confirmed = set(k.lower() for k in self.data.get('confirmed_pve_keywords', []))
                 for kw in DEFAULT_CONFIRMED_PVE:
                     if kw.lower() not in existing_confirmed:
                         self.data.setdefault('confirmed_pve_keywords', []).append(kw)
+                        changed = True
                         logger.info(f"Миграция: добавлено подтв. PVE слово '{kw}'")
                 existing_excludes = set(k.lower() for k in self.data.get('exclude_keywords', []))
                 for kw in DEFAULT_EXCLUDE_KEYWORDS:
                     if kw.lower() not in existing_excludes:
                         self.data.setdefault('exclude_keywords', []).append(kw)
+                        changed = True
                         logger.info(f"Миграция: добавлен фильтр '{kw}'")
-                self.save()
+                if changed:
+                    self.save()
                 logger.info(f"Конфиг загружен из {self.config_path}")
-            except (json.JSONDecodeError, Exception) as e:
+            except FileNotFoundError:
+                # Файл исчез между проверкой и открытием — создаём заново.
+                logger.info(f"Конфиг исчез при чтении, создаю {self.config_path} с дефолтами.")
+                self.data = copy.deepcopy(DEFAULT_CONFIG)
+                self.save()
+            except OSError as e:
+                # Временная ошибка ФС (файл занят, нет прав) — конфиг на диске цел.
+                # Помечаем загрузку неудачной и запрещаем запись: иначе первая же
+                # правка настройки записала бы «дефолты + одно изменение» поверх
+                # целого файла, а лаунчер отправил бы это на GitHub.
+                logger.error(f"Не удалось прочитать конфиг: {e}. Работаем на дефолтах, запись отключена.")
+                self.data = copy.deepcopy(DEFAULT_CONFIG)
+                self._load_failed = True
+            except Exception as e:
+                # Файл повреждён. Сохраняем копию, чтобы настройки можно было восстановить.
                 logger.error(f"Ошибка загрузки конфига: {e}. Используем дефолт.")
+                backup_path = self.config_path + '.corrupt'
+                try:
+                    os.replace(self.config_path, backup_path)
+                    logger.error(f"Повреждённый конфиг сохранён как {backup_path}")
+                except OSError as backup_err:
+                    logger.error(f"Не удалось сохранить копию повреждённого конфига: {backup_err}")
                 self.data = copy.deepcopy(DEFAULT_CONFIG)
                 self.save()
         else:
@@ -427,12 +463,25 @@ class ConfigManager:
             self.save()
 
     def save(self):
-        """Сохранить текущий конфиг в файл."""
+        """Сохранить текущий конфиг в файл (атомарно)."""
+        if getattr(self, '_load_failed', False):
+            logger.error("Конфиг не был прочитан — запись отменена, чтобы не потерять настройки.")
+            return
+        # Пишем во временный файл и подменяем им целевой: обрыв записи (kill, потеря
+        # питания) не оставит обрезанный config.json, который потом сбросится в дефолт.
+        tmp_path = self.config_path + '.tmp'
         try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
+            with open(tmp_path, 'w', encoding='utf-8') as f:
                 json.dump(self.data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self.config_path)
         except Exception as e:
             logger.error(f"Ошибка сохранения конфига: {e}")
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     # ========================
     # Скины
@@ -443,8 +492,13 @@ class ConfigManager:
         return self.data.get('rare_skins', {})
 
     def get_enabled_skins(self):
-        """Только включённые скины (для мониторинга)."""
-        return {sid: s for sid, s in self.get_all_skins().items() if s.get('enabled', True)}
+        """Только включённые скины (для мониторинга).
+
+        Перебираем копию: метод вызывается из рабочих потоков, а меню в это
+        время может удалить скин — перебор живого словаря упал бы с
+        "dictionary changed size during iteration".
+        """
+        return {sid: s for sid, s in dict(self.get_all_skins()).items() if s.get('enabled', True)}
 
     def get_skin(self, skin_id):
         """Получить скин по ID."""

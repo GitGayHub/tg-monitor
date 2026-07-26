@@ -42,6 +42,10 @@ async def main():
     print("Rating Text:", rating_text)
     print("Full Description (first 200 chars):", repr(full_description[:200]) if full_description else None)
     
+    if not full_description:
+        print("\n❌ Описание не загрузилось — дальнейшие проверки пропущены.")
+        return
+
     # Let's run find_skins_in_text and has_pve
     skins_dict = monitor.config.get_all_skins()
     combined_text = (full_description + " " + "Black Knight").lower() # simulate description

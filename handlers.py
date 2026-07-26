@@ -39,9 +39,11 @@ def _get_chat_id_from_context(context):
 def _check_auth(update, context):
     """Проверяет авторизацию пользователя."""
     authorized = _get_chat_id_from_context(context)
-    if authorized and str(update.effective_chat.id) != str(authorized):
+    # Пока владелец не привязан (нет chat_id.txt и TELEGRAM_CHAT_ID), доступа нет
+    # ни у кого: сначала /start, который и выполняет привязку.
+    if not authorized:
         return False
-    return True
+    return str(update.effective_chat.id) == str(authorized)
 
 
 def _set_input_return(context, callback_data=None, label=None, extra_buttons=None):
@@ -270,6 +272,12 @@ async def _run_minprice_search_with_watchdog(context, label, search_coro_factory
             results = await asyncio.wait_for(asyncio.shield(task), timeout=heartbeat_seconds)
             return results or []
         except asyncio.TimeoutError:
+            # Отмечаемся живыми: watchdog в app.py считает режим зависшим по
+            # started_at, а полный прогон по всем позициям легко идёт >15 минут
+            # — без этого он сбрасывал режим и стартовал второй парсинг парал­лельно.
+            bot_mode = context.bot_data.get('bot_mode')
+            if bot_mode and bot_mode.get('mode', 'standard') != 'standard':
+                bot_mode['started_at'] = time.time()
             elapsed = int(time.monotonic() - started)
             if elapsed >= timeout_seconds:
                 logger.warning(f"⏱️ Мин. прайс: тайм-аут шага '{label}' после {elapsed}с")
@@ -590,6 +598,31 @@ async def _show_skin_detail(query, context, skin_id, page=0):
     ]
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+async def _show_edition_keywords(query, context, eid):
+    """Показывает список ключевых слов издания."""
+    config = context.bot_data['config']
+    ed = config.get_edition(eid)
+    if not ed:
+        await query.answer("Издание не найдено")
+        return
+
+    name = eid.replace('_', ' ').title()
+    keywords = ed.get('keywords', [])
+    text = f"✏️ <b>Ключевые слова: 🏆 {name}</b>\n\nВсего: {len(keywords)}"
+
+    keyboard = []
+    for i, kw in enumerate(keywords):
+        row = [InlineKeyboardButton(f"{i + 1}. {kw}", callback_data='set:noop')]
+        if len(keywords) > 1:
+            row.append(InlineKeyboardButton("🗑", callback_data=f"set:skins:edkwdel:{eid}:{i}"))
+        keyboard.append(row)
+
+    keyboard.append([InlineKeyboardButton("📈 История цен", callback_data=f"set:hist:edition:{eid}:all:0:ek")])
+    keyboard.append([InlineKeyboardButton("➕ Добавить слово", callback_data=f"set:skins:edkwadd:{eid}")])
+    keyboard.append([InlineKeyboardButton("🔙 К PVE", callback_data='set:skins:pvelist:0'), InlineKeyboardButton("🏠 Главное меню", callback_data='set:main')])
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+
 async def _show_skin_keywords(query, context, skin_id):
     """Показывает список ключевых слов скина."""
     config = context.bot_data['config']
@@ -1464,10 +1497,10 @@ async def _start_full_recheck(query, context, config):
         parse_mode='HTML',
         reply_markup=_check_control_markup()
     )
-    asyncio.create_task(_run_recheck_task(
+    spawn_guarded_task(context, _run_recheck_task(
         chat_id, context, process_fn,
         skip_seen=False, candidate_limit=None
-    ))
+    ), chat_id=chat_id, what="перепроверка")
 
 async def _show_recheck_menu(query, context):
     await _show_check_menu(query, context)
@@ -1922,8 +1955,82 @@ async def _launch_minprice_bundle_run(query, context, config):
         bot_mode['params'] = {}
         bot_mode['started_at'] = None
 
-    asyncio.create_task(_run_custom_search())
+    spawn_guarded_task(context, _run_custom_search(), chat_id=chat_id, what="мин. прайс")
 
+
+
+# Держим ссылки на фоновые задачи: asyncio хранит только слабые ссылки, и задача
+# может быть собрана сборщиком мусора прямо во время работы.
+_BACKGROUND_TASKS = set()
+
+
+def _track_background_task(task):
+    """Держит сильную ссылку на задачу до её завершения."""
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
+
+
+def spawn_guarded_task(context, coro, chat_id=None, what="операция"):
+    """Запускает корутину фоном так, чтобы её падение не оставило залипший режим.
+
+    Без этого исключение внутри create_task гасло в обработчике asyncio, а
+    bot_mode оставался 'pricetest'/'recheck' — меню до 15 минут показывало
+    несуществующую проверку.
+    """
+    async def runner():
+        try:
+            await coro
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Фоновая задача ({what}) упала: {e}", exc_info=True)
+            _force_reset_check_state(context)
+            if chat_id is not None:
+                try:
+                    await context.bot.send_message(chat_id=chat_id, text=f"❌ {what.capitalize()} прервана с ошибкой: {e}")
+                except Exception:
+                    pass
+
+    return _track_background_task(asyncio.create_task(runner()))
+
+
+def _force_reset_check_state(context):
+    """Возвращает бота в исходное состояние после сбоя проверки."""
+    bot_mode = context.bot_data.get('bot_mode', {})
+    bot_mode['mode'] = 'standard'
+    bot_mode['params'] = {}
+    bot_mode['started_at'] = None
+    context.bot_data.pop('current_check_progress', None)
+    context.bot_data.pop('current_check_sent_positions', None)
+    context.bot_data.pop('checkstop_pending', None)
+    context.bot_data['cancel_current_check'] = False
+
+
+async def on_error(update, context):
+    """Глобальный обработчик: не даёт упавшему хендлеру заморозить бота.
+
+    Режим сбрасываем ТОЛЬКО если упал тот самый апдейт, который его выставил.
+    Перепроверки живут в отдельных задачах и сюда не попадают, поэтому
+    безусловный сброс убивал бы их restore_skins/restore_mode — временные цены
+    прогона оставались бы в конфиге навсегда и уезжали на GitHub.
+    """
+    logger.error(f"Ошибка в обработчике: {context.error}", exc_info=context.error)
+
+    owner = context.bot_data.get('inline_check_update_id')
+    failed_id = getattr(update, 'update_id', None) if update is not None else None
+    if owner is not None and failed_id is not None and owner == failed_id:
+        context.bot_data.pop('inline_check_update_id', None)
+        _force_reset_check_state(context)
+
+    if update is None or not _check_auth(update, context):
+        return
+    chat = getattr(update, 'effective_chat', None)
+    if chat is not None:
+        try:
+            await context.bot.send_message(chat_id=chat.id, text=f"❌ Ошибка: {context.error}")
+        except Exception:
+            pass
 
 
 def _clone_skin_restore_state(config):
@@ -2262,6 +2369,90 @@ def _build_recheck_start_text(snapshot):
     )
 
 
+async def _launch_custom_recheck(origin, context, config, pve_price=None, from_callback=False):
+    """Запускает перепроверку по выборке, засеянной _seed_standard_*_recheck.
+
+    origin — CallbackQuery при from_callback=True, иначе Update с сообщением.
+    """
+    bot_mode = context.bot_data.get('bot_mode', {})
+    process_fn = context.bot_data.get('process_offers')
+    build_snapshot_fn = context.bot_data.get('build_recheck_snapshot')
+
+    if from_callback:
+        chat_id_value = origin.message.chat_id
+        send = lambda text: origin.edit_message_text(text, parse_mode='HTML', reply_markup=_check_control_markup())
+    else:
+        chat_id_value = origin.effective_chat.id
+        send = lambda text: origin.message.reply_text(text, parse_mode='HTML', reply_markup=_check_control_markup())
+
+    if _is_check_running(context):
+        if from_callback:
+            await _show_current_check_status(origin, context)
+        else:
+            text, keyboard = _get_current_check_status(context)
+            await origin.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
+        return
+
+    mode = context.user_data.get('custom_recheck_mode', 'list')
+    rc_skins = context.user_data.get('recheck_skins', {})
+    rc_editions = context.user_data.get('recheck_editions', {})
+    rc_pve = context.user_data.get('recheck_confirmed_pve', {})
+
+    # Сохраняем состояние до временных правок, чтобы вернуть его после прогона
+    restore_mode = config.search_mode
+    restore_skins = _clone_skin_restore_state(config)
+    restore_editions = _clone_edition_restore_state(config)
+
+    for sid, data in rc_skins.items():
+        skin = config.get_skin(sid)
+        if skin:
+            skin['enabled'] = data.get('enabled', True)
+            skin['price'] = data.get('price', skin.get('price', 0))
+
+    for eid, data in rc_editions.items():
+        edition = config.get_edition(eid)
+        if edition:
+            edition['enabled'] = data.get('enabled', True)
+            edition['price'] = data.get('price', edition.get('price', 0))
+
+    if mode == 'premium':
+        display_mode, search_mode, premium_only, log_view = 'Издания', None, True, 'premium'
+    elif mode == 'confirmed_pve':
+        display_mode, search_mode, premium_only, log_view = 'Подтв. PVE', 'pve_only', False, 'pve'
+    else:
+        display_mode, search_mode, premium_only, log_view = 'По списку', 'skins_pve', False, 'skins'
+
+    snapshot = build_snapshot_fn(
+        config,
+        display_mode=display_mode,
+        bot_mode_key='recheck',
+        search_mode=search_mode,
+        premium_only=premium_only,
+        log_view=log_view,
+        pve_override=pve_price,
+        confirmed_pve_enabled_override=rc_pve.get('enabled') if rc_pve else None,
+        confirmed_pve_price_override=rc_pve.get('price') if rc_pve else None,
+        chat_id_value=chat_id_value,
+    )
+
+    bot_mode['mode'] = 'recheck'
+    bot_mode['params'] = {
+        'display_mode': f"Перепроверка: {display_mode}",
+        'target_label': display_mode,
+        'restore_mode': restore_mode,
+        'restore_skins': restore_skins,
+        'restore_editions': restore_editions,
+        'run_snapshot': snapshot,
+    }
+    bot_mode['started_at'] = time.time()
+
+    await send(_build_recheck_start_text(snapshot))
+    spawn_guarded_task(context, _run_recheck_task(
+        chat_id_value, context, process_fn,
+        skip_seen=False, candidate_limit=None
+    ), chat_id=chat_id_value, what="перепроверка")
+
+
 async def _repeat_recheck_from_result(query, context, result):
     config = context.bot_data['config']
     bot_mode = context.bot_data.get('bot_mode', {})
@@ -2325,12 +2516,12 @@ async def _repeat_recheck_from_result(query, context, result):
     bot_mode['started_at'] = time.time()
 
     await query.edit_message_text(_build_recheck_start_text(new_snapshot), parse_mode='HTML', reply_markup=_check_control_markup())
-    asyncio.create_task(_run_recheck_task(
+    spawn_guarded_task(context, _run_recheck_task(
         query.message.chat_id,
         context,
         process_fn,
         **snapshot.get('process_kwargs', {})
-    ))
+    ), chat_id=query.message.chat_id, what="перепроверка")
 
 
 async def _run_recheck_task(chat_id, context, process_fn, **kwargs):
@@ -2339,6 +2530,12 @@ async def _run_recheck_task(chat_id, context, process_fn, **kwargs):
     try:
         sent_count = await process_fn(context=context, **kwargs)
         if sent_count == -1:
+            # Запуск не состоялся — снимаем только режим, который выставили сами.
+            # Полный сброс здесь стирал бы прогресс всё ещё работающей фоновой
+            # проверки и отменял запрошенную ей остановку.
+            bot_mode['mode'] = 'standard'
+            bot_mode['params'] = {}
+            bot_mode['started_at'] = None
             text, keyboard = _get_current_check_status(context)
             await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode='HTML')
             return
@@ -2509,15 +2706,23 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         await query.answer("❌ Не авторизованы", show_alert=True)
         return
 
-    await query.answer()
-
+    # Авторизацию проверяем ДО query.answer(): повторный answer по уже
+    # отвеченному запросу игнорируется, поэтому предупреждение не показывалось.
     if not _check_auth(update, context):
         await query.answer("❌ Не авторизованы", show_alert=True)
         return
 
+    await query.answer()
+
     data = query.data
     config = context.bot_data['config']
     parts = data.split(':')
+
+    # Диалог подтверждения остановки живёт только пока пользователь в нём.
+    # Раньше уход из него любым другим путём оставлял флаг навсегда, а он
+    # блокирует отрисовку прогресса во всех последующих проверках.
+    if not data.startswith('set:checkstop'):
+        context.bot_data.pop('checkstop_pending', None)
 
     # === Навигация ===
     if data == "set:main":
@@ -2577,6 +2782,22 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
     elif data == "set:checkstop:confirm":
         context.bot_data.pop('checkstop_pending', None)
+        # Флаг ставим только если действительно есть что останавливать: иначе он
+        # доживал до следующего запуска мин. прайса и глушил его на старте.
+        bot_mode_now = context.bot_data.get('bot_mode', {}) or {}
+        something_running = (
+            bot_mode_now.get('mode', 'standard') != 'standard'
+            or bool(context.bot_data.get('current_check_progress'))
+        )
+        if not something_running:
+            await query.edit_message_text(
+                "ℹ️ <b>Сейчас ничего не выполняется.</b>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")]
+                ])
+            )
+            return
         context.bot_data['cancel_current_check'] = True
         await query.edit_message_text(
             "⏹ <b>Останавливаю текущую проверку...</b>\n"
@@ -2698,7 +2919,8 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                     await asyncio.to_thread(sync_mode_fn)
                 except Exception as e:
                     logger.error(f"Auto-sync failed on toggle: {e}")
-            asyncio.create_task(do_sync_bg())
+            # Через spawn_guarded_task: иначе задачу может собрать сборщик мусора
+            _track_background_task(asyncio.create_task(do_sync_bg()))
         await _show_main_menu(query, context)
 
     elif data == "set:sync":
@@ -3082,11 +3304,24 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         kw_list = ', '.join(all_keywords[:4])
         if len(all_keywords) > 4:
             kw_list += f" +ещё {len(all_keywords) - 4}"
-        origin_kind = parts[4] if len(parts) > 4 else ''
-        origin_page = parts[5] if len(parts) > 5 else ''
+        # У pveconfirmed/pveunconfirmed в callback_data нет сегмента с item_id
+        # (set:minprice:pveconfirmed:pvlist:0), поэтому origin сдвинут на один
+        # влево. Раньше сюда попадала цифра страницы и кнопки «Назад»/«Повторить»
+        # уводили в общее меню вместо списка, из которого пришёл пользователь.
+        if item_type in ('pveconfirmed', 'pveunconfirmed'):
+            origin_kind = parts[3] if len(parts) > 3 else ''
+            origin_page = parts[4] if len(parts) > 4 else ''
+        else:
+            origin_kind = parts[4] if len(parts) > 4 else ''
+            origin_page = parts[5] if len(parts) > 5 else ''
         if _is_check_running(context):
             await _show_current_check_status(query, context)
             return
+        # Флаг мог остаться от подтверждения остановки, когда ничего не шло.
+        context.bot_data['cancel_current_check'] = False
+        # Этот поток идёт прямо внутри обработчика, поэтому его падение долетит
+        # до on_error. Помечаем владельца режима, чтобы сброс делался только тут.
+        context.bot_data['inline_check_update_id'] = getattr(update, 'update_id', None)
         bot_mode = context.bot_data.get('bot_mode', {})
         bot_mode['mode'] = 'pricetest'
         bot_mode['params'] = {
@@ -3128,6 +3363,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
         async def _stop_single():
             context.bot_data['cancel_current_check'] = False
+            context.bot_data.pop('inline_check_update_id', None)
             bot_mode['mode'] = 'standard'
             bot_mode['params'] = {}
             bot_mode['started_at'] = None
@@ -3163,6 +3399,12 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             )
         else:
             pve_results = []
+
+        # Отмена на последнем шаге возвращает пустой список — записывать его в
+        # историю нельзя, иначе в статистике появляется ложное «цены нет».
+        if context.bot_data.get('cancel_current_check'):
+            await _stop_single()
+            return
 
         if dual_mode:
             record_price_snapshot('skin', item_id, name, 'any', any_results, source='single_minprice')
@@ -3219,6 +3461,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             [InlineKeyboardButton("🔙 Назад", callback_data=back_cb), InlineKeyboardButton("🏠 Главное меню", callback_data="set:main")],
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML', disable_web_page_preview=True)
+        context.bot_data.pop('inline_check_update_id', None)
         bot_mode['mode'] = 'standard'
         bot_mode['params'] = {}
         bot_mode['started_at'] = None
@@ -3379,28 +3622,11 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             )
 
         elif action == 'edkw':
-            eid = parts[3]
-            ed = config.get_edition(eid)
-            if not ed:
-                await query.answer("Издание не найдено")
-                return
-            name = eid.replace('_', ' ').title()
-            keywords = ed.get('keywords', [])
-            text = f"✏️ <b>Ключевые слова: 🏆 {name}</b>\n\nВсего: {len(keywords)}"
-            keyboard = []
-            for i, kw in enumerate(keywords):
-                row = [InlineKeyboardButton(f"{i + 1}. {kw}", callback_data='set:noop')]
-                if len(keywords) > 1:
-                    row.append(InlineKeyboardButton("🗑", callback_data=f"set:skins:edkwdel:{eid}:{i}"))
-                keyboard.append(row)
-            keyboard.append([InlineKeyboardButton("📈 История цен", callback_data=f"set:hist:edition:{eid}:all:0:ek")])
-            keyboard.append([InlineKeyboardButton("➕ Добавить слово", callback_data=f"set:skins:edkwadd:{eid}")])
-            keyboard.append([InlineKeyboardButton("🔙 К PVE", callback_data='set:skins:pvelist:0'), InlineKeyboardButton("🏠 Главное меню", callback_data='set:main')])
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+            await _show_edition_keywords(query, context, parts[3])
 
         elif action == 'edkwdel':
             eid = parts[3]
-            kw_index = int(parts[4]) if len(parts) > 4 else -1
+            kw_index = int(parts[4]) if len(parts) > 4 and parts[4].lstrip('-').isdigit() else -1
             ed = config.get_edition(eid)
             if ed:
                 keywords = ed.get('keywords', [])
@@ -3410,8 +3636,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                     await query.answer(f"🗑 Удалено: {removed}")
                 else:
                     await query.answer("Нельзя удалить последнее слово", show_alert=True)
-            await handle_settings_callback(update, context)
-            return
+            await _show_edition_keywords(query, context, eid)
 
         elif action == 'edkwadd':
             eid = parts[3]
@@ -3644,11 +3869,45 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
                 '➕ <b>Добавить фразу-фильтр</b>\n\nОтправьте фразу или /cancel:',
                 parse_mode='HTML'
             )
+        elif parts[2] == 'reset':
+            count = config.reset_exclude_keywords()
+            await query.answer(f"🔄 Сброшено к дефолтным: {count}")
+            await _show_filters_list(query, context, 0)
 
 
 # ==============================
 # TEXT INPUT
 # ==============================
+
+def _clear_input_state(context):
+    """Сбрасывает режим ввода и связанные с ним черновики."""
+    context.user_data.pop('input_state', None)
+    context.user_data.pop('editing_skin_id', None)
+    context.user_data.pop('editing_edition_id', None)
+    context.user_data.pop('pve_type', None)
+    context.user_data.pop('new_skin_id', None)
+    context.user_data.pop('new_skin_price', None)
+    context.user_data.pop('recheck_rare_price', None)
+    context.user_data.pop('recheck_direct_unconfirmed_pve', None)
+
+
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /cancel — выход из режима ввода.
+
+    Нужна отдельным CommandHandler: handle_text_input подписан на
+    filters.TEXT & ~filters.COMMAND и команду не получает вообще.
+    """
+    if not _check_auth(update, context):
+        return
+    message = update.effective_message
+    if message is None:
+        return
+    if context.user_data.get('input_state') is None:
+        await message.reply_text('Нечего отменять.')
+        return
+    _clear_input_state(context)
+    await message.reply_text('↩️ Отменено.', reply_markup=_pop_input_return_markup(context, 'set:main', '🔙 Назад'))
+
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обрабатывает текстовый ввод пользователя в меню настроек."""
@@ -3659,19 +3918,18 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if state is None:
         return
 
+    # Правка уже отправленного сообщения приходит без update.message, а весь
+    # код ниже отвечает через update.message — такой апдейт просто пропускаем.
+    message = update.message
+    if message is None or not message.text:
+        return
+
     config = context.bot_data['config']
-    text = update.message.text.strip()
+    text = message.text.strip()
 
     if text.lower() == '/cancel':
-        context.user_data.pop('input_state', None)
-        context.user_data.pop('editing_skin_id', None)
-        context.user_data.pop('editing_edition_id', None)
-        context.user_data.pop('pve_type', None)
-        context.user_data.pop('new_skin_id', None)
-        context.user_data.pop('new_skin_price', None)
-        context.user_data.pop('recheck_rare_price', None)
-        context.user_data.pop('recheck_direct_unconfirmed_pve', None)
-        await update.message.reply_text('↩️ Отменено.', reply_markup=_pop_input_return_markup(context, 'set:main', '🔙 Назад'))
+        _clear_input_state(context)
+        await message.reply_text('↩️ Отменено.', reply_markup=_pop_input_return_markup(context, 'set:main', '🔙 Назад'))
         return
 
     if state == INPUT_SKIN_PRICE:
@@ -3710,6 +3968,16 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif state == INPUT_NEW_SKIN_ID:
         skin_id = text.lower().replace(' ', '_')
+        # ID уходит внутрь callback_data кнопок, где лимит Telegram — 64 байта.
+        # Длинный ID (например кириллицей) или двоеточие в нём ломают меню скина
+        # без возможности починить из интерфейса — кнопка удаления несёт тот же ID.
+        if not re.fullmatch(r'[a-z0-9_]{1,32}', skin_id):
+            await update.message.reply_text(
+                '❌ ID должен быть латиницей: буквы, цифры и _, до 32 символов.\n'
+                'Пример: <code>galaxy_scout</code>\n\nВведите другой или /cancel:',
+                parse_mode='HTML'
+            )
+            return
         if config.get_skin(skin_id):
             await update.message.reply_text('❌ Такой ID уже существует. Введите другой или /cancel:')
             return
@@ -3972,7 +4240,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f'🔓 <b>Перепроверка: неподтв. PVE</b>\n\n💸 Макс. цена: {val}₽\n⏳ Поиск запущен...',
                 parse_mode='HTML'
             )
-            asyncio.create_task(_run_recheck_task(chat_id, context, process_fn, skip_seen=False, candidate_limit=None, include_unconfirmed_pve=True, max_price_override=val))
+            spawn_guarded_task(
+                context,
+                _run_recheck_task(chat_id, context, process_fn, skip_seen=False, candidate_limit=None,
+                                  include_unconfirmed_pve=True, max_price_override=val),
+                chat_id=chat_id, what="перепроверка")
         else:
             await _show_check_menu_as_new_message(update, context)
 
@@ -3994,8 +4266,14 @@ def register_settings_handlers(application, config, chat_id_ref, seen_ids_ref, b
     # Команда /settings
     application.add_handler(CommandHandler("settings", settings_command))
 
+    # Команда /cancel — выход из режима ввода
+    application.add_handler(CommandHandler("cancel", cancel_command))
+
     # Callback handler для всех кнопок set:*
     application.add_handler(CallbackQueryHandler(handle_settings_callback, pattern=r'^set:'))
+
+    # Ошибка в любом хендлере не должна оставлять залипший режим проверки
+    application.add_error_handler(on_error)
 
     # Текстовый ввод (ловим текст когда есть активное input_state)
     application.add_handler(MessageHandler(

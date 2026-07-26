@@ -8,16 +8,29 @@ from bs4 import BeautifulSoup
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-# Загрузка конфига
-with open('config.json', 'r', encoding='utf-8') as f:
-    cfg = json.load(f)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Загрузка конфига. В режиме с CONFIG_PASSPHRASE открытый config.json существует
+# только пока работает бот, поэтому сообщаем об этом внятно, а не трейсбеком.
+CONFIG_PATH = os.path.join(BASE_DIR, 'config.json')
+try:
+    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+        cfg = json.load(f)
+except FileNotFoundError:
+    print(f"❌ Не найден {CONFIG_PATH}.")
+    print("   Если конфиг зашифрован, сначала расшифруйте его:")
+    print("   python config_crypt.py decrypt config.json.enc config.json")
+    sys.exit(1)
 
 # Загрузка seen_ids
 seen = set()
 try:
-    with open('seen_ids.txt', 'r') as f:
+    with open(os.path.join(BASE_DIR, 'seen_ids.txt'), 'r') as f:
         seen = set(line.strip() for line in f if line.strip())
-except: pass
+except FileNotFoundError:
+    pass
+except OSError as e:
+    print(f"⚠️ Не удалось прочитать seen_ids.txt: {e}")
 
 rare_skins = cfg.get('rare_skins', {})
 editions = cfg.get('editions', {})

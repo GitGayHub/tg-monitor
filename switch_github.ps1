@@ -31,13 +31,16 @@ try {
 Write-Host "`n[2/3] Обновляю set_env.example.bat..." -ForegroundColor Green
 $batPath = Join-Path $RepoPath "set_env.example.bat"
 if (Test-Path $batPath) {
+    # CONFIG_PASSPHRASE обязателен: без него лаунчер откатывается на пуш
+    # незашифрованного config.json, а раньше эта строка тут терялась.
     $batContent = @"
 @echo off
 REM === Fill in your values and save as set_env.bat ===
 set TELEGRAM_BOT_TOKEN=your_bot_token_here
-set TELEGRAM_CHAT_ID=5326338543
+set TELEGRAM_CHAT_ID=your_telegram_chat_id
 set GITHUB_TOKEN=your_github_pat_optional
 set GITHUB_REPOSITORY=$Repo
+set CONFIG_PASSPHRASE=your_secret_passphrase_here
 "@
     Set-Content -Path $batPath -Value $batContent -Encoding ASCII
     Write-Host "  $batPath обновлён" -ForegroundColor Gray
@@ -51,8 +54,9 @@ if (Test-Path $shPath) {
 #!/bin/bash
 # === Fill in your values and save as set_env.sh ===
 export TELEGRAM_BOT_TOKEN="your_bot_token_here"
-export TELEGRAM_CHAT_ID="5326338543"
+export TELEGRAM_CHAT_ID="your_telegram_chat_id"
 export GITHUB_REPOSITORY="$Repo"
+export CONFIG_PASSPHRASE="your_secret_passphrase_here"
 # Optional — only needed for /sync button in Telegram
 # export GITHUB_TOKEN="your_github_pat_optional"
 "@

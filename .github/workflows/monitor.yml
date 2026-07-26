@@ -3,7 +3,9 @@ name: Monitor
 on:
   push:
     paths:
-      - 'config.json'
+      # config.json в .gitignore и не пушится — следим за зашифрованной версией,
+      # иначе запуск «сразу после смены настроек» не срабатывал никогда.
+      - 'config.json.enc'
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
@@ -90,7 +92,14 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           TARGET_URL: ${{ secrets.TARGET_URL }}
         run: |
+          # Код возврата берём у app.py, а не у tee: иначе падение бота
+          # оставалось незаметным, а workflow продолжал считаться успешным.
           python app.py --once 2>&1 | tee run_output.log
+          APP_EXIT=${PIPESTATUS[0]}
+          echo "app_exit=$APP_EXIT" >> $GITHUB_ENV
+          if [ "$APP_EXIT" -ne 0 ]; then
+            echo "::error::app.py завершился с кодом $APP_EXIT"
+          fi
           # Append mini-log entry for diagnostics
           python -c "
           import json, os, re
@@ -159,8 +168,9 @@ jobs:
           git config --global user.email "bot@noreply.github.com"
           
           # Backup state files before rebase/pull
+          STATE_FILES="seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db run_log.json banned_sellers.txt seller_map.json state_meta.json"
           backup_dir="$(mktemp -d)"
-           for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db run_log.json banned_sellers.txt seller_map.json; do
+          for f in $STATE_FILES; do
             if [ -f "$f" ]; then
               cp "$f" "$backup_dir/$f"
             fi
@@ -174,23 +184,35 @@ jobs:
             echo "Attempt $((RETRY_COUNT+1)) to commit and push state..."
             
             # Reset local state files to latest origin tracking to avoid conflicts during checkout/rebase
-            git checkout -- seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db run_log.json banned_sellers.txt seller_map.json 2>/dev/null || true
+            git checkout -- $STATE_FILES 2>/dev/null || true
             
             # Fetch latest commits
             git fetch origin main || true
             
             # Reset current HEAD to origin/main (equivalent to a clean pull)
             git reset --hard origin/main
-            
-            # Restore state files from our local run backup
-            for f in seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db run_log.json banned_sellers.txt seller_map.json; do
-              if [ -f "$backup_dir/$f" ]; then
-                cp "$backup_dir/$f" "$f"
-              fi
-            done
-            
+
+            # Объединяем состояние этого прогона с тем, что уже лежит в origin.
+            # Раньше здесь копировалась своя резервная копия поверх чужой, и
+            # состояние, запушенное с компьютера, терялось — лоты приходили повторно.
+            if [ -f state_merge.py ]; then
+              # Порядок важен: первый каталог — «наша» сторона, куда пишется
+              # результат. Наша сторона — состояние этого прогона ($backup_dir),
+              # а в рабочей копии сейчас лежит версия из origin. Поэтому сливаем
+              # в бэкап и копируем результат обратно.
+              python state_merge.py "$backup_dir" . $STATE_FILES
+              for f in $STATE_FILES; do
+                if [ -f "$backup_dir/$f" ]; then cp "$backup_dir/$f" "$f"; fi
+              done
+            else
+              echo "::warning::state_merge.py отсутствует — откат к копированию поверх"
+              for f in $STATE_FILES; do
+                if [ -f "$backup_dir/$f" ]; then cp "$backup_dir/$f" "$f"; fi
+              done
+            fi
+
             # Add files to commit staging
-            git add seen_ids.txt seen_cache.json sent_offers.json banned_ids.txt price_history.db run_log.json banned_sellers.txt seller_map.json || true
+            git add $STATE_FILES || true
             
             # Check if there are actual runtime state changes to commit
             if git diff --cached --quiet; then
@@ -241,3 +263,14 @@ jobs:
           else
             echo "WARNING: trigger failed with HTTP $HTTP_CODE (GH_PAT may be expired)"
           fi
+
+      # Помечаем прогон красным ПОСЛЕ сохранения состояния и запуска следующего,
+      # чтобы падение было видно, но цепочка запусков не прерывалась.
+      - name: Report monitor failure
+        if: always() && steps.cooldown.outputs.skip != 'true'
+        run: |
+          if [ "${app_exit:-0}" -ne 0 ]; then
+            echo "app.py завершился с кодом ${app_exit}. Смотрите шаг «Run monitor once»."
+            exit 1
+          fi
+          echo "app.py отработал без ошибок."

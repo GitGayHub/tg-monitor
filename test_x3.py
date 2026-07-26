@@ -55,14 +55,20 @@ for c in changed:
     print(c)
 
 # 3. Запуск app.py --once
+# Восстановление обязано идти через finally: при Ctrl+C или любой ошибке иначе
+# в config.json остаются утроенные цены, которые лаунчер потом отправит на GitHub.
 print("\n[x3 test] Запускаю app.py --once ...")
-result = subprocess.run(
-    [sys.executable, "app.py", "--once"],
-    env={**os.environ},
-    cwd=os.path.dirname(os.path.abspath(__file__)),
-)
+returncode = None
+try:
+    result = subprocess.run(
+        [sys.executable, "app.py", "--once"],
+        env={**os.environ},
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+    )
+    returncode = result.returncode
+finally:
+    # 4. Восстановить конфиг
+    shutil.move(BACKUP, CONFIG)
+    print(f"\n[x3 test] Конфиг восстановлен из бэкапа")
 
-# 4. Восстановить конфиг
-shutil.move(BACKUP, CONFIG)
-print(f"\n[x3 test] Конфиг восстановлен из бэкапа")
-print(f"[x3 test] Exit code: {result.returncode}")
+print(f"[x3 test] Exit code: {returncode}")

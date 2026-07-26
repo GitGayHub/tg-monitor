@@ -1,4 +1,5 @@
-﻿import os
+﻿import contextlib
+import os
 import sqlite3
 import threading
 from datetime import datetime
@@ -8,10 +9,20 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "price_history.db")
 _DB_LOCK = threading.Lock()
 
 
+@contextlib.contextmanager
 def _connect():
+    """Соединение с базой, закрывающееся вместе с блоком with.
+
+    `with sqlite3.connect(...)` фиксирует транзакцию, но НЕ закрывает соединение
+    — раньше закрытие держалось только на сборщике мусора CPython.
+    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_price_history_db():
@@ -157,11 +168,42 @@ def get_red_flags(limit=50):
     return [dict(r) for r in rows]
 
 
+def _mark_cleared(key):
+    """Фиксирует очистку в state_meta.json.
+
+    Без этой отметки слияние баз (state_merge.py) вернуло бы удалённые строки
+    обратно с другой стороны — кнопка «очистить историю» ничего бы не давала.
+    """
+    try:
+        import app
+        app.mark_state_cleared(key)
+    except Exception:
+        # history.py используется и отдельными скриптами без app.py
+        meta_path = os.path.join(os.path.dirname(__file__), 'state_meta.json')
+        try:
+            import json
+            import time
+            try:
+                with open(meta_path, 'r', encoding='utf-8') as f:
+                    meta = json.load(f)
+            except (FileNotFoundError, ValueError):
+                meta = {}
+            meta.setdefault('cleared_at', {})[key] = time.time()
+            meta.setdefault('modified_at', {})[key] = time.time()
+            tmp = meta_path + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(meta, f, ensure_ascii=False, indent=1)
+            os.replace(tmp, meta_path)
+        except OSError:
+            pass
+
+
 def clear_red_flags():
     init_price_history_db()
     with _DB_LOCK:
         with _connect() as conn:
             conn.execute("DELETE FROM red_flags")
+    _mark_cleared('red_flags')
 
 
 def clear_all_price_history():
@@ -171,6 +213,7 @@ def clear_all_price_history():
         with _connect() as conn:
             conn.execute("DELETE FROM price_snapshot_offers")
             conn.execute("DELETE FROM price_snapshots")
+    _mark_cleared('price_history')
 
 
 def get_price_summary():
@@ -179,8 +222,13 @@ def get_price_summary():
     with _DB_LOCK:
         with _connect() as conn:
             total = conn.execute("SELECT COUNT(*) FROM price_snapshots").fetchone()[0]
-            first = conn.execute("SELECT MIN(recorded_at) FROM price_snapshots").fetchone()[0]
-            last = conn.execute("SELECT MAX(recorded_at) FROM price_snapshots").fetchone()[0]
+            # recorded_at хранится как "ДД.ММ.ГГГГ ЧЧ:ММ", поэтому MIN/MAX по строке
+            # сравнивали бы сначала день ("01.08.2026" < "26.07.2026"). Берём
+            # хронологически первую и последнюю запись по возрастающему id.
+            first_row = conn.execute("SELECT recorded_at FROM price_snapshots ORDER BY id ASC LIMIT 1").fetchone()
+            last_row = conn.execute("SELECT recorded_at FROM price_snapshots ORDER BY id DESC LIMIT 1").fetchone()
+            first = first_row[0] if first_row else None
+            last = last_row[0] if last_row else None
             rows = conn.execute(
                 """
                 SELECT ps.id, ps.item_type, ps.item_id, ps.item_name, ps.mode,

@@ -3,7 +3,7 @@
 # set_env.sh is ignored by git, set_env.example.sh is safe to commit.
 
 export TELEGRAM_BOT_TOKEN="your_bot_token_here"
-export TELEGRAM_CHAT_ID="5326338543"
+export TELEGRAM_CHAT_ID="your_telegram_chat_id"
 export GITHUB_REPOSITORY="GitGayHub/tg-monitor"
 export CONFIG_PASSPHRASE="your_secret_passphrase_here"
 # Optional — only needed for /sync button in Telegram

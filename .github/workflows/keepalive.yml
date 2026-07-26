@@ -15,5 +15,19 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "chore: keepalive [skip ci]"
-          git push
+          # Monitor пушит состояние каждые ~5 минут, поэтому одиночный push почти
+          # всегда упирался в non-fast-forward. Подтягиваемся и повторяем.
+          for attempt in 1 2 3; do
+            # Каждый шаг должен быть необязательным: под `bash -e` сбой fetch или
+            # commit прервал бы весь шаг вместо перехода к следующей попытке.
+            git fetch origin main || { sleep 5; continue; }
+            git reset --hard origin/main || { sleep 5; continue; }
+            git commit --allow-empty -m "chore: keepalive [skip ci]" || { sleep 5; continue; }
+            if git push origin HEAD:main; then
+              echo "Keepalive pushed (attempt $attempt)"
+              exit 0
+            fi
+            echo "Push rejected, retrying..."
+            sleep 5
+          done
+          echo "::warning::keepalive не смог запушить после 3 попыток"

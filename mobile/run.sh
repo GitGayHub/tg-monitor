@@ -17,4 +17,14 @@ fi
 cd "$REPO_DIR"
 
 # Run the cross-platform launcher which handles git sync, decryption, running, encryption, committing and pushing
-python launcher.py
+# На Debian/Ubuntu есть только python3, голый python там не существует.
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON=python3
+elif command -v python >/dev/null 2>&1; then
+    PYTHON=python
+else
+    echo "ERROR: Python не найден (нужен python3)."
+    exit 1
+fi
+
+"$PYTHON" launcher.py

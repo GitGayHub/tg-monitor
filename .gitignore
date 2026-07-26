@@ -21,3 +21,7 @@ set_env.sh
 .bot.lock
 config.json
 *.bak*
+# Остатки атомарной записи, если процесс убили между write и replace
+*.tmp
+*.merge_tmp
+config.json.corrupt
