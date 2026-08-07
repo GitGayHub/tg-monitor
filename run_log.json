@@ -1,17 +1,5 @@
 [
  {
-  "time": "2026-08-06 17:46 UTC",
-  "trigger": "cron-job.org",
-  "sent": 0,
-  "new_candidates": 15,
-  "total_on_site": 2000,
-  "already_seen": 0,
-  "skip_no_pve": 4,
-  "skip_exclude": 0,
-  "skip_price": 11,
-  "skip_guard": 0
- },
- {
   "time": "2026-08-06 18:41 UTC",
   "trigger": "cron-job.org",
   "sent": 0,
@@ -589,6 +577,18 @@
  },
  {
   "time": "2026-08-07 00:30 UTC",
+  "trigger": "self-trigger",
+  "sent": 0,
+  "new_candidates": 0,
+  "total_on_site": 2000,
+  "already_seen": 0,
+  "skip_no_pve": 0,
+  "skip_exclude": 0,
+  "skip_price": 0,
+  "skip_guard": 0
+ },
+ {
+  "time": "2026-08-07 00:35 UTC",
   "trigger": "self-trigger",
   "sent": 0,
   "new_candidates": 0,
