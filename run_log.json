@@ -1,17 +1,5 @@
 [
  {
-  "time": "2026-10-09 12:30 UTC",
-  "trigger": "self-trigger",
-  "sent": 0,
-  "new_candidates": 30,
-  "total_on_site": 2000,
-  "already_seen": 0,
-  "skip_no_pve": 11,
-  "skip_exclude": 1,
-  "skip_price": 16,
-  "skip_guard": 0
- },
- {
   "time": "2026-10-09 12:36 UTC",
   "trigger": "self-trigger",
   "sent": 0,
@@ -597,6 +585,18 @@
   "skip_no_pve": 4,
   "skip_exclude": 1,
   "skip_price": 7,
+  "skip_guard": 0
+ },
+ {
+  "time": "2026-10-09 17:17 UTC",
+  "trigger": "self-trigger",
+  "sent": 0,
+  "new_candidates": 12,
+  "total_on_site": 2000,
+  "already_seen": 0,
+  "skip_no_pve": 4,
+  "skip_exclude": 1,
+  "skip_price": 6,
   "skip_guard": 0
  }
 ]
